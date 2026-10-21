@@ -18,6 +18,9 @@
 
 需要 Python 3.11+ 和 [uv](https://docs.astral.sh/uv/)。
 
+> 从零开始(连 uv 都没有)的 **macOS / Windows 分平台一键安装与卸载**步骤,
+> 见 [GUIDE-01 开发者上手](docs/guides/GUIDE-01-开发者上手.md)。
+
 ```bash
 uv sync
 uv tool install --editable . --force
