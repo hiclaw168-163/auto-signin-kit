@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from auto_signin_kit.domains.workbuddy import rewards, service
+from auto_signin_kit.domains.workbuddy import daily, rewards, service
 from auto_signin_kit.domains.workbuddy.cli import app
 
 runner = CliRunner()
@@ -65,3 +65,79 @@ class TestTodayActivity:
         """日历结构异常要显式报错,不能推测为"未活跃"去误导用户。"""
         with pytest.raises(ValueError):
             rewards.today_activity({"today": {"date": "bad-date"}, "cells": []})
+
+
+class _StubNet:
+    """daily 步骤只读 budget_remaining;业务函数已被替身拦截,无需真 Net。"""
+
+    budget_remaining = 300.0
+
+
+class TestDailyPipeline:
+    """daily.run_daily 流水线: 签到门控中止后续步骤,聚合回报契约不变。"""
+
+    def _run(self, monkeypatch, checkin_result, growth_result=None):
+        """替身注入签到/成长结果,返回 (code, out, quiet, 成长调用次数)。"""
+        calls = {"growth": 0}
+
+        def fake_run_auto(net):
+            return checkin_result
+
+        def fake_run_growth(net, budget):
+            calls["growth"] += 1
+            return growth_result
+
+        monkeypatch.setattr(daily.checkin, "run_auto", fake_run_auto)
+        monkeypatch.setattr(daily, "run_growth", fake_run_growth)
+        code, out, quiet = daily.run_daily(_StubNet())
+        return code, out, quiet, calls
+
+    def test_network_gate_skips_growth(self, monkeypatch):
+        """网络不可达必须中止流水线: 成长中心一次都不跑,签到事实照常汇报。"""
+        code, out, quiet, calls = self._run(
+            monkeypatch, (1, {"result": "NETWORK", "report": "网络不可达"})
+        )
+        assert calls["growth"] == 0
+        assert out["growth_result"] == "NETWORK"
+        assert "跳过" in out["growth"]
+        assert (code, quiet, out["needs_attention"]) == (1, False, True)
+
+    def test_auth_gate_skips_growth(self, monkeypatch):
+        """认证拒绝同样中止流水线,且 growth_result 带上门控原因。"""
+        code, out, _, calls = self._run(
+            monkeypatch, (1, {"result": "AUTH_REJECTED", "report": "401"})
+        )
+        assert calls["growth"] == 0
+        assert out["growth_result"] == "AUTH_REJECTED"
+        assert code == 1
+
+    def test_already_and_idle_is_quiet(self, monkeypatch):
+        """已签 + 成长中心无事可做 = 空跑,退出码 0,报告不被追加。"""
+        code, out, quiet, _ = self._run(
+            monkeypatch,
+            (0, {"result": "ALREADY", "report": "今日已签过"}),
+            (0, {"result": "IDLE", "report": "无事可做", "idle": True}),
+        )
+        assert (code, quiet, out["needs_attention"]) == (0, True, False)
+        assert out["report"] == "今日已签过"
+        assert out["growth_result"] == "IDLE"
+
+    def test_growth_failure_keeps_checkin_fact(self, monkeypatch):
+        """成长失败不吞掉签到成功的事实: 报告合并、退出码抬高、置位提醒。"""
+        code, out, quiet, _ = self._run(
+            monkeypatch,
+            (0, {"result": "CLAIMED", "report": "成功领取 5 积分"}),
+            (1, {"result": "ERROR", "report": "成长中心异常"}),
+        )
+        assert out["report"] == "成功领取 5 积分；成长中心异常"
+        assert (code, quiet, out["needs_attention"]) == (1, False, True)
+
+    def test_growth_credits_merge_report_without_failure(self, monkeypatch):
+        """成长有积分入账也要进报告,但不抬高退出码。"""
+        code, out, _, _ = self._run(
+            monkeypatch,
+            (0, {"result": "CLAIMED", "report": "成功领取 5 积分"}),
+            (0, {"result": "GROWN", "report": "旅行归来", "credits_gained": 3}),
+        )
+        assert out["report"] == "成功领取 5 积分；旅行归来"
+        assert (code, out["needs_attention"]) == (0, False)
