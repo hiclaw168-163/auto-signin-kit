@@ -5,26 +5,102 @@
 
 ## 1. 你需要什么
 
-- Python **3.11+**(`pyproject.toml` 的 `requires-python`)
-- [uv](https://docs.astral.sh/uv/)(依赖、虚拟环境、全局安装都走它)
+- [uv](https://docs.astral.sh/uv/)(依赖、虚拟环境、全局安装都走它)——**第 2 节的
+  分平台安装里已经包含了装它的命令**,没有 uv 直接跟着跑就行;Python 3.11+
+  由 uv 自动准备,不用手动装
+- git(拉仓库用)
 - 要真跑签到命令: 对应的**桌面客户端在本机登录过一次**。工具不替你登录,
   它只是从客户端数据目录里读已有凭据(见各域 SPEC 的凭据链一节)。
 - 只读检查不需要登录: `doctor`(离线查凭据格式与解密能力)、
   `qoder auto --dry-run`(只报告可领取项)、`schedule render`(只打印不落盘)。
 
-## 2. 三步跑起来
+各域对操作系统的支持不一样(qoder 的自动凭据读取依赖 Windows DPAPI):
+
+| 域 | macOS | Windows | 说明 |
+|---|-------|---------|------|
+| workbuddy | ✅ | ✅ | 桌面端登录过即可 |
+| trae | ✅ | ✅ | SS_AES 信封解密,全平台可用 |
+| qoder | ⚠️ 仅手动注入 `QODER_TOKEN` | ✅ 自动读取 | 非 Windows 自动读会报退出码 2 |
+| schedule | launchd | schtasks | Linux 走 crontab |
+
+## 2. 安装(分平台,整段复制执行)
+
+每个平台从上到下**整段复制、逐条执行**即可,不需要预先装好 Python 或 uv。
+装完 uv 后如果提示找不到命令,**重开一个终端**再继续后面的步骤。
+
+### macOS / Linux(zsh/bash)
 
 ```bash
-uv sync                                 # 1. 装依赖(生成 .venv)
-uv tool install --editable . --force    # 2. 装成全局命令 auto-signin-kit
-auto-signin-kit --help                  # 3. 应列出 workbuddy / qoder / trae / schedule
+# ① 装 uv(已经装过可跳过;验证: uv --version)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# ② 拉仓库(本仓库在 GitHub 与 Gitee 同步维护,任选其一,地址以你获取到的地方为准)
+git clone <仓库地址>
+cd auto-signin-kit
+
+# ③ 安装依赖并装成全局命令(Python 3.11+ 由 uv 自动准备)
+uv sync
+uv tool install --editable . --force
+
+# ④ 验证: 应列出 workbuddy / qoder / trae / schedule
+auto-signin-kit --help
 ```
 
+### Windows(PowerShell)
+
+```powershell
+# ① 装 uv(已经装过可跳过;验证: uv --version)
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# ② 拉仓库(本仓库在 GitHub 与 Gitee 同步维护,任选其一,地址以你获取到的地方为准)
+git clone <仓库地址>
+cd auto-signin-kit
+
+# ③ 安装依赖并装成全局命令(Python 3.11+ 由 uv 自动准备)
+uv sync
+uv tool install --editable . --force
+
+# ④ 验证: 应列出 workbuddy / qoder / trae / schedule
+auto-signin-kit --help
+```
+
+### 装完之后
+
 `--editable` 让改源码**立即生效**,但有例外: 改了 `pyproject.toml`——尤其是
-**新增域的 entry_points**——必须重跑上面第 1、2 条。域注册表写在包的 dist-info
+**新增域的 entry_points**——必须重跑上面第 ③ 步两条。域注册表写在包的 dist-info
 里,只改文件不会自动生效。
 
 不想装全局,用 `uv run auto-signin-kit <域> <命令>` 也一样。
+
+要让它每天自己跑: `auto-signin-kit schedule install`(详见根 `README.md`
+的「定时调度」)。
+
+### 卸载
+
+**顺序有讲究: 必须先撤定时任务、再卸命令**——`schedule uninstall` 依赖
+`auto-signin-kit` 本身,反过来定时任务会照常触发一个已经不存在的命令。
+
+```bash
+# ① 撤掉所有定时任务(可选 --domain workbuddy 只撤一个域)
+auto-signin-kit schedule uninstall
+
+# ② 移除全局命令
+uv tool uninstall auto-signin-kit
+```
+
+可选清理(运行产生的日志与临时输出;Windows 用 PowerShell):
+
+```bash
+# macOS
+rm -rf ~/Library/Logs/auto-signin-kit
+```
+
+```powershell
+# Windows
+Remove-Item -Recurse -Force "$env:LOCALAPPDATA\auto-signin-kit"
+```
+
+不再使用的话,删掉仓库目录即可——代码、`.venv`、配置都在里面。
 
 ## 3. 命令面
 
