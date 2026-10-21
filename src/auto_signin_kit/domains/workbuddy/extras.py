@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from auto_signin_kit.core.logging import log_debug
 from auto_signin_kit.domains.workbuddy.fields import (
     as_int,
     client_token,
@@ -118,8 +119,8 @@ def run_display(
             ecode, ebody = net.get(GROWTH_BASE + "/energy")
             if ecode not in (401, 403) and 200 <= ecode < 300:
                 energy = dig(ebody, "balance")
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001 — 展示值失败只降级不炸整轮,但留痕到调试日志
+            log_debug("能量余额获取失败(展示用,已跳过): %s: %s" % (type(exc).__name__, exc))
     # 本轮没取过 /streak 或补登改了天数时才重新取;同一轮不打两次同一接口。
     try:
         if streak_body is not None and not state.stale:
@@ -130,8 +131,8 @@ def run_display(
             if scode2 not in (401, 403):
                 streak_obj = dig(sbody2, "streak") or {}
                 streak_days = streak_obj.get("days") if isinstance(streak_obj, dict) else None
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001 — 同上,展示值降级但留痕
+        log_debug("连签天数获取失败(展示用,已跳过): %s: %s" % (type(exc).__name__, exc))
     return energy, streak_days
 
 

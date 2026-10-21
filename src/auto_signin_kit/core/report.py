@@ -18,6 +18,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from auto_signin_kit.core.logging import log_debug
+
 #: 出现这些 result 时,``needs_attention`` 默认置 True(需人工介入)。
 ATTENTION_RESULTS = frozenset({
     "ERROR", "UNKNOWN", "NETWORK", "TIMEOUT", "NO_AUTH", "NO_SESSION",
@@ -45,15 +47,15 @@ def _dumps(out: dict[str, Any]) -> str:
 
 
 def _write_stdout(payload: str) -> None:
-    """stdout 写入,pyscriptw 下 sys.stdout 可能为 None;任何失败都静默返回。"""
+    """stdout 写入,pyscriptw 下 sys.stdout 可能为 None;失败降级到调试日志,不抛异常。"""
     stream = getattr(sys, "stdout", None)
     if stream is None:
         return
     try:
         stream.write(payload + "\n")
         stream.flush()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 — stdout 不可写时不炸输出通道,但要在 stderr 留痕
+        log_debug("stdout 写入失败(%s: %s),结果转走日志文件通道" % (type(exc).__name__, exc))
 
 
 def emit_result(

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from auto_signin_kit.core.adapters.platform_info import IS_WINDOWS
+from auto_signin_kit.core.logging import log_debug
 
 _SNAPSHOT_ALL = 0x2
 _PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
@@ -42,7 +43,8 @@ def running_process_paths(exe_names: Iterable[str], *, parent_dir: bool = False)
                 ok = kernel32.Process32Next(snapshot, ctypes.byref(entry))
         finally:
             kernel32.CloseHandle(snapshot)
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 — 进程发现是锦上添花,失败降级为已有结果并留痕
+        log_debug("进程快照枚举失败: %s: %s" % (type(exc).__name__, exc))
         return roots
     return roots
 
@@ -66,7 +68,8 @@ def _exe_path_of(kernel32: Any, pid: int) -> Path | None:
         size = wt.DWORD(len(buf))
         if kernel32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size)):
             return Path(buf.value[:size.value])
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 — 单个进程的 exe 路径拿不到就跳过,留痕即可
+        log_debug("进程 exe 路径查询失败: %s: %s" % (type(exc).__name__, exc))
         return None
     finally:
         kernel32.CloseHandle(handle)
