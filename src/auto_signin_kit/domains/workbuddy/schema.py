@@ -20,5 +20,3 @@ class WorkbuddyDomainConfig(DomainConfig):
     endpoint: str = DEFAULT_ENDPOINT
     #: 网络请求时间预算(秒);环境变量 WORKBUDDY_BUDGET_SECONDS 优先,详见 service 层。
     budget_seconds: float | None = Field(default=None, gt=0, le=540)
-    #: 成长中心轮询时空跑(已签 + 无可领取项)默认不写日志;设 True 则逐轮落盘。
-    growth_log_empty: bool = False

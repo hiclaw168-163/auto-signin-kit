@@ -22,7 +22,7 @@
 | `rewards.py` | 补签(makeup)+ 兑换 + 活跃日历解析/今日活跃检查 |
 | `extras.py` | 盲盒彩票 / Buddy 盲盒 / 展示;`run_growth` 串联成长中心 |
 | `fields.py` | 报文字段常量 |
-| `schema.py` | WorkbuddyDomainConfig(endpoint/budget_seconds/growth_log_empty) |
+| `schema.py` | WorkbuddyDomainConfig(endpoint/budget_seconds) |
 
 ## 2. 命令面
 

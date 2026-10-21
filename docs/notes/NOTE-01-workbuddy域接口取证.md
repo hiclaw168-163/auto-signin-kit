@@ -211,9 +211,9 @@ Base 路径:`/v2/activity/growth`。七步按固定顺序,**每步独立 try,一
 |---|---|
 | `WORKBUDDY_AUTH_FILE` | 手动指定凭据文件 |
 | `WORKBUDDY_EXE` | 指定客户端可执行文件(加密凭据解密用) |
-| `WORKBUDDY_SIGNIN_LOG` | silent 日志路径(默认平台日志目录 `signin.log`) |
+| `WORKBUDDY_SIGNIN_LOG` | 手动指定日志文件完整路径(默认项目 `logs/workbuddy.log`) |
 | `WORKBUDDY_BUDGET_SECONDS` | 网络请求时间预算 |
-| `WORKBUDDY_GROWTH_LOG_EMPTY=1` | 空跑也写日志 |
+| 每轮必写 | 空跑(ALREADY/INACTIVE)也写日志,记录即定时任务心跳 |
 
 ---
 
