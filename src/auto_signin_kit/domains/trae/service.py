@@ -1,7 +1,8 @@
 """Trae CN 每日签到: 状态查询 → 幂等领取 → 一行 JSON。
 
-契约对齐 Trae CN 桌面端 ttnet 调用(逆向): status 先行,``checked_in=true``
-直接回 ALREADY;领取 body 固定 ``{"Request": {}}``,写操作默认不重试。
+契约对齐 Trae CN 桌面端 ttnet 调用(2026-10-21 重新取证): status 先行,
+``checked_in=true`` 直接回 ALREADY;claim 的 body 为 ``{"req_source": 1}``
+且必须带 ``x-device-id`` 等设备头(缺了回业务码 9004),写操作默认不重试。
 """
 
 from __future__ import annotations
@@ -52,9 +53,13 @@ def _transport_errors(code: int, payload: Any, err: str | None) -> dict | None:
 
 
 def _business_error(code: int, payload: dict) -> dict | None:
-    """业务码层映射;0=成功,1001=认证被拒,其余如实上报。"""
+    """业务码层映射;0=成功,1001=认证被拒,9074=活动限流,其余如实上报。"""
     if code == 0:
         return None
+    if code == 9074:
+        return {"result": "RATE_LIMITED", "needs_attention": True, "code": code,
+                "report": "活动参与人数过多被服务端限流（code=9074），稍后重试即可："
+                          "手动再跑一次，或等 schedule 定时任务到点自然补跑"}
     return {"result": "ERROR", "needs_attention": True, "code": code,
             "report": "业务失败 code=%s：%s" % (code, _short(payload.get("message")) or "无消息")}
 
