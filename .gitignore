@@ -13,5 +13,8 @@ __pycache__/
 dist/
 build/
 
+# 运行时结果日志(--silent 落盘,默认在项目 logs/ 下,见 core/adapters/log_dir.py)
+logs/
+
 # 本机覆盖配置: 含本机路径/容器名等差异,禁止入库(见 docs/standards/STD-02)
 config/domains/*.local.yaml

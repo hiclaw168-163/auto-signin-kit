@@ -79,7 +79,7 @@
 
 - 主流程结果: `CLAIMED / ALREADY / ERROR / TIMEOUT / NETWORK / NO_SESSION / AUTH_*`。
 - `emit_result` 用 workbuddy 语义: 非 silent 仅 `ERROR` 补写日志;
-  日志文件 `signin.log`(`WORKBUDDY_SIGNIN_LOG` 覆盖)。
+  日志文件 `workbuddy.log`(`WORKBUDDY_SIGNIN_LOG` 覆盖)。
 - 轮询族: `WORKBUDDY_GROWTH_LOG_EMPTY=1` 强制空跑落盘(`poll --empty-log`)。
 - 连签/累计积分等数值进 result 顶层字段(stdout 机器可读)。
 

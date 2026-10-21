@@ -31,18 +31,24 @@ config · prompt · orchestration · adapters。
   | macOS | `~/Library/Logs/auto-signin-kit` |
   | Linux | XDG State(`~/.local/state/auto-signin-kit/logs`) |
 
-  硬规则: **日志文件不得落在仓库/cwd 根**(写根目录的旧方案已清理)。
-- 各域落盘文件名: workbuddy=`signin.log`、qoder=`qoder.log`、trae=`trae.log`。
+  硬规则: 日志目录由 `log_dir.default_log_dir()` 统一定位——
+  `AUTO_SIGNIN_KIT_LOG_DIR` > 项目 `logs/` 子目录(可编辑安装时即仓库根,
+  `logs/` 已 gitignore;直接写仓库**根目录**的旧方案已清理)> 平台目录。
+- 落盘文件名统一按域名派生: `<域名>.log`(workbuddy.log / qoder.log /
+  trae.log),由 `result_log_path` 统一命名,域层不自起文件名。
 
-## 3. `core/report.py` — 一行 JSON 结果契约(emit)
+## 3. `core/report.py` — JSON Lines 事件契约(emit)
 
-`emit_result(out, *, silent, log_path, sensitive, quiet, log_errors_without_silent)`
-——域 service 层唯一出口,本函数保证不抛异常。
+`emit_result(out, *, domain, action, silent, log_path, sensitive, quiet,
+log_errors_without_silent)`——域 service 层唯一出口,本函数保证不抛异常。
+两个通道输出**同一条 JSON Lines 记录**(整行完整 JSON,可 `jq` 过滤),
+标准字段: `ts`(ISO 8601 带时区)、`level`(`ERROR`=needs_attention,其余
+`INFO`)、`domain`/`action`(来源域与命令,参数或 out 同名字段,都没有则省略)。
 
 | 参数/行为 | 语义 |
 |-----------|------|
-| stdout 通道 | 非 silent 时写一行 JSON;`sys.stdout` 为 None(pythonw)则静默跳过 |
-| 落盘通道 | 追加写 `[%Y-%m-%d %H:%M:%S] <payload>`;写不进去回退 stdout(至少不丢结果) |
+| stdout 通道 | 非 silent 时写该记录;`sys.stdout` 为 None(pythonw)则静默跳过 |
+| 落盘通道 | 追加写同一 JSON 对象(时间戳在 `ts` 字段内,不再拼行首);写不进去回退 stdout(至少不丢结果) |
 | `ERROR` 双通道 | `result=="ERROR"` 时两条通道都走——即便 silent 参数写错也有痕迹 |
 | `log_errors_without_silent` | workbuddy 语义 True;**qoder/trae 传 False**(非静默不再回写) |
 | `sensitive` | 序列化后把已知令牌统一替换 `[REDACTED]`(域层登记,见 api.SENSITIVE) |

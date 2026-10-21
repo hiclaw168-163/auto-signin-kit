@@ -86,7 +86,7 @@ class Api:
 
 def log_path():
     """silent 模式日志路径;TRAE_SIGNIN_LOG 覆盖,默认平台日志目录的 trae.log。"""
-    return result_log_path("trae", env_var="TRAE_SIGNIN_LOG", filename="trae.log")
+    return result_log_path("trae", env_var="TRAE_SIGNIN_LOG")
 
 
 def env_flag(name: str) -> bool:

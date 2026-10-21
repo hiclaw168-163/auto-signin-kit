@@ -254,13 +254,13 @@ def run_action(
     from auto_signin_kit.domains.qoder.doctor import run_doctor
 
     if action not in ("claim", "status", "doctor"):
-        emit_result({"result": "ERROR", "needs_attention": True,
+        emit_result({"domain": "qoder", "result": "ERROR", "needs_attention": True,
                      "report": "未知命令：%s（可用：claim / status / doctor）" % action},
                     log_path=log_path(), log_errors_without_silent=False)
         return 2
     if action == "doctor":
         out, code = run_doctor()
-        emit_result(out, silent=silent, log_path=log_path(), sensitive=SENSITIVE,
+        emit_result(out, domain="qoder", silent=silent, log_path=log_path(), sensitive=SENSITIVE,
                     log_errors_without_silent=False)
         return code
 
@@ -269,17 +269,19 @@ def run_action(
     try:
         api, sess, staleness = build_api(config)
     except NoAuthError as exc:
-        emit_result({"result": "NO_AUTH", "needs_attention": True, "report": str(exc),
+        emit_result({"domain": "qoder", "result": "NO_AUTH",
+                     "needs_attention": True, "report": str(exc),
                      "looked_in": exc.looked_in or None},
                     silent=silent, log_path=log_path(), log_errors_without_silent=False)
         return 2
     except QoderAuthError as exc:
-        emit_result({"result": "AUTH_ERROR", "needs_attention": True, "report": str(exc),
+        emit_result({"domain": "qoder", "result": "AUTH_ERROR",
+                     "needs_attention": True, "report": str(exc),
                      "looked_in": exc.looked_in or None},
                     silent=silent, log_path=log_path(), log_errors_without_silent=False)
         return 1
     if staleness == "EXPIRED":
-        emit_result({"result": "AUTH_REJECTED", "needs_attention": True,
+        emit_result({"domain": "qoder", "result": "AUTH_REJECTED", "needs_attention": True,
                      "token_expires_at": sess.get("expiresAt") if sess else None,
                      "report": "登录态已过期，请打开 Qoder CN 桌面端重新登录"},
                     silent=silent, log_path=log_path(), log_errors_without_silent=False)
@@ -294,7 +296,7 @@ def run_action(
         code = 0 if out.get("result") in ("CLAIMED", "ALREADY", "INACTIVE", "DRY_RUN") else 1
     if warning:
         out.setdefault("config_warning", warning)
-    emit_result(out, silent=silent, log_path=log_path(), sensitive=SENSITIVE,
+    emit_result(out, domain="qoder", silent=silent, log_path=log_path(), sensitive=SENSITIVE,
                 quiet=bool(out.get("result") in QUIET_RESULTS
                            and not env_flag("QODER_SIGNIN_LOG_EMPTY")),
                 log_errors_without_silent=False)
