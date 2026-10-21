@@ -3,6 +3,8 @@
 from pathlib import Path
 
 from auto_signin_kit.core import logging as core_logging
+from auto_signin_kit.core.adapters import log_dir
+from auto_signin_kit.core.adapters.platform_info import IS_MACOS, IS_WINDOWS
 
 
 def test_env_override_wins(tmp_path, monkeypatch):
@@ -15,11 +17,19 @@ def test_env_override_wins(tmp_path, monkeypatch):
 
 
 def test_default_lands_in_platform_log_dir(tmp_path, monkeypatch):
-    """没指定环境变量时必须落在平台日志目录,而不是 cwd/仓库根(排错起点)。"""
-    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    """没指定环境变量时必须落在当前平台的日志目录,而不是 cwd/仓库根(排错起点)。"""
     monkeypatch.delenv("QODER_SIGNIN_LOG", raising=False)
-    path = core_logging.result_log_path("qoder", env_var="QODER_SIGNIN_LOG", filename="qoder.log")
-    resolved = Path(path)
+    if IS_WINDOWS:
+        monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+        expected = log_dir.app_data_root() / "logs"
+    elif IS_MACOS:
+        expected = Path.home() / "Library" / "Logs" / log_dir.APP_DIR_NAME
+    else:
+        monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+        expected = log_dir.app_data_root() / "log"
+    resolved = Path(core_logging.result_log_path(
+        "qoder", env_var="QODER_SIGNIN_LOG", filename="qoder.log"
+    ))
     assert resolved.name == "qoder.log"
-    assert resolved.parent == tmp_path / "auto-signin-kit" / "logs"
+    assert resolved.parent == expected
     assert resolved.parent.is_dir()
