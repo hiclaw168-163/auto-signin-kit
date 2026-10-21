@@ -1,0 +1,114 @@
+[project]
+name = "auto-signin-kit"
+version = "0.1.0"
+description = "各编程助手(WorkBuddy / Qoder CN / Trae CN)每日签到与领奖的自动化工具箱"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "typer>=0.12",
+  "pydantic>=2.0",
+  "pyyaml>=6.0",
+  "rich>=13.0",
+  # 项目自己的业务依赖(渲染库/客户端 SDK 等)加在这里
+]
+
+[project.scripts]
+auto-signin-kit = "auto_signin_kit.cli:main"
+# 如果想要额外的短命令别名,加一行就行,只要键名不重复即可:
+# dk = "auto_signin_kit.cli:main"
+
+# 域注册表: 新增一个域只需要在这里加一行,cli.py 不需要改动。
+# 加完记得 `uv sync && uv tool install --editable . --force`——
+# entry_points 写在 dist-info 里,只改这个文件不会自动生效。
+[project.entry-points."auto_signin_kit.domains"]
+workbuddy = "auto_signin_kit.domains.workbuddy:app"
+qoder = "auto_signin_kit.domains.qoder:app"
+trae = "auto_signin_kit.domains.trae:app"
+schedule = "auto_signin_kit.domains.schedule:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/auto_signin_kit"]
+
+# 如果项目有需要随包分发的静态资源(字体/数据文件),取消下面的注释并按需改路径:
+# [tool.hatch.build.targets.wheel.force-include]
+# "assets" = "auto_signin_kit/assets"
+# 脚手架默认把 config/ 放在仓库根(editable 布局,见 core/config 的 resolve_config_dir)。
+# wheel 安装也需要自带配置时,把仓库根 config/ 打进包内:
+# "config" = "auto_signin_kit/config"
+
+[dependency-groups]
+dev = ["pytest>=8.0", "ruff>=0.16", "import-linter>=2.0"]
+
+# --- 架构门禁: import-linter -------------------------------------------
+# import-linter 管得了的用它;管不了的(单文件行数、cli.py 是否混入业务逻辑
+# 这类"检查代码文本模式"的规则)用 tests/test_architecture_gate.py 补,
+# 两者互补,不是二选一。
+[tool.importlinter]
+root_package = "auto_signin_kit"
+
+[[tool.importlinter.contracts]]
+name = "总体分层"
+type = "layers"
+layers = [
+    "auto_signin_kit.cli",
+    "auto_signin_kit.domains",
+    "auto_signin_kit.orchestration",
+    "auto_signin_kit.core",
+]
+
+[[tool.importlinter.contracts]]
+name = "core 不依赖 domains"
+type = "forbidden"
+source_modules = ["auto_signin_kit.core"]
+forbidden_modules = ["auto_signin_kit.domains"]
+
+# core/ports/ 已建(定时调度有三种真实实现: schtasks / launchd / cron),
+# 所以这条契约启用: 端口只准放形状,不准反过来依赖具体实现。
+[[tool.importlinter.contracts]]
+name = "ports 不依赖 adapters"
+type = "forbidden"
+source_modules = ["auto_signin_kit.core.ports"]
+forbidden_modules = ["auto_signin_kit.core.adapters"]
+
+[[tool.importlinter.contracts]]
+name = "domains 之间彼此独立"
+type = "independence"
+modules = [
+    "auto_signin_kit.domains.workbuddy",
+    "auto_signin_kit.domains.qoder",
+    "auto_signin_kit.domains.trae",
+    "auto_signin_kit.domains.schedule",
+]
+ignore_imports = [
+    # 无跨域调用例外;若业务上真需要,显式在这里登记,格式:
+    # "auto_signin_kit.domains.a.xxx.service -> auto_signin_kit.domains.b.yyy.service"
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+  "integration: 需要真外部系统(网络/数据库/真仓库)的用例,默认不跑",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+# 规约用工具固化: 规则集就是 docs/standards/STD-04 的"强制"部分。
+# 新增强制条款先改这里,让违反即失败,不要只写进文档。
+# docstring 只启用 D1(必须有 docstring);中文句号结尾是推荐项(D4 不进门禁)。
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "N", "D1", "UP", "B", "C4", "SIM", "T20"]
+# UP031: `%` 格式是本项目(对齐 workbuddy-auto-signin 原实现)的既定风格,不强制迁 f-string
+# SIM112: Windows 环境变量解名(ProgramFiles(x86) 等)就是 OS 的规范名,大小写不容改写
+ignore = ["UP031", "SIM112"]
+
+[tool.ruff.lint.per-file-ignores]
+# 测试的用例名即文档,不强制逐用例 docstring;模块级 docstring 仍要求
+"tests/**" = ["D1"]
+# JS 是注入客户端运行时的解密助手原文(逐行对齐原项目),禁改排版
+"src/auto_signin_kit/domains/workbuddy/helper_js.py" = ["E501"]

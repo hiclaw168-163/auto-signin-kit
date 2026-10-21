@@ -1,0 +1,6 @@
+# 复制为 config/domains/trae.local.yaml(不入库)后按需改
+base_url: https://api.trae.cn
+log_empty: false
+budget_seconds: 240
+# 桌面端数据目录(含 User/globalStorage/storage.json 的根);null=按平台默认探测
+data_dir: null

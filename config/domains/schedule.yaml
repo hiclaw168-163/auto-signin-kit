@@ -1,0 +1,34 @@
+# schedule 域配置;对应 schema.py 的 ScheduleDomainConfig(extra=forbid)
+#
+# 触发时间(本地时间 HH:MM)与执行时限(分钟)在这里配置——这是日常要调的东西。
+# 命令行本身不在这里配: 它是代码结构,不是可调参数。
+#
+# 两条改这张表前必须知道的约束:
+#   1. 时限必须大于对应命令的时间预算,否则任务会在脚本自己收尾前被平台强杀:
+#      workbuddy auto ≤540s / workbuddy poll ≤240s / qoder ≤240s / trae ≤240s
+#   2. 触发时间故意高密度: 领取接口幂等,多跑不会多领,但能兜住"触发时刻
+#      关机 / 断网 / 刚开机网络没就绪"。不要"优化"掉看起来多余的时间点。
+#
+# 未在这里列出的任务沿用 data.py 清单里的默认值,所以只想改一个任务时,
+# 不必把整张表抄一遍。
+
+# 只注册这些任务(按 name);空列表 = 全部注册。
+enabled_tasks: []
+
+tasks:
+  WorkBuddyAutoSignin:
+    times: ["00:05"]
+    limit_minutes: 10
+  WorkBuddyGrowthPoll:
+    times: ["01:05", "05:05", "09:05", "13:05", "17:05", "21:05"]
+    limit_minutes: 5
+  # 活跃天数只认对话、不认领积分: 中午与傍晚各提醒一次,当天还来得及补一次对话。
+  WorkBuddyActiveCheck:
+    times: ["12:05", "20:05"]
+    limit_minutes: 5
+  QoderDailyCredits:
+    times: ["10:05", "11:05", "15:05", "19:05", "23:05"]
+    limit_minutes: 5
+  TraeDailyCheckin:
+    times: ["09:05", "13:05", "21:05"]
+    limit_minutes: 5

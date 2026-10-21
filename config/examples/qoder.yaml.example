@@ -1,0 +1,4 @@
+# 复制为 config/domains/qoder.local.yaml(不入库)后按需改
+base_url: https://openapi.qoder.com.cn
+log_empty: false
+budget_seconds: 240

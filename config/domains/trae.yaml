@@ -1,0 +1,8 @@
+# trae 域配置;对应 schema.py 的 TraeDomainConfig(extra=forbid)
+# 调用协议与凭据解锁见 domains/trae/auth.py 的模块文档(逆向自 Trae CN 桌面端)。
+base_url: https://api.trae.cn
+log_empty: false
+budget_seconds: 240
+# 桌面端数据目录(含 User/globalStorage/storage.json 的根);null=按平台默认探测。
+# 也可用环境变量 TRAE_AUTH_DIR 覆盖(优先级更高)。
+data_dir: null

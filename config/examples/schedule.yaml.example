@@ -1,0 +1,24 @@
+# 复制为 config/domains/schedule.local.yaml(不入库)后按需改
+#
+# 触发时间(本地时间 HH:MM)与执行时限(分钟);未列出的任务沿用 data.py 的默认值。
+# 时限必须大于对应命令的时间预算(workbuddy auto ≤540s,其余 ≤240s)。
+
+# 只注册这些任务(按 name);空列表 = 全部注册。
+# enabled_tasks: [WorkBuddyAutoSignin, QoderDailyCredits]
+
+tasks:
+  WorkBuddyAutoSignin:
+    times: ["00:05"]
+    limit_minutes: 10
+  WorkBuddyGrowthPoll:
+    times: ["01:05", "05:05", "09:05", "13:05", "17:05", "21:05"]
+    limit_minutes: 5
+  WorkBuddyActiveCheck:
+    times: ["12:05", "20:05"]
+    limit_minutes: 5
+  QoderDailyCredits:
+    times: ["10:05", "11:05", "15:05", "19:05", "23:05"]
+    limit_minutes: 5
+  TraeDailyCheckin:
+    times: ["09:05", "13:05", "21:05"]
+    limit_minutes: 5

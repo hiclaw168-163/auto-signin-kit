@@ -1,0 +1,4 @@
+# qoder 域配置;对应 schema.py 的 QoderDomainConfig(extra=forbid)
+base_url: https://openapi.qoder.com.cn
+log_empty: false
+budget_seconds: 240
