@@ -4,6 +4,8 @@ version = "0.1.0"
 description = "各编程助手(WorkBuddy / Qoder CN / Trae CN)每日签到与领奖的自动化工具箱"
 readme = "README.md"
 requires-python = ">=3.11"
+# 协议正文见仓库根 LICENSE;改动协议要同步这里、LICENSE 和 README 的「许可」节。
+license = { text = "MIT" }
 dependencies = [
   "typer>=0.12",
   "pydantic>=2.0",
