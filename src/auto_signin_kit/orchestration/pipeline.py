@@ -33,7 +33,7 @@ class Pipeline:
         ctx = context if context is not None else {}
         completed: list[Step] = []
         for step in self.steps:
-            log_info(f"▶ 步骤: {step.name}")
+            log_info(f"步骤: {step.name}")
             try:
                 result = step.run(ctx)
             except PipelineError:
@@ -71,7 +71,7 @@ class Pipeline:
                     failed_step=step.name,
                     completed=[s.name for s in completed],
                 )
-            log_success(f"✓ {step.name}成功")
+            log_success(f"{step.name}成功")
             completed.append(step)
         return ctx
 
