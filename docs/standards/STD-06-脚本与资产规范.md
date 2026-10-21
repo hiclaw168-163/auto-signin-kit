@@ -25,6 +25,7 @@
 | `PLAN-` | 实现计划(历史) | `docs/superpowers/plans/PLAN-01-<域>.md` |
 | `ADR-NNNN` | 架构决策记录 | `docs/adr/ADR-0001-<slug>.md` |
 | `NOTE-` | 逆向取证 / 上游项目分析 | `docs/notes/NOTE-01-workbuddy上游项目分析.md` |
+| `GUIDE-` | 操作指南(how-to) | `docs/guides/GUIDE-01-开发者上手.md` |
 
 - 字母前缀让文档类别一眼可辨;序号固定阅读顺序,新文档接续现有编号,
   不跳号、不复用已删除文档的编号。
@@ -60,6 +61,9 @@ plans 回答"**当时打算怎么做**",是执行前写的实现步骤:
   文件 | 对应 SPEC(仅 plans) | 主题 | 日期;新增/重命名/拆分即同步。
 - `docs/notes/` 一份 `README.md` 索引,表格列: 文件 | 取证对象 | 对应 SPEC;
   `NOTE-NN` 与域 SPEC 一一对应,新增取证文档接续编号并同步该表。
+- `docs/guides/` 一份 `README.md` 索引,表格列: 文件 | 主题 | 什么时候看;
+  指南面向"刚拿到仓库的人",写操作步骤而不写规范正文,新增指南接续 `GUIDE-NN` 编号
+  并同步该表。
 
 ### 2.5 对账(无门禁,列入自查)
 

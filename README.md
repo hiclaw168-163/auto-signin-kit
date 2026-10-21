@@ -8,6 +8,10 @@
 程序 / macOS launchd / Linux crontab),一次 `schedule install` 之后每天自动跑,
 不用再手动执行。调度怎么配置见 [定时调度](#定时调度让它每天自己跑)。
 
+第一次接触这个仓库想动手改?操作指南在 `docs/guides/`
+([上手](docs/guides/GUIDE-01-开发者上手.md) / [新增域](docs/guides/GUIDE-02-新增一个域.md) /
+[排错](docs/guides/GUIDE-03-排错手册.md))。
+
 ---
 
 ## 安装
@@ -224,6 +228,7 @@ src/auto_signin_kit/
 | `docs/notes/NOTE-01~03` | 逆向取证:端点、信封协议与证据链(索引见 `docs/notes/README.md`) |
 | `docs/superpowers/specs/SPEC-01~06` | as-built 实现:代码实际是什么样 |
 | `docs/adr/ADR-0001~0003` | 架构决策:为什么这样设计 |
+| `docs/guides/GUIDE-01~03` | 操作指南: 上手 / 新增域 / 排错(索引见 `docs/guides/README.md`) |
 
 ---
 
@@ -239,8 +244,4 @@ uv run ruff check && uv run lint-imports && uv run pytest -q
 
 ## 许可
 
-尚未声明——`pyproject.toml` 里没有 `license` 字段,仓库里也没有 `LICENSE`。
-
-本项目的逆向取证对象是上游 `88lin/workbuddy-auto-signin`(MIT),但本仓库是
-重新实现而非它的 fork,许可不能自动继承。公开发布前需要你选定一个,并同步写进
-`pyproject.toml` 的 `license` 与 `LICENSE` 文件。
+[MIT](LICENSE)。
