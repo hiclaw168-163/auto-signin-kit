@@ -1,0 +1,4 @@
+# workbuddy 域配置;对应 schema.py 的 WorkbuddyDomainConfig(extra=forbid)
+endpoint: https://copilot.tencent.com
+# budget_seconds: 420   # 网络请求预算秒数;WORKBUDDY_BUDGET_SECONDS 环境变量优先
+# growth_log_empty: false

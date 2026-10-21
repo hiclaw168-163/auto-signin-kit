@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+
+# 工具缓存
+.pytest_cache/
+.ruff_cache/
+.import_linter_cache/
+
+# 构建产物
+dist/
+build/
+
+# 本机覆盖配置: 含本机路径/容器名等差异,禁止入库(见 docs/standards/STD-02)
+config/domains/*.local.yaml
