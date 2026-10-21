@@ -31,6 +31,17 @@ uv tool install --editable . --force
 `uv sync && uv tool install --editable . --force`——域注册表写在包的
 dist-info 里,只改文件不会自动生效。
 
+卸载(顺序别反——`schedule uninstall` 依赖命令本身;先卸命令的话,定时任务会
+照常触发一个已经不存在的命令):
+
+```bash
+auto-signin-kit schedule uninstall    # 撤掉全部定时任务(可选 --domain 只撤一个域)
+uv tool uninstall auto-signin-kit     # 移除全局命令
+```
+
+可选清理: macOS 删 `~/Library/Logs/auto-signin-kit`,Windows 删
+`%LOCALAPPDATA%\auto-signin-kit`。
+
 ---
 
 ## 用法
@@ -52,8 +63,11 @@ auto-signin-kit trae doctor                # 离线检查登录态可读性与�
 
 静默(`--silent`)模式的结果写进**平台日志目录**(不落在仓库/cwd 根目录):
 Windows 为 `%LOCALAPPDATA%\auto-signin-kit\logs\signin.log`(qoder 为
-`qoder.log`,trae 为 `trae.log`),`WORKBUDDY_SIGNIN_LOG` /
-`QODER_SIGNIN_LOG` / `TRAE_SIGNIN_LOG` 可覆盖;编码固定 UTF-8。
+`qoder.log`,trae 为 `trae.log`),macOS 为
+`~/Library/Logs/auto-signin-kit/`,Linux 为
+`$XDG_STATE_HOME/auto-signin-kit/log`(缺省 `~/.local/state/...`);
+`WORKBUDDY_SIGNIN_LOG` / `QODER_SIGNIN_LOG` / `TRAE_SIGNIN_LOG` 可覆盖;
+编码固定 UTF-8。
 
 退出码约定:
 
@@ -70,7 +84,8 @@ Windows 为 `%LOCALAPPDATA%\auto-signin-kit\logs\signin.log`(qoder 为
 - workbuddy 域: 桌面端登录后自动写出的凭据文件,`WORKBUDDY_AUTH_FILE`
   可覆盖;新版加密凭据(`sym-v1` 信封)自动调客户端运行时在隐藏子进程里解密。
 - qoder 域: 桌面端数据目录(`%APPDATA%\com.qodercn.app*`,`DPAPI+GCM` 双层
-  解密),`QODER_TOKEN` 可覆盖。
+  解密;**自动读取仅 Windows**,macOS/Linux 需设置 `QODER_TOKEN`),`QODER_TOKEN`
+  可覆盖。
 - trae 域: 桌面端 storage.json(`%APPDATA%\Trae CN\User\globalStorage`,
   `SS_AES` 信封解密,无需 DPAPI 全平台可用),`TRAE_TOKEN` 可覆盖。
 - 敏感值(令牌)在一切输出前统一替换为 `[REDACTED]`。
