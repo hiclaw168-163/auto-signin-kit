@@ -4,7 +4,7 @@
 > as-built 实现。
 > **状态**: 已实现(本机真实验证过: 签到、连签、成长中心、积分兑换)
 > **关联**: [SPEC-01](SPEC-01-架构总览.md) · [SPEC-02](SPEC-02-core层公共契约.md) ·
-> 逆向母本 [NOTE-01-workbuddy上游项目分析](../../notes/NOTE-01-workbuddy上游项目分析.md)
+> 逆向母本 [NOTE-01-workbuddy域接口取证](../../notes/NOTE-01-workbuddy域接口取证.md)
 
 ## 1. 模块分工(13 文件)
 

@@ -1,6 +1,6 @@
 """Qoder CN 每日 Credits: 活动查询 → 分类 → 幂等领取 → 一行 JSON。
 
-对策对齐 qoder_signin(逆向所得 API 契约): /sash/api/v1/me/campaigns;
+对策见 NOTE-02(qoder 积分面取证)的结论: /sash/api/v1/me/campaigns;
 缺 ``Cosy-ClientType: 10`` 头服务端返回空列表;领取 POST 默认不重试防重复。
 """
 
