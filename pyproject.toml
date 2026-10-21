@@ -105,7 +105,7 @@ target-version = "py311"
 # docstring 只启用 D1(必须有 docstring);中文句号结尾是推荐项(D4 不进门禁)。
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "N", "D1", "UP", "B", "C4", "SIM", "T20"]
-# UP031: `%` 格式是本项目(对齐 workbuddy-auto-signin 原实现)的既定风格,不强制迁 f-string
+# UP031: `%` 格式是本项目的既定风格,不强制迁 f-string
 # SIM112: Windows 环境变量解名(ProgramFiles(x86) 等)就是 OS 的规范名,大小写不容改写
 ignore = ["UP031", "SIM112"]
 

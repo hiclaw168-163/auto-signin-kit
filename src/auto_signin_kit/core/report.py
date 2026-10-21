@@ -1,6 +1,6 @@
 """签到结果输出: 一行 JSON 契约 + 令牌脱敏 + 静默日志双通道。
 
-对应 workbuddy-auto-signin 的 ``emit`` 契约:
+对应签到脚本长期沿用的 ``emit`` 契约:
 
 - 结果判定用 action 前缀: ``silent`` 写日志文件(pythonw 下 stdout 是 None,
   print 静默成功等于扔进黑洞,NO_AUTH 这类最需要人处理的结果会消失)。

@@ -57,3 +57,59 @@ asar 中"宠物"字样出现 33 处,**全部**是桌面宠物设置页的无障�
   对照分析即可。
 - `trae` 域逆向时可直接复用本文档的方法(定位 webview 缓存 →
   `campaignUrl` → 拉活动页 JS 分析端点)。
+
+---
+
+## 附: 凭据、风控头与命令的取证
+
+上一节证明的是"积分入口只有 campaigns";这一节记录**拿到这些端点后怎么用**
+的事实: 凭据怎么解、为什么必须带风控头、命令面怎么切。
+
+### A1. campaigns 契约
+
+Base:`https://openapi.qoder.com.cn`(`QODER_BASE_URL` 可覆盖)。
+
+```
+GET  /sash/api/v1/me/campaigns            查活动列表
+POST /sash/api/v1/me/campaigns/{id}/claim 领取(幂等,重复调用返回 replayed:true)
+```
+
+必需请求头:`Accept` / `User-Agent: Qoder/claim` / `Cosy-ClientType: 10` /
+`Authorization: Bearer <token>`——**缺 `Cosy-ClientType` 服务端返回空活动列表**,
+表现为"没有可领的活动"而不是报错,很容易误判成活动真的没了。
+
+筛选逻辑: `actionType == "CLAIM_BENEFIT"` → 时间窗内(`startAt/endAt`)→ 按
+`claimStatus` 分流: `CLAIMABLE` 待领 / `CLAIMED` 已领 / 其它 `PENDING` / 窗外
+`INACTIVE`。奖励量读 `benefit.amount`,有效期 `benefit.validity.mode == RELATIVE_DAYS`(30 天)。
+
+### A2. Windows 本地登录态解密
+
+- 数据目录: `%APPDATA%\com.qodercn.app*`(glob 扫描,`QODER_AUTH_DIR` 可覆盖)
+- 加密文件 `auth.v1.dat`,密钥在 `Local State` 里,由 **DPAPI(CryptUnprotectData)
+  + AES-256-GCM(CNG BCrypt)** 双层保护
+- token 过期: `expiresAt` ISO 时间戳,过期直接报 `AUTH_REJECTED` 提醒重新登录——
+  **不碰 refresh token**,不与桌面端争抢令牌轮换
+- 非 Windows: `QODER_TOKEN` 环境变量手动提供(优先级高于本地登录态)
+
+### A3. 设备风控头
+
+服务端对**带设备标识**的请求才下发活动列表。本项目不编造标识,而是运行 Qoder
+安装目录里自带的 `resources/umid/runtime-info.exe` 取客户端平时用的那一份:
+
+- 定位顺序: 注册表卸载项扫 `qoder` 关键字 → 进程快照找运行中的 `qoder cn.exe`
+  提取路径 → 默认目录
+- 找不到就退回普通请求,不影响主流程;`QODER_UMID_EXE` 可手动指定;结果带缓存
+
+### A4. 命令面与结果码
+
+```
+qoder doctor          # 离线检查登录态与设备组件
+qoder status          # 只查活动列表不领取
+qoder auto --dry-run  # 只报告会领到什么
+qoder auto            # 真领取(幂等);--once 跳过网络重试
+```
+
+结果码: `CLAIMED / ALREADY / PENDING / INACTIVE / DRY_RUN / NO_AUTH(2) /
+AUTH_ERROR / AUTH_REJECTED / FORBIDDEN / NETWORK / TIMEOUT / ERROR`。
+重试仅针对网络错误 / 429 / 5xx(退避 5/15/30s),时间预算 240s;空跑不写日志
+(`QODER_SIGNIN_LOG_EMPTY=1` 例外)。

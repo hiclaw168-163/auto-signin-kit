@@ -24,7 +24,7 @@
 | `SPEC-` | as-built 设计文档 | `docs/superpowers/specs/SPEC-01-架构设计.md` |
 | `PLAN-` | 实现计划(历史) | `docs/superpowers/plans/PLAN-01-<域>.md` |
 | `ADR-NNNN` | 架构决策记录 | `docs/adr/ADR-0001-<slug>.md` |
-| `NOTE-` | 逆向取证 / 上游项目分析 | `docs/notes/NOTE-01-workbuddy上游项目分析.md` |
+| `NOTE-` | 逆向取证(端点面 / 凭据信封协议) | `docs/notes/NOTE-01-workbuddy域接口取证.md` |
 | `GUIDE-` | 操作指南(how-to) | `docs/guides/GUIDE-01-开发者上手.md` |
 
 - 字母前缀让文档类别一眼可辨;序号固定阅读顺序,新文档接续现有编号,

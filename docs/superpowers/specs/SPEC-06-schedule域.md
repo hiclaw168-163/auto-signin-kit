@@ -4,7 +4,7 @@
 > **状态**: 已实现(本机真实验证过: 5 个任务全部注册成功,schtasks 查询状态"就绪"、
 > 下次运行时间正确;注销路径为幂等桩测,未在本机实删)
 > **关联**: [SPEC-01](SPEC-01-架构总览.md) · [SPEC-02](SPEC-02-core层公共契约.md) ·
-> 设计来源 [NOTE-01 §5 定时自动化](../../notes/NOTE-01-workbuddy上游项目分析.md)
+> 设计来源 [NOTE-01 §11 定时调度的两条依据](../../notes/NOTE-01-workbuddy域接口取证.md)
 
 ## 1. 模块分工(4 文件)
 
@@ -28,7 +28,7 @@ OS 差异全部在 `core/adapters/scheduler/`,本域只见 `core.ports.scheduler
 | `QoderDailyCredits` | `qoder auto --silent` | 10/11/15/19/23:05 | PT5M |
 | `TraeDailyCheckin` | `trae auto --silent` | 09/13/21:05 | PT5M |
 
-Trae 域是本次新增的——原上游项目(`NOTE-01`)只有 WorkBuddy 与 Qoder。
+Trae 域是本仓库自己扩展的: 取证文档 `NOTE-01` 只覆盖 WorkBuddy,Qoder 见 `NOTE-02`。
 
 ### 2.1 触发时间与时限在哪改
 
