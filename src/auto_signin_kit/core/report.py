@@ -1,6 +1,7 @@
-"""签到结果输出: 一行 JSON 契约 + 令牌脱敏 + 静默日志双通道。
+"""签到结果输出: JSON Lines 事件契约 + 令牌脱敏 + 静默日志双通道。
 
-对应签到脚本长期沿用的 ``emit`` 契约:
+对应签到脚本长期沿用的 ``emit`` 契约,输出升级为 JSON Lines 事件格式
+(每行一个完整 JSON 对象,stdout 与日志文件同一条记录):
 
 - 结果判定用 action 前缀: ``silent`` 写日志文件(pythonw 下 stdout 是 None,
   print 静默成功等于扔进黑洞,NO_AUTH 这类最需要人处理的结果会消失)。
@@ -61,6 +62,8 @@ def _write_stdout(payload: str) -> None:
 def emit_result(
     out: dict[str, Any],
     *,
+    domain: str | None = None,
+    action: str | None = None,
     silent: bool = False,
     log_path: Path | None = None,
     sensitive: set[str] | None = None,
@@ -69,14 +72,35 @@ def emit_result(
 ) -> None:
     """按双通道契约输出结果;本函数保证不抛异常。
 
+    两个通道输出**同一条 JSON Lines 事件记录**,整行是完整 JSON
+    (``jq -c 'select(.level=="ERROR")' 日志文件`` 可直接过滤):
+
+    - ``ts``: ISO 8601 带时区;
+    - ``level``: ``ERROR``=needs_attention(需要人工),其余 ``INFO``;
+    - ``domain``/``action``: 来源域与命令,来自同名参数或 out 里的同名字段,
+      两者都没有则省略;
+    - 其余字段原样并入(out 的同名字段优先于参数缺省)。
+
     ``silent``: 写日志文件而非 stdout(定时任务静默运行)。
     ``log_errors_without_silent``: 非静默模式下 ERROR 结果也补写日志(workbuddy
     语义);qoder 语义不需要,传 False。
     """
+    record: dict[str, Any] = {
+        "ts": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "level": "INFO",
+    }
     if isinstance(out, dict):
-        out = dict(out)
-        out.setdefault("needs_attention", out.get("result") in ATTENTION_RESULTS)
-    payload = _dumps(out)
+        record.update(out)
+        record.setdefault("needs_attention", record.get("result") in ATTENTION_RESULTS)
+        if record["needs_attention"]:
+            record["level"] = "ERROR"
+    else:
+        record["payload"] = str(out)
+    if domain:
+        record["domain"] = domain
+    if action:
+        record["action"] = action
+    payload = _dumps(record)
     for value in sensitive or ():
         payload = payload.replace(value, "[REDACTED]")
     is_error = isinstance(out, dict) and out.get("result") == "ERROR"
@@ -86,13 +110,12 @@ def emit_result(
             return
     if quiet:
         return
-    line = "[%s] %s\n" % (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), payload)
     if log_path is None:
         return
     try:
         log_path.parent.mkdir(parents=True, exist_ok=True)
         with log_path.open("a", encoding="utf-8") as handle:
-            handle.write(line)
+            handle.write(payload + "\n")
         return
     except Exception:
         # 日志写不进去时退回 stdout,至少不把结果丢掉。

@@ -155,13 +155,13 @@ def run_action(
 
     del once  # 查询+领取共两次请求,预算内完成;once 保留参数位与 qoder 对齐
     if action not in ("claim", "status", "doctor"):
-        emit_result({"result": "ERROR", "needs_attention": True,
+        emit_result({"domain": "trae", "result": "ERROR", "needs_attention": True,
                      "report": "未知命令：%s（可用：claim / status / doctor）" % action},
                     log_path=log_path(), log_errors_without_silent=False)
         return 2
     if action == "doctor":
         out, code = run_doctor(config.data_dir)
-        emit_result(out, silent=silent, log_path=log_path(), sensitive=SENSITIVE,
+        emit_result(out, domain="trae", silent=silent, log_path=log_path(), sensitive=SENSITIVE,
                     log_errors_without_silent=False)
         return code
 
@@ -170,17 +170,19 @@ def run_action(
     try:
         api, info, staleness = build_api(config)
     except NoAuthError as exc:
-        emit_result({"result": "NO_AUTH", "needs_attention": True, "report": str(exc),
+        emit_result({"domain": "trae", "result": "NO_AUTH",
+                     "needs_attention": True, "report": str(exc),
                      "looked_in": exc.looked_in or None},
                     silent=silent, log_path=log_path(), log_errors_without_silent=False)
         return 2
     except TraeAuthError as exc:
-        emit_result({"result": "AUTH_ERROR", "needs_attention": True, "report": str(exc),
+        emit_result({"domain": "trae", "result": "AUTH_ERROR",
+                     "needs_attention": True, "report": str(exc),
                      "looked_in": exc.looked_in or None},
                     silent=silent, log_path=log_path(), log_errors_without_silent=False)
         return 1
     if staleness == "EXPIRED":
-        emit_result({"result": "AUTH_REJECTED", "needs_attention": True,
+        emit_result({"domain": "trae", "result": "AUTH_REJECTED", "needs_attention": True,
                      "token_expires_at": info.get("expiredAt") if info else None,
                      "report": "登录态已过期，请打开 Trae CN 桌面端重新登录"},
                     silent=silent, log_path=log_path(), log_errors_without_silent=False)
@@ -193,7 +195,7 @@ def run_action(
         out, code = run_claim(api, budget, dry_run=dry_run)
     if warning:
         out.setdefault("config_warning", warning)
-    emit_result(out, silent=silent, log_path=log_path(), sensitive=SENSITIVE,
+    emit_result(out, domain="trae", silent=silent, log_path=log_path(), sensitive=SENSITIVE,
                 quiet=bool(out.get("result") in QUIET_RESULTS
                            and not env_flag("TRAE_SIGNIN_LOG_EMPTY")),
                 log_errors_without_silent=False)

@@ -39,8 +39,9 @@ auto-signin-kit schedule uninstall    # 撤掉全部定时任务(可选 --domain
 uv tool uninstall auto-signin-kit     # 移除全局命令
 ```
 
-可选清理: macOS 删 `~/Library/Logs/auto-signin-kit`,Windows 删
-`%LOCALAPPDATA%\auto-signin-kit`。
+可选清理: 运行日志默认在项目 `logs/` 目录(或 `AUTO_SIGNIN_KIT_LOG_DIR`
+指定的目录),随目录一起删除即可;非项目环境下在平台目录(macOS
+`~/Library/Logs/auto-signin-kit`、Windows `%LOCALAPPDATA%\auto-signin-kit`)。
 
 ---
 
@@ -58,16 +59,24 @@ auto-signin-kit trae auto                  # Trae CN 每日签到领取(幂等)
 auto-signin-kit trae doctor                # 离线检查登录态可读性与有效期
 ```
 
-每个命令输出**一行 JSON**(stdout 由机器读,过程日志走 stderr),字段
-``result`` / ``report`` / ``needs_attention``;退出码非 0 就是有事要人处理。
+每个命令输出**一行 JSON 事件**(stdout 由机器读,过程日志走 stderr),字段
+``ts``(ISO 8601 带时区)/ ``level``(`ERROR`=needs_attention)/ ``domain`` /
+``result`` / ``report`` / ``needs_attention``;日志文件是同样的 JSON Lines
+格式,`jq -c 'select(.level=="ERROR")' logs/*.log` 可直接过滤;退出码非 0
+就是有事要人处理。
 
-静默(`--silent`)模式的结果写进**平台日志目录**(不落在仓库/cwd 根目录):
-Windows 为 `%LOCALAPPDATA%\auto-signin-kit\logs\signin.log`(qoder 为
-`qoder.log`,trae 为 `trae.log`),macOS 为
-`~/Library/Logs/auto-signin-kit/`,Linux 为
-`$XDG_STATE_HOME/auto-signin-kit/log`(缺省 `~/.local/state/...`);
-`WORKBUDDY_SIGNIN_LOG` / `QODER_SIGNIN_LOG` / `TRAE_SIGNIN_LOG` 可覆盖;
-编码固定 UTF-8。
+静默(`--silent`)模式的结果写进结果日志(不落在仓库/cwd 根目录),目录优先级:
+
+1. 域级环境变量指定的完整路径(`WORKBUDDY_SIGNIN_LOG` / `QODER_SIGNIN_LOG` /
+   `TRAE_SIGNIN_LOG`);
+2. `AUTO_SIGNIN_KIT_LOG_DIR` 环境变量指定的目录(跨平台行为一致);
+3. 默认**项目的 `logs/` 目录**(从仓库运行或可编辑安装时),文件名统一为
+   `<域名>.log`——即 `logs/workbuddy.log` / `logs/qoder.log` / `logs/trae.log`;
+4. 定位不到项目根时回退平台目录: Windows
+   `%LOCALAPPDATA%\auto-signin-kit\logs`、macOS `~/Library/Logs/auto-signin-kit`、
+   Linux `$XDG_STATE_HOME/auto-signin-kit/log`(缺省 `~/.local/state/...`)。
+
+编码固定 UTF-8。`logs/` 已被 `.gitignore` 排除,不会误提交。
 
 退出码约定:
 

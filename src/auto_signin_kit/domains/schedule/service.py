@@ -145,7 +145,7 @@ def run_action(
 ) -> int:
     """命令分发;结果按一行 JSON 契约输出,退出码 0/1/2,本函数保证不抛业务异常。"""
     if action not in ACTIONS:
-        emit_result({
+        emit_result({"domain": "schedule",
             "result": "ERROR",
             "needs_attention": True,
             "report": "未知命令：%s（可用：%s）" % (action, " / ".join(ACTIONS)),
@@ -153,7 +153,7 @@ def run_action(
         return 2
     tasks = select_tasks(config, domain)
     if not tasks:
-        emit_result({
+        emit_result({"domain": "schedule",
             "result": "ERROR",
             "needs_attention": True,
             "report": "没有匹配的任务（可用域：%s；也检查配置里的 enabled_tasks）"
@@ -165,7 +165,7 @@ def run_action(
     if action == "status":
         items = status(tasks, active)
         missing = [item["name"] for item in items if not item["installed"]]
-        emit_result({
+        emit_result({"domain": "schedule",
             "result": "OK",
             "needs_attention": False,
             "platform": active.platform,
@@ -185,5 +185,5 @@ def run_action(
     out["platform"] = active.platform
     if dry_run:
         out["report"] = "[dry-run] " + out["report"]
-    emit_result(out)
+    emit_result(out, domain="schedule")
     return 1 if failed else 0

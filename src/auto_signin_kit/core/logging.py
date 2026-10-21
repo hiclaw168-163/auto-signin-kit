@@ -68,13 +68,15 @@ def log_success(message: str) -> None:
     _emit(message, "✓ ", "green")
 
 
-def result_log_path(domain: str, *, env_var: str, filename: str) -> Path:
+def result_log_path(domain: str, *, env_var: str, filename: str | None = None) -> Path:
     """结果 JSON 落盘路径的统一入口(所有域共用,禁止各自再写一份)。
 
-    优先级: ``env_var`` 指定的自定义路径 > 平台日志目录下的 ``filename``。
-    Windows: ``%LOCALAPPDATA%\\auto-signin-kit\\logs``;macOS/Linux 见 log_dir 模块。
+    文件名缺省为 ``<域名>.log``——按域名命名,日志与实际来源一一对应,
+    域层不用(也不该)自己起名。优先级: ``env_var`` 指定的自定义完整路径 >
+    ``AUTO_SIGNIN_KIT_LOG_DIR`` 目录下的文件 > 项目 ``logs/`` 目录 >
+    平台日志目录(非项目环境兜底)。各目录的解析见 ``log_dir.default_log_dir``。
     """
     custom = os.environ.get(env_var)
     if custom:
         return Path(custom).expanduser()
-    return default_log_dir() / filename
+    return default_log_dir() / (filename or f"{domain}.log")

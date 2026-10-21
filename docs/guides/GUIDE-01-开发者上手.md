@@ -88,17 +88,9 @@ auto-signin-kit schedule uninstall
 uv tool uninstall auto-signin-kit
 ```
 
-可选清理(运行产生的日志与临时输出;Windows 用 PowerShell):
-
-```bash
-# macOS
-rm -rf ~/Library/Logs/auto-signin-kit
-```
-
-```powershell
-# Windows
-Remove-Item -Recurse -Force "$env:LOCALAPPDATA\auto-signin-kit"
-```
+可选清理: 运行日志默认在项目 `logs/` 目录(或 `AUTO_SIGNIN_KIT_LOG_DIR`
+指定的目录),随仓库目录一起删除;非项目环境下在平台目录(macOS
+`~/Library/Logs/auto-signin-kit`、Windows `%LOCALAPPDATA%\auto-signin-kit`)。
 
 不再使用的话,删掉仓库目录即可——代码、`.venv`、配置都在里面。
 
@@ -113,8 +105,10 @@ auto-signin-kit trae auto           # 每日签到领取
 auto-signin-kit schedule status     # 看定时任务注册情况
 ```
 
-每个命令输出**一行 JSON**(stdout 给机器读,过程日志走 stderr),关键字段
-`result` / `report` / `needs_attention`。退出码:
+每个命令输出**一行 JSON 事件**(stdout 给机器读,过程日志走 stderr),关键字段
+`ts`(ISO 8601 带时区)/ `level`(`ERROR`=needs_attention)/ `domain` /
+`result` / `report` / `needs_attention`。日志文件是同样的 JSON Lines 格式
+(定位问题: `jq -c 'select(.level=="ERROR")' logs/*.log`)。退出码:
 
 | 码 | 含义 |
 |---|---|
