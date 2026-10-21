@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-import os
 import uuid
 from typing import Any
 
@@ -73,11 +72,6 @@ def fmt_eta(arrive_at: Any, server_now: Any) -> str:
     if minutes < 60:
         return "，约 %d 分钟后回" % max(1, minutes)
     return "，约 %.1f 小时后回" % (left / 3600.0)
-
-
-def env_flag(name: str) -> bool:
-    """开关型环境变量是否为真;空串与 0/false/no/off 一律视为关。"""
-    return (os.environ.get(name) or "").strip().lower() in ("1", "true", "yes", "on")
 
 
 def client_token(prefix: str = "u") -> str:

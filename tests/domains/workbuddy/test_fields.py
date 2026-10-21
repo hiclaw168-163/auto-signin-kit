@@ -47,16 +47,12 @@ def test_fmt_eta_boundary_outputs():
     assert fields.fmt_eta(float("nan"), 1200) == ""
 
 
-def test_env_flag_only_true_values_count(monkeypatch):
-    """开关变量只有 1/true/yes/on(忽略大小写与空白)算开;0/false/no/off/未设算关。"""
-    for value in ("1", "true", "YES", "On"):
-        monkeypatch.setenv("WB_TEST_FLAG", value)
-        assert fields.env_flag("WB_TEST_FLAG") is True
-    for value in ("0", "false", "no", "OFF", "", " "):
-        monkeypatch.setenv("WB_TEST_FLAG", value)
-        assert fields.env_flag("WB_TEST_FLAG") is False
-    monkeypatch.delenv("WB_TEST_FLAG", raising=False)
-    assert fields.env_flag("WB_TEST_FLAG") is False
+def test_client_token_is_unique_per_call():
+    """防重放 token 每次调用都不同,前缀保留。"""
+    first = fields.client_token()
+    second = fields.client_token("u2")
+    assert first != second
+    assert second.startswith("u2-")
 
 
 def test_response_classification_helpers():

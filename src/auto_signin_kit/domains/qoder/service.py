@@ -16,14 +16,10 @@ from auto_signin_kit.domains.qoder.api import (
     SENSITIVE,
     Api,
     build_api,
-    env_flag,
     log_path,
     parse_budget,
 )
 from auto_signin_kit.domains.qoder.auth import TZ_CN, NoAuthError, QoderAuthError
-
-#: 空跑时默认不落盘的结果;QODER_SIGNIN_LOG_EMPTY=1 可强制逐轮写。
-QUIET_RESULTS = ("ALREADY", "INACTIVE")
 
 
 def _short(value: Any, limit: int = 200) -> str:
@@ -297,7 +293,5 @@ def run_action(
     if warning:
         out.setdefault("config_warning", warning)
     emit_result(out, domain="qoder", silent=silent, log_path=log_path(), sensitive=SENSITIVE,
-                quiet=bool(out.get("result") in QUIET_RESULTS
-                           and not env_flag("QODER_SIGNIN_LOG_EMPTY")),
                 log_errors_without_silent=False)
     return code

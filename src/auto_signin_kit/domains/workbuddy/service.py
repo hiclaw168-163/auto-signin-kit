@@ -13,7 +13,6 @@ from auto_signin_kit.core.report import emit_result, make_result
 from auto_signin_kit.domains.workbuddy import checkin, daily, rewards
 from auto_signin_kit.domains.workbuddy.credentials import find_auth_file, load_session_retry
 from auto_signin_kit.domains.workbuddy.extras import run_growth
-from auto_signin_kit.domains.workbuddy.fields import env_flag
 from auto_signin_kit.domains.workbuddy.net import Net
 from auto_signin_kit.domains.workbuddy.schema import DEFAULT_ENDPOINT, WorkbuddyDomainConfig
 from auto_signin_kit.domains.workbuddy.session import (
@@ -171,11 +170,9 @@ def run_action(action: str, config: WorkbuddyDomainConfig, *, silent: bool = Fal
     net = Net(endpoint, headers, budget)
 
     if action in ("auto", "silent") or poll:
-        code, out, quiet = daily.run_daily(net)
+        code, out = daily.run_daily(net)
         if poll:
             out["trigger"] = "poll"
-            if quiet and not env_flag("WORKBUDDY_GROWTH_LOG_EMPTY"):
-                return code  # 空跑不落盘,免得有价值的记录被淹没
         if warning:
             out.setdefault("config_warning", warning)
         emit_result(out, domain="workbuddy",

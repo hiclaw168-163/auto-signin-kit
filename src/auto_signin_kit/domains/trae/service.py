@@ -15,14 +15,10 @@ from auto_signin_kit.domains.trae.api import (
     SENSITIVE,
     Api,
     build_api,
-    env_flag,
     log_path,
     parse_budget,
 )
 from auto_signin_kit.domains.trae.auth import NoAuthError, TraeAuthError
-
-#: 空跑时默认不落盘的结果;TRAE_SIGNIN_LOG_EMPTY=1 可强制逐轮回写。
-QUIET_RESULTS = ("ALREADY", "INACTIVE")
 
 
 def _short(value: Any, limit: int = 160) -> str:
@@ -196,7 +192,5 @@ def run_action(
     if warning:
         out.setdefault("config_warning", warning)
     emit_result(out, domain="trae", silent=silent, log_path=log_path(), sensitive=SENSITIVE,
-                quiet=bool(out.get("result") in QUIET_RESULTS
-                           and not env_flag("TRAE_SIGNIN_LOG_EMPTY")),
                 log_errors_without_silent=False)
     return code

@@ -67,7 +67,6 @@ def emit_result(
     silent: bool = False,
     log_path: Path | None = None,
     sensitive: set[str] | None = None,
-    quiet: bool = False,
     log_errors_without_silent: bool = True,
 ) -> None:
     """按双通道契约输出结果;本函数保证不抛异常。
@@ -108,8 +107,6 @@ def emit_result(
         _write_stdout(payload)
         if not is_error or not log_errors_without_silent:
             return
-    if quiet:
-        return
     if log_path is None:
         return
     try:

@@ -44,14 +44,8 @@ def auto(
 
 
 @app.command()
-def poll(
-    empty_log: bool = typer.Option(False, "--empty-log", help="空跑(已签+无可领取项)也写日志"),
-) -> None:
+def poll() -> None:
     """轮询: 补签(未签才签) + 成长中心;结果静默写日志。"""
-    import os
-
-    if empty_log:
-        os.environ.setdefault("WORKBUDDY_GROWTH_LOG_EMPTY", "1")
     raise typer.Exit(_run(service.run_action, "silent-poll", _config(), silent=True))
 
 

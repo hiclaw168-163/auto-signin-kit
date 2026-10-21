@@ -77,11 +77,6 @@ def log_path() -> Path:
     return result_log_path("qoder", env_var="QODER_SIGNIN_LOG")
 
 
-def env_flag(name: str) -> bool:
-    """开关型环境变量是否为真。"""
-    return (os.environ.get(name) or "").strip().lower() in ("1", "true", "yes", "on")
-
-
 def parse_budget(config: Any) -> tuple[float, str | None]:
     """预算: QODER_BUDGET_SECONDS 优先;非法回落、越界夹到 240(PT5M 任务上限)。"""
     default = config.budget_seconds or BUDGET_CEILING

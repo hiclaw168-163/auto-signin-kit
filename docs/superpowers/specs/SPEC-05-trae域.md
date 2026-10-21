@@ -61,8 +61,8 @@
 | HTTP 403 | `FORBIDDEN` | 1 |
 | 其他 code≠0 | `ERROR`(带 code+message) | 1 |
 
-空跑不落盘: `QUIET_RESULTS=("ALREADY","INACTIVE")`,强制开关
-`TRAE_SIGNIN_LOG_EMPTY=1`;日志文件 `trae.log`(`TRAE_SIGNIN_LOG` 覆盖)。
+结果每轮必写(ALREADY/INACTIVE 也落盘,记录即定时任务心跳);日志文件
+`trae.log`(`TRAE_SIGNIN_LOG` 覆盖)。
 
 ## 5. 配置与环境变量
 

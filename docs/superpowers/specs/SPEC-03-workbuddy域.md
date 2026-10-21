@@ -29,7 +29,7 @@
 | 命令 | 语义 |
 |------|------|
 | `workbuddy auto [--silent]` | 签到 + 成长中心(每日主入口;幂等) |
-| `workbuddy poll [--empty-log]` | 轮询(静默写日志);空跑默认不落盘,`--empty-log` 强制 |
+| `workbuddy poll` | 轮询(静默写日志,每轮必写) |
 | `workbuddy growth` | 仅成长中心 |
 | `workbuddy status` / `claim` / `all` | 调试拆解 |
 | `workbuddy doctor` | 离线检查凭据格式与解密运行时 |
@@ -80,7 +80,7 @@
 - 主流程结果: `CLAIMED / ALREADY / ERROR / TIMEOUT / NETWORK / NO_SESSION / AUTH_*`。
 - `emit_result` 用 workbuddy 语义: 非 silent 仅 `ERROR` 补写日志;
   日志文件 `workbuddy.log`(`WORKBUDDY_SIGNIN_LOG` 覆盖)。
-- 轮询族: `WORKBUDDY_GROWTH_LOG_EMPTY=1` 强制空跑落盘(`poll --empty-log`)。
+- 轮询族结果每轮必写(与 auto 一致,记录即定时任务心跳)。
 - 连签/累计积分等数值进 result 顶层字段(stdout 机器可读)。
 
 ## 7. 失效模式(维护时先看这里)
