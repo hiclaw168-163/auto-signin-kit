@@ -13,19 +13,26 @@
    里的 icube SDK JS 暴露完整端点族 `/trae/api/v2/ug/checkin_credits/*`。
 3. **宿主定位**: `product.json` → `bootConfig.ug.trae.normal = https://api.trae.cn`。
 4. **鉴权头**: SDK `Authorization: Cloud-IDE-JWT ${token}`;主进程
-   `_applyUgDeviceHeaders` 还附 x-device-id 等五件套——实测**非必需**(服务端不校验)。
+   `_applyUgDeviceHeaders` 还附 x-device-id 等五件套——**2026-10-21 复核:
+   claim 已强制设备头(x-device-id 必带,可取 storage.json 明文键
+   telemetry.devDeviceId),不带 claim 回 9004;status 仍不校验**。
 5. **凭据定位**: 主进程 `UserStorage.persistedKey = "iCubeAuthInfo://icube.cloudide"`,
    落在 `%APPDATA%\Trae CN\User\globalStorage\storage.json`。
    坑:".trae-cn/trae-jwt-token" 是**沙箱临时令牌**(Byte-Cloud 工具用),
    拿它调 ug 接口会回业务码 1001——真登录态在 storage.json。
-6. **实测**: storage.json 解密出的 JWT 直接通过 status/claim(设备头全省略也 200)。
+6. **实测**: storage.json 解密出的 JWT 通过 status/claim
+   (2026-10-21 复核,claim 需上述设备头,不带则 9004)。
 
-## 协议速查
+## 协议速查(2026-10-21 复核)
 
 - `POST https://api.trae.cn/trae/api/v2/ug/checkin_credits/status`
-  body: `{"Request": {}}`(Content-Type: application/json)
+  body: `{"req_source": 1}`(Content-Type: application/json)
 - `POST https://api.trae.cn/trae/api/v2/ug/checkin_credits/claim`
   body 同上;服务端幂等,本域主张写操作不重试。
+- **契约变更(2026-10-21 实测)**: claim 现已**强制设备头**(至少
+  `x-device-id`,可取 storage.json 明文键 `telemetry.devDeviceId`),缺设备头
+  claim 回 `code=9004`(下单参数错误);status 仍不校验。
+- `9074` = "当前参与用户太多，请稍后再试"(1024 活动期服务端限流),重试恢复。
 - 响应: `{"code":0,"checked_in":true,"credits":100,"extra_credits":100,
   "enable":true,"did_checked_in":false,"message":"success"}`
   — `code` 是业务码(1001=无法认证,即 HTTP 200 里的 auth 拒绝)。

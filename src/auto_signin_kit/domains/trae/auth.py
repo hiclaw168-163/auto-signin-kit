@@ -173,6 +173,24 @@ def load_session(override_dir: str | None = None) -> dict:
     raise NoAuthError("本机没有找到 Trae CN 登录态（%s）" % detail, looked_in)
 
 
+def device_meta(override_dir: str | None = None) -> dict:
+    """从 storage.json 读设备侧信息(明文字段,与登录态解封无关)。
+
+    给签到请求补设备头用(2026-10 契约: claim 缺 x-device-id 会被服务端以
+    下单类业务码拒绝);读不到返回空 dict,调用方按 best-effort 处理。
+    """
+    for root in data_roaming_roots(override_dir):
+        try:
+            _, data = _read_storage_file(root)
+        except (FileNotFoundError, OSError, ValueError):
+            continue
+        return {
+            "device_id": data.get("telemetry.devDeviceId"),
+            "app_version": data.get("iCubeLastVersion"),
+        }
+    return {}
+
+
 def _parse_iso(value: object) -> datetime | None:
     """解析 ISO8601 时间串;无时区视为 UTC。"""
     if not value:

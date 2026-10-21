@@ -11,6 +11,9 @@ dependencies = [
   "pydantic>=2.0",
   "pyyaml>=6.0",
   "rich>=13.0",
+  # trae 域 SS_AES 信封解密依赖(win_dpapi.decrypt_cbc 优先走它,
+  # 缺了会退回 Windows CNG 并在非 Windows 平台崩溃)
+  "cryptography>=42.0",
   # 项目自己的业务依赖(渲染库/客户端 SDK 等)加在这里
 ]
 
