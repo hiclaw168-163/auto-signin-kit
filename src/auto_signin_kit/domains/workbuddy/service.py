@@ -1,4 +1,4 @@
-"""workbuddy 域业务编排: 命令分发 / 时间预算 / 签到+成长中心的一轮日常。"""
+"""workbuddy 域业务编排: 命令分发 / 时间预算;签到→成长中心的一轮日常见 daily.py。"""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from typing import Any
 from auto_signin_kit.core.httpclient import Budget
 from auto_signin_kit.core.logging import result_log_path
 from auto_signin_kit.core.report import emit_result, make_result
-from auto_signin_kit.domains.workbuddy import checkin, rewards
+from auto_signin_kit.domains.workbuddy import checkin, daily, rewards
 from auto_signin_kit.domains.workbuddy.credentials import find_auth_file, load_session_retry
 from auto_signin_kit.domains.workbuddy.extras import run_growth
 from auto_signin_kit.domains.workbuddy.fields import env_flag
@@ -133,40 +133,6 @@ def run_doctor(session: dict, budget: Budget) -> dict:
     return out
 
 
-def run_daily(net: Net) -> tuple[int, dict, bool]:
-    """一轮完整日常: 签到 → 成长中心;返回 (退出码, 结果, 是否空跑)。
-
-    轮询也走它而不是只跑成长中心: 签到原本一天一次,撞上关机/断网当天断签;
-    轮询先查状态、未签才补(幂等),等于一天七次机会。成长中心的问题不吞掉
-    签到已成功的事实,但会让本轮退出码非零、needs_attention 置位。
-    """
-    code, out = checkin.run_auto(net)
-    if out.get("result") in ("NETWORK", "TIMEOUT"):
-        out["growth"] = "网络不可达或时间预算耗尽，成长中心跳过"
-        out["growth_result"] = out["result"]
-        return code, out, False
-    if out.get("result") in ("NO_SESSION", "AUTH_REJECTED", "FORBIDDEN"):
-        out["growth"] = "认证或权限检查未通过，成长中心跳过"
-        out["growth_result"] = out["result"]
-        return code, out, False
-    try:
-        gcode, gout = run_growth(net, net.budget_remaining)
-    except AuthError as e:
-        gcode, gout = 1, e.output()
-    except Exception as e:  # noqa: BLE001
-        gcode, gout = 1, {"result": "ERROR", "needs_attention": True,
-                          "report": "成长中心异常（%s: %s）" % (type(e).__name__, e)}
-    out["growth"] = gout.get("report")
-    out["growth_result"] = gout.get("result")
-    if gout.get("credits_gained") or gcode != 0:
-        out["report"] += "；" + gout["report"]
-    if gcode != 0 and code == 0:
-        code = gcode
-    out["needs_attention"] = code != 0
-    quiet = out.get("result") in ("ALREADY", "INACTIVE") and bool(gout.get("idle"))
-    return code, out, quiet
-
-
 def run_action(action: str, config: WorkbuddyDomainConfig, *, silent: bool = False) -> int:
     """命令分发;结果一律按一行 JSON 契约输出,本函数保证不抛业务异常。"""
     if action not in KNOWN_ACTIONS:
@@ -204,7 +170,7 @@ def run_action(action: str, config: WorkbuddyDomainConfig, *, silent: bool = Fal
     net = Net(endpoint, headers, budget)
 
     if action in ("auto", "silent") or poll:
-        code, out, quiet = run_daily(net)
+        code, out, quiet = daily.run_daily(net)
         if poll:
             out["trigger"] = "poll"
             if quiet and not env_flag("WORKBUDDY_GROWTH_LOG_EMPTY"):
