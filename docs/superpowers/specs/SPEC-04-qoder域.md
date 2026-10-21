@@ -10,7 +10,7 @@
 | 文件 | 职责 |
 |------|------|
 | `cli.py` | 命令入口(auto/status/doctor) |
-| `service.py` | run_action: build_api → 分类领取 → emit;`QUIET_RESULTS=("ALREADY","INACTIVE")` |
+| `service.py` | run_action: build_api → 分类领取 → emit;每轮必写日志 |
 | `api.py` | `Api`(campaigns/claim)+ 预算解析 + `log_path` + SENSITIVE 登记 |
 | `auth.py` | 数据目录发现 + `auth.v1.dat` 解锁 + 令牌有效期 |
 | `risk.py` | 设备风控头(机器 token;`resources/umid` 未逆向,缺失不影响领取) |
@@ -57,7 +57,7 @@
 
 `QODER_BUDGET_SECONDS` 优先 → 非法回落默认/越界夹 **240**(PT5M 任务上限 = 300-60 余量);
 `QODER_TOKEN` / `QODER_AUTH_DIR` / `QODER_BASE_URL`;日志 `qoder.log`(`QODER_SIGNIN_LOG` 覆盖);
-空跑强制写日志 `QODER_SIGNIN_LOG_EMPTY=1`。
+结果每轮必写(记录即定时任务心跳)。
 
 ## 6. doctor 输出要点
 

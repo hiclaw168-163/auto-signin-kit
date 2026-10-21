@@ -93,12 +93,11 @@ def _aggregate_daily(ctx: dict[str, Any]) -> tuple[int, dict, bool]:
     if gcode != 0 and code == 0:
         code = gcode
     out["needs_attention"] = code != 0
-    quiet = out.get("result") in ("ALREADY", "INACTIVE") and bool(gout and gout.get("idle"))
-    return code, out, quiet
+    return code, out
 
 
-def run_daily(net: Net) -> tuple[int, dict, bool]:
-    """一轮完整日常: 签到 → 成长中心;返回 (退出码, 结果, 是否空跑)。
+def run_daily(net: Net) -> tuple[int, dict]:
+    """一轮完整日常: 签到 → 成长中心;返回 (退出码, 结果)。
 
     轮询也走它而不是只跑成长中心: 签到原本一天一次,撞上关机/断网当天断签;
     轮询先查状态、未签才补(幂等),等于一天七次机会。成长中心的问题不吞掉

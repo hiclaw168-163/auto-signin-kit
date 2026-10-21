@@ -2,8 +2,6 @@
 
 from types import SimpleNamespace
 
-import pytest
-
 from auto_signin_kit.core.httpclient import Budget
 from auto_signin_kit.domains.qoder import api as api_mod
 from auto_signin_kit.domains.qoder.api import (
@@ -12,7 +10,6 @@ from auto_signin_kit.domains.qoder.api import (
     REQUEST_TIMEOUT,
     RETRY_POLICY,
     Api,
-    env_flag,
     mark_token_seen,
     parse_budget,
 )
@@ -22,24 +19,6 @@ def _config(budget_seconds=None):
     """最小 config 鸭子类型,只覆盖 parse_budget/build_api 用到的字段。"""
     return SimpleNamespace(budget_seconds=budget_seconds, base_url="https://cfg.example")
 
-
-class TestEnvFlag:
-    @pytest.mark.parametrize("value", ["1", "true", "Yes", "ON", " on "])
-    def test_truthy_values(self, monkeypatch, value):
-        """1/true/yes/on 大小写与首尾空白容忍,均视为真。"""
-        monkeypatch.setenv("QODER_TEST_FLAG", value)
-        assert env_flag("QODER_TEST_FLAG") is True
-
-    @pytest.mark.parametrize("value", ["0", "false", "", "off", "no"])
-    def test_falsy_values(self, monkeypatch, value):
-        """其余取值一律视为假,不做静默猜。"""
-        monkeypatch.setenv("QODER_TEST_FLAG", value)
-        assert env_flag("QODER_TEST_FLAG") is False
-
-    def test_unset_is_false(self, monkeypatch):
-        """未设置时为假。"""
-        monkeypatch.delenv("QODER_TEST_FLAG", raising=False)
-        assert env_flag("QODER_TEST_FLAG") is False
 
 
 class TestParseBudget:

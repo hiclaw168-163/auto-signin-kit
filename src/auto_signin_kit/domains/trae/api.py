@@ -89,11 +89,6 @@ def log_path():
     return result_log_path("trae", env_var="TRAE_SIGNIN_LOG")
 
 
-def env_flag(name: str) -> bool:
-    """开关型环境变量是否为真。"""
-    return (os.environ.get(name) or "").strip().lower() in ("1", "true", "yes", "on")
-
-
 def parse_budget(config: Any) -> tuple[float, str | None]:
     """预算: TRAE_BUDGET_SECONDS 优先;非法回落、越界夹到 240。"""
     default = config.budget_seconds or BUDGET_CEILING

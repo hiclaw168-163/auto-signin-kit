@@ -52,8 +52,8 @@ log_errors_without_silent)`——域 service 层唯一出口,本函数保证不�
 | `ERROR` 双通道 | `result=="ERROR"` 时两条通道都走——即便 silent 参数写错也有痕迹 |
 | `log_errors_without_silent` | workbuddy 语义 True;**qoder/trae 传 False**(非静默不再回写) |
 | `sensitive` | 序列化后把已知令牌统一替换 `[REDACTED]`(域层登记,见 api.SENSITIVE) |
-| `quiet` | True 时跳过落盘;域用"空跑不落盘"契约: ALREADY/INACTIVE 不写,
-  强制开关 `*_SIGNIN_LOG_EMPTY` |
+| 每轮必写 | 无 `quiet` 机制: silent 下 ALREADY/INACTIVE 也落盘——记录即定时任务
+  心跳,噪音用 `level` 字段 + jq 过滤(旧的"空跑不落盘"契约已废除) |
 | `needs_attention` | 缺省时按 `result in ATTENTION_RESULTS` 自动补:
 
 ATTENTION_RESULTS(需人工介入): `ERROR, UNKNOWN, NETWORK, TIMEOUT,
