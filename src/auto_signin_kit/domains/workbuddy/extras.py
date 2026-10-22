@@ -136,11 +136,14 @@ def run_display(
     return energy, streak_days
 
 
-def run_growth(net: Net, budget_left_fn: Callable[[], float]) -> tuple[int, dict[str, Any]]:
+def run_growth(
+    net: Net, budget_left_fn: Callable[[], float], taskbot: bool = False,
+) -> tuple[int, dict[str, Any]]:
     """成长中心总入口: 七段顺序执行 → 汇总为 ``GROWTH`` 结果与退出码。
 
-    步骤: 旅行(growth.run_travel) → 任务(run_tasks) → 补登(rewards.run_makeup)
-    → 兑换(run_redeem) → 抽奖 → 能量盲盒 → 展示值。一段失败不拖垮其余。
+    步骤: 旅行(growth.run_travel) → 任务(run_tasks) → 进度制造(taskbot,
+    开关默认关) → 补登(rewards.run_makeup) → 兑换(run_redeem) → 抽奖
+    → 能量盲盒 → 展示值。一段失败不拖垮其余。
     """
     state = GrowthState()
     streak_body = None
@@ -151,7 +154,11 @@ def run_growth(net: Net, budget_left_fn: Callable[[], float]) -> tuple[int, dict
         from auto_signin_kit.domains.workbuddy.rewards import run_makeup, run_redeem
 
         run_travel(net, state, budget_left_fn())
-        run_tasks(net, state, budget_left_fn())
+        tasks = run_tasks(net, state, budget_left_fn())
+        if taskbot and tasks:
+            from auto_signin_kit.domains.workbuddy.taskbot import run_progress
+
+            run_progress(net, state, tasks, budget_left_fn)
         streak_body = run_makeup(net, state, budget_left_fn())
         run_redeem(net, state, budget_left_fn())
         run_lottery(net, state, budget_left_fn())

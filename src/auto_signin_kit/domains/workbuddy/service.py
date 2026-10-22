@@ -170,10 +170,16 @@ def run_action(action: str, config: WorkbuddyDomainConfig, *, silent: bool = Fal
         return 1
     endpoint = ((resolved.get("auth") or {}).get("endpoint") or config.endpoint
                 or DEFAULT_ENDPOINT).rstrip("/")
-    net = Net(endpoint, headers, budget)
+    account = resolved.get("account") or {}
+    identity = {
+        "uid": str(account.get("uid") or ""),
+        "nickname": str(account.get("nickname") or ""),
+        "enterprise": str(account.get("enterpriseId") or ""),
+    }
+    net = Net(endpoint, headers, budget, identity=identity)
 
     if action in ("auto", "silent") or poll:
-        code, out = daily.run_daily(net)
+        code, out = daily.run_daily(net, taskbot=config.taskbot)
         if poll:
             out["trigger"] = "poll"
         if warning:
@@ -197,7 +203,7 @@ def run_action(action: str, config: WorkbuddyDomainConfig, *, silent: bool = Fal
 
     if action == "growth":
         try:
-            gcode, gout = run_growth(net, net.budget_remaining)
+            gcode, gout = run_growth(net, net.budget_remaining, taskbot=config.taskbot)
         except AuthError as e:
             gcode, gout = 1, e.output()
         gout["needs_attention"] = gcode != 0

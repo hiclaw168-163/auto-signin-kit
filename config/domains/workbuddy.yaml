@@ -1,3 +1,6 @@
 # workbuddy 域配置;对应 schema.py 的 WorkbuddyDomainConfig(extra=forbid)
 endpoint: https://copilot.tencent.com
 # budget_seconds: 420   # 网络请求预算秒数;WORKBUDDY_BUDGET_SECONDS 环境变量优先
+# 成长任务进度制造器(taskbot.py): 自动补齐「需客户端交互」任务的判据事件,
+# 进度异步计分、领奖由下一轮轮询收割。专家/技能类动作会消耗真实对话额度,默认关。
+taskbot: true

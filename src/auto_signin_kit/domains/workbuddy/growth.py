@@ -182,16 +182,20 @@ def _depart(net: Net, state: GrowthState, budget_left: float) -> None:
 ACCEPT_BATCH_SIZE = 20
 
 
-def run_tasks(net: Net, state: GrowthState, budget_left: float) -> None:
-    """任务系统: 批量接单(not_accepted → 开始计进度) + 领取 completed 的任务奖。"""
+def run_tasks(net: Net, state: GrowthState, budget_left: float) -> list | None:
+    """任务系统: 批量接单(not_accepted → 开始计进度) + 领取 completed 的任务奖。
+
+    返回拉到的任务列表(进度制造器 taskbot 复用,免去重复请求);
+    列表查询失败时返回 None。
+    """
     if budget_left <= 0:
         state.note("时间预算耗尽，任务领奖跳过")
-        return
+        return None
     try:
         tcode, tbody = net.get(GROWTH_BASE + "/tasks")
         check_auth(tcode)
         if state.note_http(tcode, tbody, "查任务列表"):
-            return
+            return None
         tasks = dig(tbody, "tasks") or []
         titles = {
             t.get("task_code"): t.get("title", t.get("task_code"))
@@ -214,10 +218,12 @@ def run_tasks(net: Net, state: GrowthState, budget_left: float) -> None:
                 state.note("时间预算耗尽，剩余任务奖下次再领")
                 break
             _claim_task_reward(net, state, titles, task)
+        return tasks if isinstance(tasks, list) else None
     except StopRoundError:
         raise
     except Exception as exc:  # noqa: BLE001
         state.fail("任务模块异常（%s: %s）" % (type(exc).__name__, exc), -1)
+        return None
 
 
 def _accept_batch(net: Net, state: GrowthState, titles: dict, batch: list) -> None:

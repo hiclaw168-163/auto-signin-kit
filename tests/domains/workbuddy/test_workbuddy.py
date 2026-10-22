@@ -83,7 +83,7 @@ class TestDailyPipeline:
         def fake_run_auto(net):
             return checkin_result
 
-        def fake_run_growth(net, budget):
+        def fake_run_growth(net, budget, taskbot=False):
             calls["growth"] += 1
             return growth_result
 
