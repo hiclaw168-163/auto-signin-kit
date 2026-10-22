@@ -1,7 +1,7 @@
 # history 域配置;对应 schema.py 的 HistoryDomainConfig(extra=forbid)
 #
 # 本域只读台账(SQLite,见 core/store.py),不产生签到行为。
-# 台账文件与结果日志同目录(signin_ledger.db),可用 AUTO_SIGNIN_KIT_LOG_DIR 整体挪走。
+# 台账文件在项目 data/ 目录(auto-signin-kit.db),可用 AUTO_SIGNIN_KIT_DATA_DIR 整体挪走。
 
 # `history` 不带参数时回看多少天的每日状态。
 default_days: 7

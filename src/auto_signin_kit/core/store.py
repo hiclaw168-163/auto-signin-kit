@@ -30,7 +30,7 @@ from typing import Any
 from auto_signin_kit.core.adapters.log_dir import default_data_dir
 
 #: 台账文件名(运行时数据目录,与日志分居;同样被 .gitignore 排除)。
-LEDGER_FILENAME = "signin_ledger.db"
+LEDGER_FILENAME = "auto-signin-kit.db"
 
 #: 调度域的结果不进签到台账,单独记审计表。
 SCHEDULE_DOMAIN = "schedule"
