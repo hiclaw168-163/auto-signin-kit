@@ -138,7 +138,7 @@ def run_action(action: str, config: WorkbuddyDomainConfig, *, silent: bool = Fal
         emit_result(
             make_result("ERROR", "未知命令：%s（可用：%s）" % (action, " / ".join(KNOWN_ACTIONS)),
                         domain="workbuddy"),
-            silent=silent, log_path=log_path(),
+            action=action, silent=silent, log_path=log_path(),
         )
         return 2
     poll = action in POLL_ACTIONS
@@ -147,23 +147,26 @@ def run_action(action: str, config: WorkbuddyDomainConfig, *, silent: bool = Fal
 
     session, failure = load_credentials()
     if failure is not None:
-        emit_result(failure, domain="workbuddy", silent=silent, log_path=log_path())
+        emit_result(failure, domain="workbuddy", action=action, silent=silent,
+                    log_path=log_path())
         return 2
 
     if action == "doctor":
         try:
             out = run_doctor(session, budget)
         except AuthError as e:
-            emit_result(e.output(), domain="workbuddy", silent=silent, log_path=log_path())
+            emit_result(e.output(), domain="workbuddy", action=action, silent=silent,
+                        log_path=log_path())
             return 1
-        emit_result(out, domain="workbuddy", silent=silent, log_path=log_path())
+        emit_result(out, domain="workbuddy", action=action, silent=silent, log_path=log_path())
         return 0
 
     try:
         resolved = resolve_session(session, budget)
         headers = build_headers(resolved)
     except AuthError as e:
-        emit_result(e.output(), domain="workbuddy", silent=silent, log_path=log_path())
+        emit_result(e.output(), domain="workbuddy", action=action, silent=silent,
+                    log_path=log_path())
         return 1
     endpoint = ((resolved.get("auth") or {}).get("endpoint") or config.endpoint
                 or DEFAULT_ENDPOINT).rstrip("/")
@@ -175,7 +178,7 @@ def run_action(action: str, config: WorkbuddyDomainConfig, *, silent: bool = Fal
             out["trigger"] = "poll"
         if warning:
             out.setdefault("config_warning", warning)
-        emit_result(out, domain="workbuddy",
+        emit_result(out, domain="workbuddy", action=action,
                     silent=silent or (action in POLL_ACTIONS or action == "silent"),
                     log_path=log_path(), sensitive=SENSITIVE)
         return code
@@ -187,7 +190,7 @@ def run_action(action: str, config: WorkbuddyDomainConfig, *, silent: bool = Fal
             out = e.output()
         if warning:
             out.setdefault("config_warning", warning)
-        emit_result(out, domain="workbuddy", silent=silent,
+        emit_result(out, domain="workbuddy", action=action, silent=silent,
                     log_path=log_path(), sensitive=SENSITIVE)
         # 只有补完对话仍无活跃记录(或链路失败)才非零退出;ACTIVE 为 0。
         return 0 if out.get("result") == "ACTIVE" else 1
@@ -200,7 +203,7 @@ def run_action(action: str, config: WorkbuddyDomainConfig, *, silent: bool = Fal
         gout["needs_attention"] = gcode != 0
         if warning:
             gout.setdefault("config_warning", warning)
-        emit_result(gout, domain="workbuddy", silent=silent,
+        emit_result(gout, domain="workbuddy", action=action, silent=silent,
                     log_path=log_path(), sensitive=SENSITIVE)
         return gcode
 
@@ -213,25 +216,25 @@ def run_debug(action: str, net: Net) -> int:
         scode, sbody = net.post(checkin.STATUS_SUFFIX, retry=True)
         if scode in (401, 403):
             emit_result(dict(checkin.auth_failure_dto(scode), step="status", domain="workbuddy"),
-                        sensitive=SENSITIVE, log_path=log_path())
+                        action=action, sensitive=SENSITIVE, log_path=log_path())
             return 1
         emit_result(make_result("OK", "已查询签到状态", step="status", http=scode, body=sbody,
                                 needs_attention=not 200 <= scode < 300,
                                 domain="workbuddy"),
-                    sensitive=SENSITIVE, log_path=log_path())
+                    action=action, sensitive=SENSITIVE, log_path=log_path())
         if not 200 <= scode < 300:
             return 1
     if action in ("claim", "all"):
         ccode, cbody = net.post(checkin.CLAIM_SUFFIX, retry=True)
         if ccode in (401, 403):
             emit_result(dict(checkin.auth_failure_dto(ccode), step="claim", domain="workbuddy"),
-                        sensitive=SENSITIVE, log_path=log_path())
+                        action=action, sensitive=SENSITIVE, log_path=log_path())
             return 1
         success = 200 <= ccode < 300 or (ccode == 400 and checkin.is_already_checked_in(cbody))
         emit_result(make_result("OK", "已请求领取签到", step="claim", http=ccode, body=cbody,
                                 needs_attention=not success,
                                 domain="workbuddy"),
-                    sensitive=SENSITIVE, log_path=log_path())
+                    action=action, sensitive=SENSITIVE, log_path=log_path())
         if not success:
             return 1
     return 0

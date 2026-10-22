@@ -48,8 +48,11 @@ history 域 → 读 SQLite 台账 → 表格(JSONL 可选)
 
 细分来源在 `detail.source`:`log-import`(日志导入)/ `server-backfill`
 (服务端导入)。查"只看真实执行"一条 SQL:`WHERE source='run'`;命令行等价物
-是 `history events --source run`。老库(2026-10-22 前)由 store.connect() 的
-迁移逻辑自动补列并回填标识,正常运行的旧行 action 可能为空(当时没传)。
+是 `history events --source run`。2026-10-22 起各域 emit 统一携带 `action`
+(用户/调度器实际敲的 CLI 命令名: auto/poll/active/status/doctor;trae/qoder
+的 `auto` 由 CLI 经 `command=` 参数传入 service);更早的旧行由 store.connect()
+的迁移逻辑自动补列并回填标识,其中正常运行的 action 按 detail 内容推断修复,
+个别仍可能为空。
 
 文件位置:项目 `data/auto-signin-kit.db`(**与日志分居**——日志是事件流,可清
 可重建;台账是积累的事实,清理日志不能误伤它),随 `AUTO_SIGNIN_KIT_DATA_DIR`
