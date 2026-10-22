@@ -23,7 +23,7 @@ OS 差异全部在 `core/adapters/scheduler/`,本域只见 `core.ports.scheduler
 | 任务名 | 命令 | 触发时间 | 时限 |
 |--------|------|----------|------|
 | `WorkBuddyAutoSignin` | `workbuddy auto --silent` | 00:05 | PT10M |
-| `WorkBuddyGrowthPoll` | `workbuddy poll` | 01/05/09/13/17/21:05 | PT5M |
+| `WorkBuddyGrowthPoll` | `workbuddy poll` | 01/09/17/21:05 | PT5M |
 | `WorkBuddyActiveCheck` | `workbuddy active --silent` | 12/20:05 | PT5M |
 | `QoderDailyCredits` | `qoder auto --silent` | 10/11/15/19/23:05 | PT5M |
 | `TraeDailyCheckin` | `trae auto --silent` | 09/13/15/19/21/23:05 | PT5M |

@@ -11,7 +11,7 @@ tasks:
     times: ["00:05"]
     limit_minutes: 10
   WorkBuddyGrowthPoll:
-    times: ["01:05", "05:05", "09:05", "13:05", "17:05", "21:05"]
+    times: ["01:05", "09:05", "17:05", "21:05"]
     limit_minutes: 5
   WorkBuddyActiveCheck:
     times: ["12:05", "20:05"]

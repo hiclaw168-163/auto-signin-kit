@@ -120,7 +120,7 @@ auto-signin-kit schedule uninstall            # 注销(同样支持 --domain / -
 | 任务名 | 命令 | 触发时间 | 时限 |
 |--------|------|----------|------|
 | `WorkBuddyAutoSignin` | `workbuddy auto --silent` | 00:05 | 10 min |
-| `WorkBuddyGrowthPoll` | `workbuddy poll` | 01/05/09/13/17/21:05 | 5 min |
+| `WorkBuddyGrowthPoll` | `workbuddy poll` | 01/09/17/21:05 | 5 min |
 | `WorkBuddyActiveCheck` | `workbuddy active --silent` | 12/20:05 | 5 min |
 | `QoderDailyCredits` | `qoder auto --silent` | 10/11/15/19/23:05 | 5 min |
 | `TraeDailyCheckin` | `trae auto --silent` | 09/13/21:05 | 5 min |

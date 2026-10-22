@@ -36,7 +36,7 @@ TASKS: tuple[ScheduleSpec, ...] = (
     ScheduleSpec(
         name="WorkBuddyGrowthPoll",
         argv=("auto-signin-kit", "workbuddy", "poll"),
-        times=("01:05", "05:05", "09:05", "13:05", "17:05", "21:05"),
+        times=("01:05", "09:05", "17:05", "21:05"),
         limit_minutes=5,
         description="WorkBuddy 成长中心轮询(每次先查签到,兼做主入口的兜底)",
     ),
