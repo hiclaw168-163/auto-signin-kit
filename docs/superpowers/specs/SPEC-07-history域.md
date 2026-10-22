@@ -37,7 +37,7 @@ history 域 → 读 SQLite 台账 → 表格(JSONL 可选)
 一张表看全局**;按域分表会把"本周有没有断签"变成 UNION 拼接,且新增域就得改
 公共层,违反多域架构。域信息是 `signin_runs.domain` 一列,不是一张表。
 
-文件位置:项目 `data/signin_ledger.db`(**与日志分居**——日志是事件流,可清
+文件位置:项目 `data/auto-signin-kit.db`(**与日志分居**——日志是事件流,可清
 可重建;台账是积累的事实,清理日志不能误伤它),随 `AUTO_SIGNIN_KIT_DATA_DIR`
 整体迁移,被 `.gitignore` 排除。目录定位收口在
 `core/adapters/log_dir.default_data_dir()`。
