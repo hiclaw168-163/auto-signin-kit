@@ -20,3 +20,7 @@ class WorkbuddyDomainConfig(DomainConfig):
     endpoint: str = DEFAULT_ENDPOINT
     #: 网络请求时间预算(秒);环境变量 WORKBUDDY_BUDGET_SECONDS 优先,详见 service 层。
     budget_seconds: float | None = Field(default=None, gt=0, le=540)
+    #: 成长任务进度制造器(见 taskbot.py): 自动补齐「需客户端交互」任务的判据事件。
+    #: 默认关——专家/技能类动作会消耗真实对话额度;开启后进度异步计分,领奖仍由
+    #: 下一轮轮询的 run_tasks 收割。
+    taskbot: bool = False

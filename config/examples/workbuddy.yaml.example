@@ -1,3 +1,6 @@
 # 复制为 config/domains/workbuddy.yaml 后按需改
 endpoint: https://copilot.tencent.com
 budget_seconds: 420
+# 成长任务进度制造器: 自动补齐「需客户端交互」任务的判据事件(taskbot.py);
+# 专家/技能类动作会消耗真实对话额度,默认关,按需开启。
+taskbot: false

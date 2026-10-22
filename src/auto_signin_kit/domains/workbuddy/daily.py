@@ -57,14 +57,16 @@ class GrowthStep:
 
     name = "成长中心"
 
-    def __init__(self, net: Net) -> None:
-        """net 由调用方注入,预算余量在执行时实时读取。"""
+    def __init__(self, net: Net, taskbot: bool = False) -> None:
+        """net 由调用方注入,预算余量在执行时实时读取;taskbot 见 schema 开关。"""
         self.net = net
+        self.taskbot = taskbot
 
     def run(self, ctx: dict[str, Any]) -> StepResult:
         """执行成长中心任务并把结果写入 ctx;业务失败折算进结果,不中止流水线。"""
         try:
-            gcode, gout = run_growth(self.net, self.net.budget_remaining)
+            gcode, gout = run_growth(self.net, self.net.budget_remaining,
+                                     taskbot=self.taskbot)
         except AuthError as e:
             gcode, gout = 1, e.output()
         except Exception as e:  # noqa: BLE001 — 单步异常折算成 ERROR 结果,不让一轮日常崩掉
@@ -96,7 +98,7 @@ def _aggregate_daily(ctx: dict[str, Any]) -> tuple[int, dict, bool]:
     return code, out
 
 
-def run_daily(net: Net) -> tuple[int, dict]:
+def run_daily(net: Net, taskbot: bool = False) -> tuple[int, dict]:
     """一轮完整日常: 签到 → 成长中心;返回 (退出码, 结果)。
 
     轮询也走它而不是只跑成长中心: 签到原本一天一次,撞上关机/断网当天断签;
@@ -105,7 +107,7 @@ def run_daily(net: Net) -> tuple[int, dict]:
     """
     ctx: dict[str, Any] = {}
     try:
-        Pipeline([CheckinStep(net), GrowthStep(net)]).run(ctx)
+        Pipeline([CheckinStep(net), GrowthStep(net, taskbot=taskbot)]).run(ctx)
     except PipelineError:
         if "checkin_out" not in ctx:
             raise  # 签到步没产出结果(意外异常),原样上抛,不做静默兜底
