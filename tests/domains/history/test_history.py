@@ -38,7 +38,7 @@ class TestRecordAndQuery:
         assert store.record_payload(payload) is True
         conn = store.connect()
         try:
-            rows = conn.execute("SELECT action, tasks FROM schedule_changes").fetchall()
+            rows = conn.execute("SELECT action, tasks FROM ask_schedule_changes").fetchall()
         finally:
             conn.close()
         assert len(rows) == 1
@@ -101,3 +101,45 @@ class TestImportLogs:
     def test_missing_log_files_are_ok(self, _ledger_dir):
         result = service.import_logs(_ledger_dir / "empty")
         assert result["imported"] == 0
+
+
+class TestServerBackfillRows:
+    """服务端回填的纯函数部分: 行构造与幂等键。"""
+
+    def test_activity_rows_mark_active_and_missed_days(self):
+        from datetime import date
+
+        today = date(2026, 10, 22)
+        scores = {date(2026, 10, 20): 0, date(2026, 10, 21): 12,
+                  date(2026, 10, 22): 3, date(2026, 10, 23): 9}  # 10-23 是未来,跳过
+        rows = service._activity_rows(today, scores)
+        assert [(r["result"], r["ts"]) for r in rows] == [
+            ("NO_ACTIVITY", "2026-10-20T12:00:00+08:00"),
+            ("ACTIVE", "2026-10-21T12:00:00+08:00"),
+            ("ACTIVE", "2026-10-22T12:00:00+08:00"),
+        ]
+
+    def test_qoder_rows_only_claimed_benefits(self):
+        payload = {"campaigns": [
+            {"campaignKey": "act-1", "actionType": "CLAIM_BENEFIT",
+             "claimStatus": "CLAIMED", "endAt": 1762000000, "benefit": {"amount": 100}},
+            {"campaignKey": "act-2", "actionType": "CLAIM_BENEFIT",
+             "claimStatus": "CLAIMABLE", "endAt": 1762000000, "benefit": {"amount": 50}},
+            {"campaignKey": "act-3", "actionType": "OTHER", "claimStatus": "CLAIMED"},
+        ]}
+        rows = service._qoder_rows(payload)
+        assert len(rows) == 1
+        assert rows[0]["result"] == "CLAIMED"
+        assert "act-1" in rows[0]["report"]
+
+    def test_backfill_insert_is_idempotent(self):
+        from datetime import date
+
+        rows = service._activity_rows(date(2026, 10, 22),
+                                      {date(2026, 10, 21): 5})
+        conn = store.connect()
+        try:
+            assert service._insert_rows(conn, [dict(r) for r in rows]) == 1
+            assert service._insert_rows(conn, [dict(r) for r in rows]) == 0
+        finally:
+            conn.close()

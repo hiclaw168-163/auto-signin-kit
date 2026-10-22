@@ -23,13 +23,15 @@ history 域 → 读 SQLite 台账 → 表格(JSONL 可选)
 写入点是 `emit_result` 的**单一咽喉**:所有域的结果(含调度域)自动进台账,
 域代码零改动。落库内容是**脱敏后的 JSON 行**——令牌进库前已替换 `[REDACTED]`。
 
-## 2. 表设计(见名知义,不用笼统大表)
+## 2. 表设计(统一 `ask_` 前缀 + 见名知义,不用笼统大表)
+
+所有对象统一 `ask_` 前缀(auto-signin-kit),同类对象一眼归属:
 
 | 对象 | 类型 | 内容 |
 |------|------|------|
-| `signin_runs` | 实体表 | **签到运行台账**:一行一次运行(ts/domain/action/result/needs_attention/report/detail);`detail` 存完整事件 JSON,连签天数、积分等统计都在里面(SQLite `json_extract` 可查),**不另建派生统计表**——两份真相必然漂移 |
-| `schedule_changes` | 实体表 | **调度变更审计**:定时任务的注册/注销(action/platform/tasks/report) |
-| `v_daily_checkins` | 视图 | **每天每域最后一次运行 = 当天最终状态**;把一天多次运行折叠成一行,`history` 默认视图与人工查库都读它 |
+| `ask_signin_runs` | 实体表 | **签到运行台账**:一行一次运行(ts/domain/action/result/needs_attention/report/detail);`detail` 存完整事件 JSON,连签天数、积分等统计都在里面(SQLite `json_extract` 可查),**不另建派生统计表**——两份真相必然漂移 |
+| `ask_schedule_changes` | 实体表 | **调度变更审计**:定时任务的注册/注销(action/platform/tasks/report) |
+| `ask_daily_checkins` | 视图 | **每天每域最后一次运行 = 当天最终状态**;把一天多次运行折叠成一行,`history` 默认视图与人工查库都读它 |
 
 不按域分表(workbuddy_runs / qoder_runs / …)的理由:台账的核心价值是**跨域
 一张表看全局**;按域分表会把"本周有没有断签"变成 UNION 拼接,且新增域就得改
@@ -46,7 +48,24 @@ auto-signin-kit history --attention          # 只看需要人工处理的
 auto-signin-kit history --date 2026-10-22    # 某一天的运行明细
 auto-signin-kit history events               # 运行明细(最新在前,--limit 控制条数)
 auto-signin-kit history import-logs          # 把现有 JSONL 日志回填进台账(幂等去重)
+auto-signin-kit history import-server        # 服务端还能查到的历史回填进台账
 ```
+
+### 3.1 服务端历史回填(import-server)
+
+日志只覆盖"装了本工具之后";服务端自己存的历史由 `import-server` 整理:
+
+| 域 | 数据源 | 能回填什么 | 覆盖 |
+|----|--------|-----------|------|
+| workbuddy | `GET /v2/activity/growth/heatmap` | 逐日活跃 score → ACTIVE/NO_ACTIVITY | **约一年**(2026-10 实测回填 365 行) |
+| qoder | `GET /sash/api/v1/me/campaigns` | `claimStatus=CLAIMED` 的活动窗口 → CLAIMED | 服务端保留的历史窗口 |
+| trae | — | 只有当日状态,**没有历史接口** | 如实跳过,不伪造 |
+
+回填行带 `action="backfill"` 与 `detail.source="server-backfill"` 标记,`ts`
+取当日固定时刻,去重键天然幂等(重复执行不产生重复行)。当天的真实运行记录
+ts 晚于回填行,视图 `ask_daily_checkins` 自然优先展示真实运行。
+本域是唯一跨域 import 的地方(读各域接口层),已在 pyproject `ignore_imports`
+显式登记。
 
 默认输出 rich 表格(人看);`--json` 输出 JSONL(机器)。这是对"一行 JSON"契约的
 刻意偏离——台账命令的受众是人不是自动化,已在 SPEC-01 记录该例外。

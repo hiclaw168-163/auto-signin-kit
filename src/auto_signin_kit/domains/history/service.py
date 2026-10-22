@@ -1,10 +1,16 @@
-"""history 域业务逻辑: 台账查询与历史日志回填(纯逻辑,不碰 CLI)。"""
+"""history 域业务逻辑: 台账查询、日志回填与服务端历史回填(纯逻辑,不碰 CLI)。
+
+服务端回填(``server_backfill``)是本域唯一跨域 import 的地方——它读各域的
+接口层取"服务端还能查到的历史"(workbuddy 活跃日历 / qoder 活动领取记录),
+已按规矩在 pyproject 的 ignore_imports 里显式登记。trae 没有历史接口
+(只有当日状态),诚实跳过,不伪造。
+"""
 
 from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -24,7 +30,7 @@ def daily_status(days: int = 7, *, domain: str | None = None) -> list[dict[str, 
     try:
         sql = (
             "SELECT day, domain, result, needs_attention, report, last_run"
-            " FROM v_daily_checkins WHERE day >= date('now', ?)"
+            " FROM ask_daily_checkins WHERE day >= date('now', ?)"
         )
         params: list[Any] = ["-%d days" % max(1, days)]
         if domain:
@@ -43,8 +49,9 @@ def events(
     attention_only: bool = False,
     limit: int = 50,
 ) -> list[dict[str, Any]]:
-    """按条件查 ``signin_runs`` 明细,最新在前。"""
-    sql = "SELECT ts, domain, action, result, needs_attention, report FROM signin_runs WHERE 1=1"
+    """按条件查 ``ask_signin_runs`` 明细,最新在前。"""
+    sql = ("SELECT ts, domain, action, result, needs_attention, report"
+           " FROM ask_signin_runs WHERE 1=1")
     params: list[Any] = []
     if date:
         sql += " AND date(ts) = ?"
@@ -99,7 +106,7 @@ def import_logs(log_dir: Path | None = None) -> dict[str, Any]:
                     continue
                 with conn:
                     conn.execute(
-                        "INSERT INTO signin_runs (ts, domain, action, result,"
+                        "INSERT INTO ask_signin_runs (ts, domain, action, result,"
                         " needs_attention, report, detail) VALUES (?, ?, ?, ?, ?, ?, ?)",
                         (
                             record["ts"], record["domain"], record.get("action"),
@@ -149,8 +156,171 @@ def _parse_line(line: str, domain: str) -> dict[str, Any] | None:
 
 def _already_exists(conn: sqlite3.Connection, record: dict[str, Any]) -> bool:
     row = conn.execute(
-        "SELECT 1 FROM signin_runs WHERE ts = ? AND domain = ? AND result = ?"
+        "SELECT 1 FROM ask_signin_runs WHERE ts = ? AND domain = ? AND result = ?"
         " AND report IS ? LIMIT 1",
         (record["ts"], record["domain"], record["result"], record.get("report")),
     ).fetchone()
     return row is not None
+
+
+# ---------------------------------------------------------------------------
+# 服务端历史回填: 服务端还查得到的历史,整理进台账
+# ---------------------------------------------------------------------------
+
+#: 回填行的固定时刻(本地): 同一天重复回填生成同一 ts,去重键天然幂等。
+_BACKFILL_TIME = "T12:00:00+08:00"
+
+
+def server_backfill() -> dict[str, Any]:
+    """把服务端还能查到的历史整理进台账;查不到的域如实报告原因。
+
+    - workbuddy: 活跃日历(heatmap)有本月的逐日 score —— 连续活跃天数的
+      事实源,逐日回填(ACTIVE/NO_ACTIVITY)
+    - qoder: 活动列表里 claimStatus=CLAIMED 的历史窗口 —— 领取记录回填
+    - trae: 只有当日状态,没有历史接口 —— 如实跳过
+    """
+    result: dict[str, Any] = {}
+    conn = connect()
+    try:
+        result["workbuddy"] = _backfill_workbuddy(conn)
+        result["qoder"] = _backfill_qoder(conn)
+        result["trae"] = "skipped: 服务端没有历史接口,只有当日状态"
+    finally:
+        conn.close()
+    return result
+
+
+def _backfill_workbuddy(conn: sqlite3.Connection) -> Any:
+    """workbuddy 活跃日历回填;凭据/网络失败返回原因字符串,不抛。"""
+    try:
+        net, failure = _workbuddy_net()
+        if net is None:
+            return "skipped: %s" % failure
+        code, body = net.get("/v2/activity/growth/heatmap")
+        if not 200 <= code < 300:
+            return "skipped: 查活跃日历失败 HTTP %s" % code
+        today, scores = _heatmap_scores(body)
+    except Exception as exc:  # noqa: BLE001
+        return "skipped: %s: %s" % (type(exc).__name__, exc)
+    return _insert_rows(conn, _activity_rows(today, scores))
+
+
+def _activity_rows(today: Any, scores: dict) -> list[dict[str, Any]]:
+    """活跃日历 → 台账行(纯函数,便于测试);未来日期跳过。"""
+    rows = []
+    for day in sorted(scores):
+        if day > today:
+            continue
+        score = scores[day]
+        rows.append({
+            "ts": "%s%s" % (day.isoformat(), _BACKFILL_TIME),
+            "domain": "workbuddy",
+            "action": "backfill",
+            "result": "ACTIVE" if score > 0 else "NO_ACTIVITY",
+            "needs_attention": False,
+            "report": "历史活跃记录：score=%s（服务端日历回填）" % score,
+            "detail": {"source": "server-backfill", "date": day.isoformat(), "score": score},
+        })
+    return rows
+
+
+def _workbuddy_net() -> tuple[Any, str | None]:
+    """构造 workbuddy 的请求器(与其 service 同一套凭据/解密/头)。"""
+    from auto_signin_kit.core.config import load_domain_config_model
+    from auto_signin_kit.core.httpclient import Budget
+    from auto_signin_kit.domains.workbuddy import service as wb
+    from auto_signin_kit.domains.workbuddy.net import Net
+    from auto_signin_kit.domains.workbuddy.schema import WorkbuddyDomainConfig
+
+    config = load_domain_config_model("workbuddy", WorkbuddyDomainConfig, merge_local=True)
+    budget_value, _ = wb.parse_budget(config, poll=False)
+    budget = Budget(budget_value)
+    session, failure = wb.load_credentials()
+    if failure is not None:
+        return None, "本地凭据缺失"
+    resolved = wb.resolve_session(session, budget)
+    endpoint = ((resolved.get("auth") or {}).get("endpoint") or config.endpoint
+                or wb.DEFAULT_ENDPOINT).rstrip("/")
+    return Net(endpoint, wb.build_headers(resolved), budget), None
+
+
+def _heatmap_scores(body: dict) -> tuple[Any, dict]:
+    """借用 workbuddy 的日历解析(校验规则同源,不重写一份)。"""
+    from auto_signin_kit.domains.workbuddy import rewards
+
+    return rewards.heatmap_scores(body)
+
+
+def _backfill_qoder(conn: sqlite3.Connection) -> Any:
+    """qoder 活动领取记录回填;凭据/网络失败返回原因字符串,不抛。"""
+    try:
+        from auto_signin_kit.core.config import load_domain_config_model
+        from auto_signin_kit.core.httpclient import Budget
+        from auto_signin_kit.domains.qoder.api import build_api, parse_budget
+        from auto_signin_kit.domains.qoder.schema import QoderDomainConfig
+
+        config = load_domain_config_model("qoder", QoderDomainConfig, merge_local=True)
+        budget_value, _ = parse_budget(config)
+        api, _info, stale = build_api(config)
+        if stale is not None:
+            return "skipped: 登录态已过期，请重新登录 Qoder CN"
+        code, payload, _err = api.campaigns(budget=Budget(budget_value))
+        if not 200 <= code < 300:
+            return "skipped: 查活动列表失败 HTTP %s" % code
+    except Exception as exc:  # noqa: BLE001
+        return "skipped: %s: %s" % (type(exc).__name__, exc)
+    return _insert_rows(conn, _qoder_rows(payload))
+
+
+def _qoder_rows(payload: Any) -> list[dict[str, Any]]:
+    """活动列表 → 台账行: 只取 claimStatus=CLAIMED 的 CLAIM_BENEFIT 活动。"""
+    from datetime import datetime
+
+    rows = []
+    campaigns = payload.get("campaigns") if isinstance(payload, dict) else None
+    for campaign in campaigns if isinstance(campaigns, list) else []:
+        if not isinstance(campaign, dict) or campaign.get("actionType") != "CLAIM_BENEFIT":
+            continue
+        if campaign.get("claimStatus") != "CLAIMED":
+            continue
+        end = campaign.get("endAt")
+        if not isinstance(end, (int, float)):
+            continue
+        day = datetime.fromtimestamp(end, tz=UTC).astimezone().date().isoformat()
+        benefit = campaign.get("benefit") or {}
+        amount = benefit.get("amount")
+        key = str(campaign.get("campaignKey") or campaign.get("campaignId") or "?")
+        rows.append({
+            "ts": "%s%s" % (day, _BACKFILL_TIME),
+            "domain": "qoder",
+            "action": "backfill",
+            "result": "CLAIMED",
+            "needs_attention": False,
+            "report": "历史领取：活动 %s（%s Credits，窗口至 %s）"
+                      % (key, amount if amount is not None else "?", day),
+            "detail": {"source": "server-backfill", "campaign": key,
+                       "credits": amount, "window_end": day},
+        })
+    return rows
+
+
+def _insert_rows(conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> int:
+    """批量插入(逐条去重);返回实际新增行数。"""
+    inserted = 0
+    for record in rows:
+        detail = record.pop("detail")
+        record["detail"] = json.dumps(detail, ensure_ascii=False)
+        if _already_exists(conn, record):
+            continue
+        with conn:
+            conn.execute(
+                "INSERT INTO ask_signin_runs (ts, domain, action, result,"
+                " needs_attention, report, detail) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    record["ts"], record["domain"], record.get("action"),
+                    record["result"], 1 if record.get("needs_attention") else 0,
+                    record.get("report"), record["detail"],
+                ),
+            )
+        inserted += 1
+    return inserted
