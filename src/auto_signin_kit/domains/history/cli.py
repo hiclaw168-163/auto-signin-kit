@@ -27,15 +27,20 @@ def _root(
     domain: str = typer.Option(None, "--domain", help="只看某个域(workbuddy/qoder/trae)"),
     date: str = typer.Option(None, "--date", help="只看某一天(YYYY-MM-DD)"),
     attention: bool = typer.Option(False, "--attention", help="只看需要人工处理的记录"),
+    source: str = typer.Option(None, "--source", help="只看某来源: run(正常执行)/backfill(回填)"),
     json_output: bool = typer.Option(False, "--json", help="输出 JSONL 而非表格"),
 ) -> None:
     """默认动作 = 查台账: 每天/每域的最终签到状态一览。"""
     if ctx.invoked_subcommand is not None:
         return
+    if source not in (None, "run", "backfill"):
+        raise typer.BadParameter("--source 只支持 run / backfill")
     if date:
-        rows = service.events(date=date, domain=domain, attention_only=attention)
+        rows = service.events(date=date, domain=domain, attention_only=attention,
+                              source=source)
     else:
-        rows = service.daily_status(days or _config().default_days, domain=domain)
+        rows = service.daily_status(days or _config().default_days, domain=domain,
+                                    source=source)
         if attention:
             rows = [row for row in rows if row["needs_attention"]]
     if json_output:
@@ -50,16 +55,21 @@ def events(
     domain: str = typer.Option(None, "--domain", help="只看某个域"),
     date: str = typer.Option(None, "--date", help="只看某一天(YYYY-MM-DD)"),
     attention: bool = typer.Option(False, "--attention", help="只看需要人工处理的记录"),
+    source: str = typer.Option(None, "--source", help="只看某来源: run/backfill"),
     limit: int = typer.Option(50, "--limit", help="最多显示多少条"),
 ) -> None:
     """运行明细: 每次命令执行的原始结果(最新在前)。"""
-    rows = service.events(date=date, domain=domain, attention_only=attention, limit=limit)
+    if source not in (None, "run", "backfill"):
+        raise typer.BadParameter("--source 只支持 run / backfill")
+    rows = service.events(date=date, domain=domain, attention_only=attention,
+                          source=source, limit=limit)
     table = Table(title="签到运行明细(最近 %d 条)" % len(rows))
-    for column in ("时间", "域", "动作", "结果", "报告"):
+    for column in ("时间", "域", "动作", "来源", "结果", "报告"):
         table.add_column(column, overflow="fold")
     for row in rows:
         table.add_row(
             row["ts"], row["domain"], row["action"] or "-",
+            _source_mark(row["source"]),
             _mark(row["result"], row["needs_attention"]), row["report"] or "",
         )
     console.print(table)
@@ -99,3 +109,10 @@ def _mark(result: str, needs_attention: bool) -> str:
     if result in ("CLAIMED", "ACTIVE", "ALREADY", "OK", "GROWTH", "GROWN"):
         return "[green]%s[/green]" % result
     return result
+
+
+def _source_mark(source: str | None) -> str:
+    """来源列: run 正常执行,backfill 回填(带细分,来自 detail.source 时人话提示)。"""
+    if source == "backfill":
+        return "[yellow]backfill[/yellow]"
+    return source or "run"

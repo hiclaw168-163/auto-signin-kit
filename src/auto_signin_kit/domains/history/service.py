@@ -24,18 +24,22 @@ SIGNIN_DOMAINS = ("workbuddy", "qoder", "trae")
 _SUMMARY_KEYS = ("credits", "streak_days", "total_credits", "score")
 
 
-def daily_status(days: int = 7, *, domain: str | None = None) -> list[dict[str, Any]]:
-    """最近 N 天每天每域的最终状态(读 ``v_daily_checkins`` 视图),新的一天在前。"""
+def daily_status(days: int = 7, *, domain: str | None = None,
+                 source: str | None = None) -> list[dict[str, Any]]:
+    """最近 N 天每天每域的最终状态(读 ``ask_daily_checkins`` 视图),新的一天在前。"""
     conn = connect()
     try:
         sql = (
-            "SELECT day, domain, result, needs_attention, report, last_run"
+            "SELECT day, domain, result, source, needs_attention, report, last_run"
             " FROM ask_daily_checkins WHERE day >= date('now', ?)"
         )
         params: list[Any] = ["-%d days" % max(1, days)]
         if domain:
             sql += " AND domain = ?"
             params.append(domain)
+        if source:
+            sql += " AND source = ?"
+            params.append(source)
         rows = conn.execute(sql + " ORDER BY day DESC, domain", params).fetchall()
     finally:
         conn.close()
@@ -47,10 +51,11 @@ def events(
     date: str | None = None,
     domain: str | None = None,
     attention_only: bool = False,
+    source: str | None = None,
     limit: int = 50,
 ) -> list[dict[str, Any]]:
-    """按条件查 ``ask_signin_runs`` 明细,最新在前。"""
-    sql = ("SELECT ts, domain, action, result, needs_attention, report"
+    """按条件查 ``ask_signin_runs`` 明细,最新在前;``source`` 过滤 run/backfill。"""
+    sql = ("SELECT ts, domain, action, source, result, needs_attention, report"
            " FROM ask_signin_runs WHERE 1=1")
     params: list[Any] = []
     if date:
@@ -59,6 +64,9 @@ def events(
     if domain:
         sql += " AND domain = ?"
         params.append(domain)
+    if source:
+        sql += " AND source = ?"
+        params.append(source)
     if attention_only:
         sql += " AND needs_attention = 1"
     sql += " ORDER BY ts DESC, id DESC LIMIT ?"
@@ -106,8 +114,9 @@ def import_logs(log_dir: Path | None = None) -> dict[str, Any]:
                     continue
                 with conn:
                     conn.execute(
-                        "INSERT INTO ask_signin_runs (ts, domain, action, result,"
-                        " needs_attention, report, detail) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        "INSERT INTO ask_signin_runs (ts, domain, action, source,"
+                        " result, needs_attention, report, detail)"
+                        " VALUES (?, ?, ?, 'backfill', ?, ?, ?, ?)",
                         (
                             record["ts"], record["domain"], record.get("action"),
                             record["result"], 1 if record.get("needs_attention") else 0,
@@ -122,8 +131,12 @@ def import_logs(log_dir: Path | None = None) -> dict[str, Any]:
     return {"imported": imported, "skipped_duplicates": skipped, "per_domain": per_domain}
 
 
-def _parse_line(line: str, domain: str) -> dict[str, Any] | None:
-    """解析一行日志;新旧两种格式都认,解析不了的行静默跳过(回填不中断)。"""
+def _parse_line(line: str, domain: str,
+                source: str = "log-import") -> dict[str, Any] | None:
+    """解析一行日志;新旧两种格式都认,解析不了的行静默跳过(回填不中断)。
+
+    ``source`` 注进事件 JSON(即台账 ``detail``),细分回填来源。
+    """
     line = line.strip()
     if not line:
         return None
@@ -150,6 +163,7 @@ def _parse_line(line: str, domain: str) -> dict[str, Any] | None:
         return None
     record.setdefault("domain", domain)
     record["domain"] = domain  # 以文件归属为准,防旧日志缺 domain 字段
+    record["source"] = source
     record["detail"] = json.dumps(record, ensure_ascii=False)
     return record
 
@@ -305,7 +319,7 @@ def _qoder_rows(payload: Any) -> list[dict[str, Any]]:
 
 
 def _insert_rows(conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> int:
-    """批量插入(逐条去重);返回实际新增行数。"""
+    """批量插入服务端回填行(source=backfill,逐条去重);返回实际新增行数。"""
     inserted = 0
     for record in rows:
         detail = record.pop("detail")
@@ -314,8 +328,9 @@ def _insert_rows(conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> int:
             continue
         with conn:
             conn.execute(
-                "INSERT INTO ask_signin_runs (ts, domain, action, result,"
-                " needs_attention, report, detail) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO ask_signin_runs (ts, domain, action, source,"
+                " result, needs_attention, report, detail)"
+                " VALUES (?, ?, ?, 'backfill', ?, ?, ?, ?)",
                 (
                     record["ts"], record["domain"], record.get("action"),
                     record["result"], 1 if record.get("needs_attention") else 0,

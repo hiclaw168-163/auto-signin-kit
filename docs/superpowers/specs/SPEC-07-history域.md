@@ -37,6 +37,20 @@ history 域 → 读 SQLite 台账 → 表格(JSONL 可选)
 一张表看全局**;按域分表会把"本周有没有断签"变成 UNION 拼接,且新增域就得改
 公共层,违反多域架构。域信息是 `signin_runs.domain` 一列,不是一张表。
 
+### 2.1 来源标识(source 列)
+
+查数据先分清"这行是真实执行还是回填",两个标识列分工明确:
+
+| 列 | 语义 | 取值 |
+|----|------|------|
+| `source` | **数据哪来的**(规范标识,建了索引) | `run` 正常执行(emit_result 落库) / `backfill` 回填(import-logs / import-server) |
+| `action` | **干了什么** | 正常: 当时的命令(auto/active/claim…);回填: 统一 `backfill` |
+
+细分来源在 `detail.source`:`log-import`(日志导入)/ `server-backfill`
+(服务端导入)。查"只看真实执行"一条 SQL:`WHERE source='run'`;命令行等价物
+是 `history events --source run`。老库(2026-10-22 前)由 store.connect() 的
+迁移逻辑自动补列并回填标识,正常运行的旧行 action 可能为空(当时没传)。
+
 文件位置:项目 `data/auto-signin-kit.db`(**与日志分居**——日志是事件流,可清
 可重建;台账是积累的事实,清理日志不能误伤它),随 `AUTO_SIGNIN_KIT_DATA_DIR`
 整体迁移,被 `.gitignore` 排除。目录定位收口在
@@ -48,7 +62,7 @@ history 域 → 读 SQLite 台账 → 表格(JSONL 可选)
 auto-signin-kit history                      # 最近 7 天每日状态(--days 改回看天数)
 auto-signin-kit history --attention          # 只看需要人工处理的
 auto-signin-kit history --date 2026-10-22    # 某一天的运行明细
-auto-signin-kit history events               # 运行明细(最新在前,--limit 控制条数)
+auto-signin-kit history events --source run  # 运行明细,只看真实执行(--source backfill 只看回填)
 auto-signin-kit history import-logs          # 把现有 JSONL 日志回填进台账(幂等去重)
 auto-signin-kit history import-server        # 服务端还能查到的历史回填进台账
 ```

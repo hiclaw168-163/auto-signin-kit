@@ -29,6 +29,22 @@ class TestRecordAndQuery:
         rows = service.events(domain="trae")
         assert len(rows) == 1
         assert rows[0]["result"] == "CLAIMED"
+        assert rows[0]["source"] == "run"  # 正常执行,规范标识
+        assert rows[0]["action"] == "auto"
+
+    def test_source_filter_separates_run_and_backfill(self):
+        from datetime import date
+
+        store.record_payload(json.dumps(_record(), ensure_ascii=False))
+        rows = service._activity_rows(date(2026, 10, 21), {date(2026, 10, 20): 3})
+        conn = store.connect()
+        try:
+            assert service._insert_rows(conn, [dict(r) for r in rows]) == 1
+        finally:
+            conn.close()
+        assert len(service.events(source="run")) == 1
+        assert len(service.events(source="backfill")) == 1
+        assert service.events() == service.events(source="run") + service.events(source="backfill")
 
     def test_schedule_domain_routes_to_audit_table(self):
         payload = json.dumps({"ts": "2026-10-22T10:00:00+08:00", "domain": "schedule",
@@ -77,6 +93,7 @@ class TestImportLogs:
         assert result["per_domain"]["trae"] == 2
         rows = service.events(domain="trae", limit=10)
         assert {row["result"] for row in rows} == {"CLAIMED", "ERROR"}
+        assert all(row["source"] == "backfill" for row in rows)  # 日志导入也是回填
 
     def test_reimport_is_deduplicated(self, _ledger_dir):
         _write_log(_ledger_dir, "qoder", [
@@ -141,5 +158,9 @@ class TestServerBackfillRows:
         try:
             assert service._insert_rows(conn, [dict(r) for r in rows]) == 1
             assert service._insert_rows(conn, [dict(r) for r in rows]) == 0
+            stored = conn.execute(
+                "SELECT action, source FROM ask_signin_runs").fetchall()
         finally:
             conn.close()
+        assert stored[0]["action"] == "backfill"  # 回填行: action 与 source 双标识
+        assert stored[0]["source"] == "backfill"
