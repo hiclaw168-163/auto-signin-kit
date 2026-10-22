@@ -7,7 +7,11 @@
 - 鉴权 ``Authorization: Cloud-IDE-JWT <用户JWT>``,额带
   ``x-device-id`` 等设备头——**claim 强制(缺头回下单类业务码 9004),
   status 不校验**;
-- ``x-device-id`` 取 storage.json 的 ``telemetry.devDeviceId``,纯明文;
+- ``x-device-id`` 取 storage.json 的设备号——**首选键名
+  ``iCubeAuthInfo://icube-dc:<数字>`` 里的 Aha 数字设备号**,回退
+  ``telemetry.devDeviceId``(UUID 形态)。社区对照(zhigan1/trae-auto-signin,
+  2026-10): UUID 形态会触发 9074 风控,真实客户端发的是数字设备号;此外
+  还对齐客户端指纹头 ``User-Agent: Trae/<版本>`` 与 ``X-User-Region: cn``;
 - 业务错误走 HTTP 200 + ``code`` 字段(1001=无法认证,
   9074=活动参与人数过多被限流),先于通用 auth 判定。
 """
@@ -54,12 +58,18 @@ class Api:
             "Accept": "application/json",
             "Content-Type": "application/json",
             "Authorization": "Cloud-IDE-JWT %s" % self.token,
+            # 与桌面端指纹对齐(社区对照: 缺省 UA/区域头也是风控观察项)
+            "X-User-Region": "cn",
         }
-        if self.device.get("device_id"):
-            headers["x-device-id"] = str(self.device["device_id"])
+        # Aha 数字设备号优先: UUID 形态的 devDeviceId 会触发 9074 风控,
+        # 真实客户端发的是 iCubeAuthInfo://icube-dc:<数字> 键名里的数字号
+        device_id = self.device.get("aha_device_id") or self.device.get("device_id")
+        if device_id:
+            headers["x-device-id"] = str(device_id)
         app_version = self.device.get("app_version")
         if app_version:
             headers["x-app-version"] = str(app_version)
+            headers["User-Agent"] = "Trae/%s" % app_version
         return headers
 
     def call(self, path: str, *, budget: Budget, retry: bool = True) -> tuple[int, Any, str | None]:

@@ -231,7 +231,7 @@ class TestDeviceMetaLockRetry:
 
         monkeypatch.setattr(auth_m, "_read_storage_file", read)
         meta = auth_m.device_meta()
-        assert meta == {"device_id": "dev-1", "app_version": None}
+        assert meta == {"aha_device_id": None, "device_id": "dev-1", "app_version": None}
 
     def test_persistent_lock_degrades_after_three_reads(self, monkeypatch):
         calls = {"n": 0}
@@ -243,6 +243,62 @@ class TestDeviceMetaLockRetry:
         monkeypatch.setattr(auth_m, "_read_storage_file", always_locked)
         assert auth_m.device_meta() == {}
         assert calls["n"] == 3
+
+
+class TestAhaDeviceId:
+    """Aha 数字设备号: 签到 x-device-id 的首选,UUID 形态会触发 9074 风控。"""
+
+    def test_extracted_from_icube_dc_key_name(self):
+        storage = {
+            "iCubeAuthInfo://icube-dc:1234567890123456": "encrypted-blob",
+            "telemetry.devDeviceId": "8f2e7a1c-uuid-form",
+        }
+        assert auth_m.aha_device_id(storage) == "1234567890123456"
+
+    def test_invalid_candidates_are_rejected(self):
+        assert auth_m.aha_device_id({
+            "iCubeAuthInfo://icube-dc:not-a-number": "x",          # 非数字
+            "iCubeAuthInfo://icube-dc:123": "x",                    # 太短(<8)
+            "iCubeAuthInfo://icube-dc:1" + "2" * 25: "x",           # 太长(>20)
+        }) is None
+        assert auth_m.aha_device_id({}) is None
+
+    def test_device_meta_prefers_aha_id(self, monkeypatch):
+        monkeypatch.setattr(auth_m, "data_roaming_roots", lambda _dir=None: [Path("fake")])
+        monkeypatch.setattr(auth_m, "_read_storage_file", lambda _root: (
+            "storage", {
+                "iCubeAuthInfo://icube-dc:9876543210987654": "blob",
+                "telemetry.devDeviceId": "uuid-form",
+                "iCubeLastVersion": "1.107.1",
+            }))
+        assert auth_m.device_meta() == {
+            "aha_device_id": "9876543210987654",
+            "device_id": "uuid-form",
+            "app_version": "1.107.1",
+        }
+
+    def test_headers_prefer_aha_device_id_and_match_client_fingerprint(self):
+        from auto_signin_kit.domains.trae.api import Api
+
+        api = Api("tok", "https://api.trae.cn", device={
+            "aha_device_id": "9876543210987654",
+            "device_id": "uuid-form",
+            "app_version": "1.107.1",
+        })
+        headers = api._headers()
+        assert headers["x-device-id"] == "9876543210987654"  # 数字号优先于 UUID
+        assert headers["User-Agent"] == "Trae/1.107.1"
+        assert headers["X-User-Region"] == "cn"
+
+    def test_headers_fall_back_to_dev_device_id(self):
+        from auto_signin_kit.domains.trae.api import Api
+
+        api = Api("tok", "https://api.trae.cn", device={
+            "aha_device_id": None, "device_id": "uuid-form", "app_version": None,
+        })
+        headers = api._headers()
+        assert headers["x-device-id"] == "uuid-form"  # 如实降级,不伪造数字号
+        assert "User-Agent" not in headers
 
 
 class TestCliSmoke:

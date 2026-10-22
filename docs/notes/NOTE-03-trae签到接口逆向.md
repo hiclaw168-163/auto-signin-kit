@@ -32,11 +32,22 @@
 - **契约变更(2026-10-21 实测)**: claim 现已**强制设备头**(至少
   `x-device-id`,可取 storage.json 明文键 `telemetry.devDeviceId`),缺设备头
   claim 回 `code=9004`(下单参数错误);status 仍不校验。
+- **`x-device-id` 应发 Aha 数字设备号(2026-10-22 社区对照修正)**: 社区项目
+  [zhigan1/trae-auto-signin](https://github.com/zhigan1/trae-auto-signin)
+  的结论——设备头要发 `iCubeAuthInfo://icube-dc:<数字>` **键名里**的 8-20 位
+  纯数字 Aha 设备号,发 UUID 形态的 `telemetry.devDeviceId` 会触发 9074 风控;
+  该键名就在我们已在读的 storage.json 顶层(实测本机为 16 位数字)。同时该
+  项目对齐了两个客户端指纹头: `User-Agent: Trae/<版本>` 与 `X-User-Region: cn`。
+  本工具已于 2026-10-22 采纳(优先数字号,UUID 回退;**不做随机伪造**——
+  对照项目用随机 16 位数字兜底,我们按硬规则"不做静默兜底"如实降级)。
+  同日真机复核: 解析出 16 位数字号 + status 正常;9074 是否因此消失待
+  claim 观察窗(此前 9074 另有服务端排队成分,退避重试对策继续保留)。
 - `9074` = "当前参与用户太多，请稍后再试"(1024 活动期服务端限流),重试恢复。
   **2026-10-22 复核**: 用 IDE 同款五件套设备头(`x-device-id` / `x-device-brand`
   / `x-device-type` / `x-os-version` / `x-app-version`)复刻 claim 请求,
-  **仍稳定回 9074**,且当天 IDE 自身也未签成——确认是服务端排队而非请求缺陷。
-  对策: 同轮内退避重试(30/60/120s)+ 每天 6 次调度触发兜排队,不硬闯。
+  **仍稳定回 9074**,且当天 IDE 自身也未签成——当时设备头发的是 UUID 形态,
+  结合上述社区对照,9074 可能= 数字设备号校验不过 + 服务端排队的叠加;
+  对策升级为"数字设备号 + 同轮内退避重试(30/60/120s)+ 每天 6 次调度触发"。
 - 响应: `{"code":0,"checked_in":true,"credits":100,"extra_credits":100,
   "enable":true,"did_checked_in":false,"message":"success"}`
   — `code` 是业务码(1001=无法认证,即 HTTP 200 里的 auth 拒绝)。

@@ -28,6 +28,12 @@ from auto_signin_kit.core.errors import AutoSignInKitError
 
 STORAGE_REL = Path("User") / "globalStorage" / "storage.json"
 AUTH_KEY_PREFIX = "iCubeAuthInfo://"
+#: Aha 体系的数字设备号藏在键名里: ``iCubeAuthInfo://icube-dc:<16位数字>``。
+#: 社区对照(zhigan1/trae-auto-signin, 2026-10): 签到请求的 ``x-device-id``
+#: 必须发这种纯数字设备号,发 UUID 形态的 devDeviceId 会触发 9074 风控。
+AHA_DEVICE_KEY_PREFIX = "iCubeAuthInfo://icube-dc:"
+AHA_DEVICE_ID_MIN_DIGITS = 8
+AHA_DEVICE_ID_MAX_DIGITS = 20
 #: Trae CN(CN 区)桌面端 authProviderId;解析失败时回退任意 iCubeAuthInfo:// 键。
 DEFAULT_PROVIDER = "icube.cloudide"
 
@@ -180,6 +186,11 @@ def device_meta(override_dir: str | None = None) -> dict:
     给签到请求补设备头用(2026-10 契约: claim 缺 x-device-id 会被服务端以
     下单类业务码拒绝);读不到返回空 dict,调用方按 best-effort 处理。
 
+    - ``aha_device_id``: 键名 ``iCubeAuthInfo://icube-dc:<数字>`` 里的 Aha
+      数字设备号——签到请求 ``x-device-id`` 的首选(见 AHA_DEVICE_KEY_PREFIX 注);
+    - ``device_id``: ``telemetry.devDeviceId``,UUID 形态,仅作回退;
+    - ``app_version``: ``iCubeLastVersion``,用于 UA/版本头。
+
     带 3 次 × 2s 重试: 开机唤醒的补跑任务(实测 08:29 触发)会与 Trae IDE
     启动同时读这份文件,IDE 写入时短暂独占文件锁,撞上 PermissionError 不等
     就等于放弃设备头,claim 必然 9004——与 workbuddy 凭据文件同一对策。
@@ -196,10 +207,29 @@ def device_meta(override_dir: str | None = None) -> dict:
                     continue
                 break  # 锁持续占着: 不无限等,降级为无设备头(best-effort)
             return {
+                "aha_device_id": aha_device_id(data),
                 "device_id": data.get("telemetry.devDeviceId"),
                 "app_version": data.get("iCubeLastVersion"),
             }
     return {}
+
+
+def aha_device_id(storage: dict) -> str | None:
+    """解析 storage.json 顶层键名里的 Aha 数字设备号;解析不到返回 None。
+
+    设备号是键名的一部分(``iCubeAuthInfo://icube-dc:<数字>``,值为该设备的
+    加密登录态),校验 8-20 位纯数字。**找不到不做随机伪造**——静默编造设备
+    身份违反项目"配置或输入非法就显式报错,不做静默兜底"的硬规则,回退行为
+    (用 UUID 形态的 devDeviceId)由调用方决定,9074 时结果里可见可诊断。
+    """
+    for key in storage:
+        if not key.startswith(AHA_DEVICE_KEY_PREFIX):
+            continue
+        candidate = key[len(AHA_DEVICE_KEY_PREFIX):].strip()
+        length_ok = AHA_DEVICE_ID_MIN_DIGITS <= len(candidate) <= AHA_DEVICE_ID_MAX_DIGITS
+        if candidate.isdigit() and length_ok:
+            return candidate
+    return None
 
 
 def _parse_iso(value: object) -> datetime | None:
