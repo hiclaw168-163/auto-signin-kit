@@ -29,8 +29,8 @@ from auto_signin_kit.core.errors import AutoSignInKitError
 STORAGE_REL = Path("User") / "globalStorage" / "storage.json"
 AUTH_KEY_PREFIX = "iCubeAuthInfo://"
 #: Aha 体系的数字设备号藏在键名里: ``iCubeAuthInfo://icube-dc:<16位数字>``。
-#: 社区对照(zhigan1/trae-auto-signin, 2026-10): 签到请求的 ``x-device-id``
-#: 必须发这种纯数字设备号,发 UUID 形态的 devDeviceId 会触发 9074 风控。
+#: 签到请求的 ``x-device-id`` 必须发这种纯数字设备号,发 UUID 形态的
+#: devDeviceId 会触发 9074 风控(2026-10 取证)。
 AHA_DEVICE_KEY_PREFIX = "iCubeAuthInfo://icube-dc:"
 AHA_DEVICE_ID_MIN_DIGITS = 8
 AHA_DEVICE_ID_MAX_DIGITS = 20
