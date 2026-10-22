@@ -10,7 +10,7 @@
 
 | 支持的 AI 编程助手 | 能做什么 |
 |---|---|
-| **WorkBuddy / CodeBuddy 系** | 每日签到领积分;成长中心活跃保底(没对话就自动补一条,活跃天数不断) |
+| **WorkBuddy / CodeBuddy 系** | 每日签到领积分;成长中心活跃保底(没对话就自动补一条,活跃天数不断);Buddy 旅行礼物、派 Buddy、开盲盒、领任务、连登兑换、断登补签等活动全覆盖 |
 | **Qoder CN** | 活动窗口内自动领取 Credits(幂等,重复跑不多领) |
 | **Trae CN** | 每日签到领 Credits(1024 活动限流期自动多轮重试) |
 
@@ -26,7 +26,8 @@
 ([上手](docs/guides/GUIDE-01-开发者上手.md) / [新增域](docs/guides/GUIDE-02-新增一个域.md) /
 [排错](docs/guides/GUIDE-03-排错手册.md))。
 
-> 关键词: Trae 签到 / Qoder 自动签到 / WorkBuddy CodeBuddy 签到 / AI 编程助手积分 /
+> 关键词: workbuddy-auto-signin / trae-auto-signin / qoder-auto-signin /
+> Trae 签到 / Qoder 自动签到 / WorkBuddy CodeBuddy 签到 / AI 编程助手积分 /
 > check-in automation / daily rewards bot / auto signin script / scheduled task
 
 ---
