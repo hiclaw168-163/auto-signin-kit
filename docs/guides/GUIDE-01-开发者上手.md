@@ -98,7 +98,7 @@ uv tool uninstall auto-signin-kit
 
 ```bash
 auto-signin-kit workbuddy auto      # 签到 + 成长中心(幂等,重复跑不会多领)
-auto-signin-kit workbuddy active    # 今天是否已完成一次对话(活跃天数只认对话)
+auto-signin-kit workbuddy active    # 活跃保底: 没有对话记录就自动补一次对话
 auto-signin-kit workbuddy doctor    # 离线检查凭据格式与解密运行时
 auto-signin-kit qoder auto          # 每日 Credits 领取
 auto-signin-kit trae auto           # 每日签到领取

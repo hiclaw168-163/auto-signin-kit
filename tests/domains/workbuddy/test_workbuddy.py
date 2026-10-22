@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from auto_signin_kit.domains.workbuddy import daily, rewards, service
+from auto_signin_kit.domains.workbuddy import chat, daily, rewards, service
 from auto_signin_kit.domains.workbuddy.cli import app
 
 runner = CliRunner()
@@ -141,3 +141,86 @@ class TestDailyPipeline:
         )
         assert out["report"] == "成功领取 5 积分；旅行归来"
         assert (code, out["needs_attention"]) == (0, False)
+
+
+class TestParseSseText:
+    def test_aggregates_deltas_and_stops_at_done(self):
+        raw = ('data: {"choices":[{"delta":{"content":"好"}}]}\n'
+               'data: {"choices":[{"delta":{"content":"的"}}]}\n'
+               'data: [DONE]\n')
+        assert chat.parse_sse_text(raw) == "好的"
+
+    def test_tolerates_garbage_lines(self):
+        raw = "event: ping\ndata: not-json\ndata: {}\ndata: [DONE]\n"
+        assert chat.parse_sse_text(raw) == ""
+
+
+class _FakeNet:
+    """duck-typed Net: get/post 按序喂响应。"""
+
+    def __init__(self, gets=(), posts=()):
+        self._gets = list(gets)
+        self._posts = list(posts)
+        self.get_calls = 0
+        self.post_calls = 0
+
+    def budget_remaining(self):
+        return 60.0
+
+    def get(self, suffix):
+        self.get_calls += 1
+        return self._gets[min(self.get_calls - 1, len(self._gets) - 1)]
+
+    def post(self, suffix, payload=None, retry=False):
+        self.post_calls += 1
+        return self._posts[min(self.post_calls - 1, len(self._posts) - 1)]
+
+
+def _heatmap(score):
+    return {"today": {"date": "2026-10-22"},
+            "cells": [{"date": "2026-10-22", "score": score}]}
+
+
+_SSE_OK = (200, {"raw": 'data: {"choices":[{"delta":{"content":"好的"}}]}\ndata: [DONE]\n'})
+
+
+class TestRunActiveChain:
+    """活跃保底链: 无记录 → 补对话 → 复查记分。"""
+
+    def test_inactive_then_chat_then_active(self):
+        net = _FakeNet(
+            gets=[(200, _heatmap(0)), (200, _heatmap(5))],
+            posts=[_SSE_OK],
+        )
+        out = rewards.run_active(net)
+        assert out["result"] == "ACTIVE"
+        assert out["chatted"] is True
+        assert out["score"] == 5
+        assert net.post_calls == 1
+
+    def test_active_short_circuits_without_chat(self):
+        net = _FakeNet(gets=[(200, _heatmap(7))])
+        out = rewards.run_active(net)
+        assert out["result"] == "ACTIVE"
+        assert net.post_calls == 0
+
+    def test_chat_failure_keeps_attention(self):
+        net = _FakeNet(
+            gets=[(200, _heatmap(0))],
+            posts=[(400, {"code": 11102, "msg": "model not found"})],
+        )
+        out = rewards.run_active(net)
+        assert out["result"] == "NO_ACTIVITY"
+        assert out["needs_attention"] is True
+        assert "11102" in out["chat_error"]
+
+    def test_chatted_but_not_scored_is_not_failure(self):
+        """对话完成但日历还没记分: 不算失败(可能有延迟),交给下次调度确认。"""
+        net = _FakeNet(
+            gets=[(200, _heatmap(0)), (200, _heatmap(0))],
+            posts=[_SSE_OK],
+        )
+        out = rewards.run_active(net)
+        assert out["result"] == "NO_ACTIVITY"
+        assert out["needs_attention"] is False
+        assert out["chatted"] is True

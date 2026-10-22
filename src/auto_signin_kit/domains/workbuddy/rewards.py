@@ -111,8 +111,13 @@ def today_activity(heatmap_body: dict) -> dict:
     }
 
 
-def run_active(net: Net) -> dict:
-    """查活跃日历并报告今天的活跃状态;失败按一行 JSON 契约返回,不抛给上层。"""
+def run_active(net: Net, *, auto_chat: bool = True) -> dict:
+    """查今日活跃,没有活跃记录就自动补一次对话,构成完整的保底链。
+
+    链路: 查 heatmap → 无记录则发一条最小对话(chat.run_chat)→ 复查 heatmap
+    确认记分。复查不到记分不视为失败(服务端可能有延迟),交由下一次调度确认;
+    补对话本身失败才保留 needs_attention。失败按一行 JSON 契约返回,不抛给上层。
+    """
     if net.budget_remaining() <= 0:
         return {"result": "ERROR", "needs_attention": True, "report": "时间预算耗尽，活跃检查跳过"}
     try:
@@ -124,7 +129,7 @@ def run_active(net: Net) -> dict:
                 "needs_attention": True,
                 "report": "查活跃日历失败：HTTP %s" % code,
             }
-        return today_activity(body)
+        out = today_activity(body)
     except StopRoundError:
         raise
     except Exception as exc:  # noqa: BLE001
@@ -133,6 +138,41 @@ def run_active(net: Net) -> dict:
             "needs_attention": True,
             "report": "活跃检查异常（%s: %s）" % (type(exc).__name__, exc),
         }
+    if not (auto_chat and out.get("result") == "NO_ACTIVITY"):
+        return out
+    # 后半环: 自动补一次对话,然后复查日历确认记分。
+    from auto_signin_kit.domains.workbuddy import chat as chat_mod
+
+    chat_out = chat_mod.run_chat(net)
+    if chat_out.get("result") != "CHATTED":
+        out["chatted"] = False
+        out["chat_error"] = chat_out.get("report")
+        out["report"] = "%s；保底对话也失败了（%s）" % (out["report"], chat_out.get("report"))
+        return out
+    try:
+        code, body = net.get(GROWTH_BASE + "/heatmap")
+        check_auth(code)
+        recheck = today_activity(body) if 200 <= code < 300 else None
+    except Exception:  # noqa: BLE001
+        recheck = None
+    if recheck is not None and recheck.get("result") == "ACTIVE":
+        return {
+            "result": "ACTIVE",
+            "needs_attention": False,
+            "date": out.get("date"),
+            "score": recheck.get("score"),
+            "chatted": True,
+            "report": "今天原本没有活跃记录，已自动完成一次对话并确认记分（score=%s）"
+                      % recheck.get("score"),
+        }
+    return {
+        "result": "NO_ACTIVITY",
+        "needs_attention": False,
+        "date": out.get("date"),
+        "score": 0,
+        "chatted": True,
+        "report": "保底对话已完成，但活跃日历尚未记分（可能有延迟）；下次调度会再次确认",
+    }
 
 
 def makeup_candidates(streak_body: dict, heatmap_body: dict) -> list[str]:

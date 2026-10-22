@@ -182,14 +182,14 @@ def run_action(action: str, config: WorkbuddyDomainConfig, *, silent: bool = Fal
 
     if action == "active":
         try:
-            out = rewards.run_active(net)
+            out = rewards.run_active(net)  # 检测 + 自动补对话 + 复查,链在 rewards.run_active
         except AuthError as e:
             out = e.output()
         if warning:
             out.setdefault("config_warning", warning)
         emit_result(out, domain="workbuddy", silent=silent,
                     log_path=log_path(), sensitive=SENSITIVE)
-        # NO_ACTIVITY 不是脚本失败,但它需要人去补一次对话,所以也走非零退出码。
+        # 只有补完对话仍无活跃记录(或链路失败)才非零退出;ACTIVE 为 0。
         return 0 if out.get("result") == "ACTIVE" else 1
 
     if action == "growth":
