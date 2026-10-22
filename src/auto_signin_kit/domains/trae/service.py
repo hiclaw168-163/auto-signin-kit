@@ -2,12 +2,14 @@
 
 契约对齐 Trae CN 桌面端 ttnet 调用(2026-10-21 重新取证): status 先行,
 ``checked_in=true`` 直接回 ALREADY;claim 的 body 为 ``{"req_source": 1}``
-且必须带 ``x-device-id`` 等设备头(缺了回业务码 9004),写操作默认不重试。
+且必须带 ``x-device-id`` 等设备头(缺了回业务码 9004)。写操作默认不重试,
+唯一例外是 9074 活动限流——claim 服务端幂等,同轮内退避重试。
 """
 
 from __future__ import annotations
 
 import json
+import time
 from typing import Any
 
 from auto_signin_kit.core.httpclient import BUDGET_OUT, NO_NETWORK, Budget
@@ -54,8 +56,8 @@ def _business_error(code: int, payload: dict) -> dict | None:
         return None
     if code == 9074:
         return {"result": "RATE_LIMITED", "needs_attention": True, "code": code,
-                "report": "活动参与人数过多被服务端限流（code=9074），稍后重试即可："
-                          "手动再跑一次，或等 schedule 定时任务到点自然补跑"}
+                "report": "活动参与人数过多被服务端限流（code=9074），已按退避重试仍失败，"
+                          "等 schedule 定时任务到点自然补跑"}
     return {"result": "ERROR", "needs_attention": True, "code": code,
             "report": "业务失败 code=%s：%s" % (code, _short(payload.get("message")) or "无消息")}
 
@@ -101,15 +103,27 @@ def claim_once(api: Api, budget: Budget, *, dry_run: bool = False) -> dict:
         return {"result": "ALREADY", "needs_attention": False,
                 "credits": probe.get("credits"),
                 "report": "今日已签到（%s Credits）" % probe.get("credits")}
-    code, payload, err = api.claim(budget=budget)
-    transport = _transport_errors(code, payload, err)
-    if transport:
-        return transport
-    body = _body(payload)
-    if code != 200:
-        return {"result": "ERROR", "needs_attention": True,
-                "report": "领取失败：HTTP %s %s" % (code, _short(payload))}
-    business = _business_error(body.get("code") or 0, body)
+    # 9074 是活动期限流(1024 活动实测): claim 服务端幂等(NOTE-03),按
+    # "确认幂等的签到接口可重试"的项目约定在同轮内退避重试——否则一天三次
+    # 触发全撞上限流,就整日白跑。退避 20+40s,含请求时间在 240s 预算内。
+    business: dict | None = None
+    body: dict = {}
+    for backoff in (None, 20.0, 40.0):
+        if backoff is not None:
+            if budget.remaining() < backoff:
+                break  # 预算撑不起再等一轮: 带着限流结果收尾,交给下一次调度
+            time.sleep(backoff)
+        code, payload, err = api.claim(budget=budget)
+        transport = _transport_errors(code, payload, err)
+        if transport:
+            return transport
+        body = _body(payload)
+        if code != 200:
+            return {"result": "ERROR", "needs_attention": True,
+                    "report": "领取失败：HTTP %s %s" % (code, _short(payload))}
+        business = _business_error(body.get("code") or 0, body)
+        if business is None or business.get("result") != "RATE_LIMITED":
+            break
     if business:
         return business
     if body.get("checked_in") is not True:

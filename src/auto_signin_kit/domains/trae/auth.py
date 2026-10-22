@@ -18,6 +18,7 @@ import base64
 import hashlib
 import json
 import os
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -178,16 +179,26 @@ def device_meta(override_dir: str | None = None) -> dict:
 
     给签到请求补设备头用(2026-10 契约: claim 缺 x-device-id 会被服务端以
     下单类业务码拒绝);读不到返回空 dict,调用方按 best-effort 处理。
+
+    带 3 次 × 2s 重试: 开机唤醒的补跑任务(实测 08:29 触发)会与 Trae IDE
+    启动同时读这份文件,IDE 写入时短暂独占文件锁,撞上 PermissionError 不等
+    就等于放弃设备头,claim 必然 9004——与 workbuddy 凭据文件同一对策。
     """
     for root in data_roaming_roots(override_dir):
-        try:
-            _, data = _read_storage_file(root)
-        except (FileNotFoundError, OSError, ValueError):
-            continue
-        return {
-            "device_id": data.get("telemetry.devDeviceId"),
-            "app_version": data.get("iCubeLastVersion"),
-        }
+        for attempt in range(3):
+            try:
+                _, data = _read_storage_file(root)
+            except (FileNotFoundError, ValueError):
+                break  # 文件不存在/内容非法: 重试无意义,换下一个候选目录
+            except OSError:
+                if attempt < 2:
+                    time.sleep(2)
+                    continue
+                break  # 锁持续占着: 不无限等,降级为无设备头(best-effort)
+            return {
+                "device_id": data.get("telemetry.devDeviceId"),
+                "app_version": data.get("iCubeLastVersion"),
+            }
     return {}
 
 
