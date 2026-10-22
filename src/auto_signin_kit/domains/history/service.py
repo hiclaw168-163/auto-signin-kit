@@ -30,7 +30,7 @@ def daily_status(days: int = 7, *, domain: str | None = None,
     conn = connect()
     try:
         sql = (
-            "SELECT day, domain, result, source, needs_attention, report, last_run"
+            "SELECT day, domain, result, source, needs_attention, report, executed_at"
             " FROM ask_daily_checkins WHERE day >= date('now', ?)"
         )
         params: list[Any] = ["-%d days" % max(1, days)]
@@ -55,11 +55,11 @@ def events(
     limit: int = 50,
 ) -> list[dict[str, Any]]:
     """按条件查 ``ask_signin_runs`` 明细,最新在前;``source`` 过滤 run/backfill。"""
-    sql = ("SELECT ts, domain, action, source, result, needs_attention, report"
+    sql = ("SELECT executed_at, domain, action, source, result, needs_attention, report"
            " FROM ask_signin_runs WHERE 1=1")
     params: list[Any] = []
     if date:
-        sql += " AND date(ts) = ?"
+        sql += " AND date(executed_at) = ?"
         params.append(date)
     if domain:
         sql += " AND domain = ?"
@@ -69,7 +69,7 @@ def events(
         params.append(source)
     if attention_only:
         sql += " AND needs_attention = 1"
-    sql += " ORDER BY ts DESC, id DESC LIMIT ?"
+    sql += " ORDER BY executed_at DESC, id DESC LIMIT ?"
     params.append(limit)
     conn = connect()
     try:
@@ -114,7 +114,7 @@ def import_logs(log_dir: Path | None = None) -> dict[str, Any]:
                     continue
                 with conn:
                     conn.execute(
-                        "INSERT INTO ask_signin_runs (ts, domain, action, source,"
+                        "INSERT INTO ask_signin_runs (executed_at, domain, action, source,"
                         " result, needs_attention, report, detail)"
                         " VALUES (?, ?, ?, 'backfill', ?, ?, ?, ?)",
                         (
@@ -170,7 +170,7 @@ def _parse_line(line: str, domain: str,
 
 def _already_exists(conn: sqlite3.Connection, record: dict[str, Any]) -> bool:
     row = conn.execute(
-        "SELECT 1 FROM ask_signin_runs WHERE ts = ? AND domain = ? AND result = ?"
+        "SELECT 1 FROM ask_signin_runs WHERE executed_at = ? AND domain = ? AND result = ?"
         " AND report IS ? LIMIT 1",
         (record["ts"], record["domain"], record["result"], record.get("report")),
     ).fetchone()
@@ -319,7 +319,10 @@ def _qoder_rows(payload: Any) -> list[dict[str, Any]]:
 
 
 def _insert_rows(conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> int:
-    """批量插入服务端回填行(source=backfill,逐条去重);返回实际新增行数。"""
+    """批量插入服务端回填行(source=backfill,逐条去重);返回实际新增行数。
+
+    行字典沿用事件载荷的字段名 ``ts``,落库时映射到 ``executed_at`` 列。
+    """
     inserted = 0
     for record in rows:
         detail = record.pop("detail")
@@ -328,7 +331,7 @@ def _insert_rows(conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> int:
             continue
         with conn:
             conn.execute(
-                "INSERT INTO ask_signin_runs (ts, domain, action, source,"
+                "INSERT INTO ask_signin_runs (executed_at, domain, action, source,"
                 " result, needs_attention, report, detail)"
                 " VALUES (?, ?, ?, 'backfill', ?, ?, ?, ?)",
                 (
