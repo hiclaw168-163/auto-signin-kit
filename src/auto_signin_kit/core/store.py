@@ -10,6 +10,15 @@
 - ``ask_daily_checkins``   **视图**(非实体表): 每天每域最后一次运行 = 当天最终状态,
                            把"一天多次运行"折叠成一行,history 命令与人工查库都读它
 
+两个标识列的分工(查数据先想清楚用哪个):
+
+- ``source`` = **数据哪来的**——``run`` 正常执行(emit_result 落库) /
+  ``backfill`` 回填(import-logs / import-server)。细分来源在 ``detail.source``
+  (``log-import`` 日志导入 / ``server-backfill`` 服务端导入)。
+  "只看真实执行" ``WHERE source='run'``,一条 SQL 的事。
+- ``action``  = **干了什么**——正常执行是当时的命令(auto / active / claim…),
+  回填行统一 ``backfill``。旧数据(2026-10-22 前)正常行可能缺 action。
+
 不建更多表的理由: 连签天数、积分累计这类"统计"都存在 ``detail`` 的完整事件
 JSON 里(SQLite 内置 json_extract 可查),存派生数据只会引入两份真相。
 
@@ -40,7 +49,8 @@ CREATE TABLE IF NOT EXISTS ask_signin_runs (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     ts              TEXT    NOT NULL,  -- ISO8601 本地时区
     domain          TEXT    NOT NULL,  -- workbuddy / qoder / trae
-    action          TEXT,              -- auto / silent / poll / active / claim ...
+    action          TEXT,              -- 干了什么: auto / active / claim / backfill ...
+    source          TEXT    NOT NULL DEFAULT 'run',  -- 数据哪来的: run / backfill
     result          TEXT    NOT NULL,  -- CLAIMED / ALREADY / ACTIVE / NO_AUTH ...
     needs_attention INTEGER NOT NULL DEFAULT 0,
     report          TEXT,              -- 一句人话摘要
@@ -57,11 +67,20 @@ CREATE TABLE IF NOT EXISTS ask_schedule_changes (
     tasks    TEXT,           -- 本次变更涉及的任务与时间(JSON 数组)
     report   TEXT
 );
+"""
 
-CREATE VIEW IF NOT EXISTS ask_daily_checkins AS
+#: 依赖新列的索引与视图,必须在 _migrate 补列**之后**执行,不能进上面的建表脚本。
+_SCHEMA_AFTER_MIGRATE = """
+CREATE INDEX IF NOT EXISTS idx_ask_signin_runs_source ON ask_signin_runs(source);
+
+-- 视图是纯派生物,每次连接重建(CREATE VIEW 无 IF NOT EXISTS 的改列能力,
+-- 直接 DROP+CREATE 保证老库也能拿到新列)
+DROP VIEW IF EXISTS ask_daily_checkins;
+CREATE VIEW ask_daily_checkins AS
 SELECT date(r.ts)            AS day,
        r.domain              AS domain,
        r.result              AS result,
+       r.source              AS source,
        r.needs_attention     AS needs_attention,
        r.report              AS report,
        r.ts                  AS last_run
@@ -74,6 +93,12 @@ WHERE r.id = (
 );
 """
 
+#: 老库迁移: ALTER 加列后,把历史上靠 action 标记的回填行规整到 source 列。
+_MIGRATIONS = (
+    ("source", "ALTER TABLE ask_signin_runs ADD COLUMN source TEXT NOT NULL DEFAULT 'run'",
+     "UPDATE ask_signin_runs SET source = 'backfill' WHERE action = 'backfill'"),
+)
+
 
 def db_path() -> Any:
     """台账文件路径: 运行时数据目录(尊重 ``AUTO_SIGNIN_KIT_DATA_DIR``)。"""
@@ -81,13 +106,29 @@ def db_path() -> Any:
 
 
 def connect() -> sqlite3.Connection:
-    """打开台账连接并确保表结构存在;调用方负责 close。"""
+    """打开台账连接并确保表结构存在(含老库加列迁移);调用方负责 close。
+
+    顺序有讲究: 建表 → 老库补列 → 建依赖新列的索引/视图,
+    否则老库上视图/索引引用尚不存在的列会直接报错。
+    """
     conn = sqlite3.connect(db_path(), timeout=3.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=3000")
     conn.executescript(_SCHEMA)
+    _migrate(conn)
+    conn.executescript(_SCHEMA_AFTER_MIGRATE)
     return conn
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """老库补列(幂等): CREATE TABLE IF NOT EXISTS 不会给已有表加列。"""
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(ask_signin_runs)")}
+    for name, add_sql, backfill_sql in _MIGRATIONS:
+        if name not in columns:
+            with conn:
+                conn.execute(add_sql)
+                conn.execute(backfill_sql)
 
 
 def record_payload(payload: str) -> bool:
@@ -119,8 +160,9 @@ def record_payload(payload: str) -> bool:
                     )
                 else:
                     conn.execute(
-                        "INSERT INTO ask_signin_runs (ts, domain, action, result,"
-                        " needs_attention, report, detail) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        "INSERT INTO ask_signin_runs (ts, domain, action, source,"
+                        " result, needs_attention, report, detail)"
+                        " VALUES (?, ?, ?, 'run', ?, ?, ?, ?)",
                         (
                             record["ts"],
                             str(record.get("domain") or "unknown"),
