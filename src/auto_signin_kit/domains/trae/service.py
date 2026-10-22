@@ -103,12 +103,14 @@ def claim_once(api: Api, budget: Budget, *, dry_run: bool = False) -> dict:
         return {"result": "ALREADY", "needs_attention": False,
                 "credits": probe.get("credits"),
                 "report": "今日已签到（%s Credits）" % probe.get("credits")}
-    # 9074 是活动期限流(1024 活动实测): claim 服务端幂等(NOTE-03),按
-    # "确认幂等的签到接口可重试"的项目约定在同轮内退避重试——否则一天三次
-    # 触发全撞上限流,就整日白跑。退避 20+40s,含请求时间在 240s 预算内。
+    # 9074 是活动期限流(1024 活动实测,2026-10-22 用 IDE 同款五件套设备头
+    # 复刻请求仍 9074——确认是服务端排队而非请求问题): claim 服务端幂等
+    # (NOTE-03),按"确认幂等的签到接口可重试"的项目约定在同轮内退避重试,
+    # 否则一天几次触发全撞上限流就整日白跑。退避 30+60+120s≈210s,加请求
+    # 时间贴着 240s 预算收尾;预算不足时提前收手,带限流结果交给下一次调度。
     business: dict | None = None
     body: dict = {}
-    for backoff in (None, 20.0, 40.0):
+    for backoff in (None, 30.0, 60.0, 120.0):
         if backoff is not None:
             if budget.remaining() < backoff:
                 break  # 预算撑不起再等一轮: 带着限流结果收尾,交给下一次调度

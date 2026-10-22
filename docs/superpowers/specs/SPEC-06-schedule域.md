@@ -26,7 +26,7 @@ OS 差异全部在 `core/adapters/scheduler/`,本域只见 `core.ports.scheduler
 | `WorkBuddyGrowthPoll` | `workbuddy poll` | 01/05/09/13/17/21:05 | PT5M |
 | `WorkBuddyActiveCheck` | `workbuddy active --silent` | 12/20:05 | PT5M |
 | `QoderDailyCredits` | `qoder auto --silent` | 10/11/15/19/23:05 | PT5M |
-| `TraeDailyCheckin` | `trae auto --silent` | 09/13/21:05 | PT5M |
+| `TraeDailyCheckin` | `trae auto --silent` | 09/13/15/19/21/23:05 | PT5M |
 
 Trae 域是本仓库自己扩展的: 取证文档 `NOTE-01` 只覆盖 WorkBuddy,Qoder 见 `NOTE-02`。
 
