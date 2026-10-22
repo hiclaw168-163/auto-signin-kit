@@ -27,9 +27,9 @@ import json
 import sqlite3
 from typing import Any
 
-from auto_signin_kit.core.adapters.log_dir import default_log_dir
+from auto_signin_kit.core.adapters.log_dir import default_data_dir
 
-#: 台账文件名(放在日志目录旁,同样被 .gitignore 排除)。
+#: 台账文件名(运行时数据目录,与日志分居;同样被 .gitignore 排除)。
 LEDGER_FILENAME = "signin_ledger.db"
 
 #: 调度域的结果不进签到台账,单独记审计表。
@@ -76,8 +76,8 @@ WHERE r.id = (
 
 
 def db_path() -> Any:
-    """台账文件路径: 跟结果日志同目录(尊重 ``AUTO_SIGNIN_KIT_LOG_DIR``)。"""
-    return default_log_dir() / LEDGER_FILENAME
+    """台账文件路径: 运行时数据目录(尊重 ``AUTO_SIGNIN_KIT_DATA_DIR``)。"""
+    return default_data_dir() / LEDGER_FILENAME
 
 
 def connect() -> sqlite3.Connection:

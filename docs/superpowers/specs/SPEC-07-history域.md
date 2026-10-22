@@ -37,8 +37,10 @@ history 域 → 读 SQLite 台账 → 表格(JSONL 可选)
 一张表看全局**;按域分表会把"本周有没有断签"变成 UNION 拼接,且新增域就得改
 公共层,违反多域架构。域信息是 `signin_runs.domain` 一列,不是一张表。
 
-文件位置:与结果日志同目录(`logs/signin_ledger.db`),随
-`AUTO_SIGNIN_KIT_LOG_DIR` 整体迁移,被 `.gitignore` 排除。
+文件位置:项目 `data/signin_ledger.db`(**与日志分居**——日志是事件流,可清
+可重建;台账是积累的事实,清理日志不能误伤它),随 `AUTO_SIGNIN_KIT_DATA_DIR`
+整体迁移,被 `.gitignore` 排除。目录定位收口在
+`core/adapters/log_dir.default_data_dir()`。
 
 ## 3. 命令
 
@@ -80,9 +82,10 @@ ts 晚于回填行,视图 `ask_daily_checkins` 自然优先展示真实运行。
 
 台账写入端在 emit_result,而**测试也走 emit**——不隔离的话,跑一次测试套件就把
 `NO_AUTH` 假记录写进真实台账(2026-10-22 实际发生,台账里混进了 pytest 临时
-目录路径的行)。修复:根 `tests/conftest.py` autouse 把
-`AUTO_SIGNIN_KIT_LOG_DIR` 指到每测试的临时目录——日志与台账同源解析,一处隔离
-两边生效。**任何新增的"从日志目录解析路径"的存储都必须过这道隔离**。
+目录路径的行)。修复:根 `tests/conftest.py` autouse 把 `AUTO_SIGNIN_KIT_LOG_DIR`
+与 `AUTO_SIGNIN_KIT_DATA_DIR` 都指到每测试的临时目录——日志与台账分别从两个
+环境变量解析,一处隔离两边生效。**任何新增的"从日志/数据目录解析路径"的存储
+都必须过这道隔离**。
 
 ## 6. 失效模式
 

@@ -89,8 +89,10 @@ uv tool uninstall auto-signin-kit
 ```
 
 可选清理: 运行日志默认在项目 `logs/` 目录(或 `AUTO_SIGNIN_KIT_LOG_DIR`
-指定的目录),随仓库目录一起删除;非项目环境下在平台目录(macOS
-`~/Library/Logs/auto-signin-kit`、Windows `%LOCALAPPDATA%\auto-signin-kit`)。
+指定的目录),运行数据(SQLite 签到台账)在项目 `data/` 目录(或
+`AUTO_SIGNIN_KIT_DATA_DIR`),各自随仓库目录一起删除;非项目环境下在平台目录
+(macOS `~/Library/Logs/auto-signin-kit`、Windows
+`%LOCALAPPDATA%\auto-signin-kit`)。
 
 不再使用的话,删掉仓库目录即可——代码、`.venv`、配置都在里面。
 
