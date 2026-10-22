@@ -102,6 +102,14 @@ def emit_result(
     payload = _dumps(record)
     for value in sensitive or ():
         payload = payload.replace(value, "[REDACTED]")
+    # 台账落库(见 core/store.py): best-effort,任何失败都不影响输出通道;
+    # 放在所有输出分支之前,保证静默/非静默/日志兜底每条路径都只落一次库。
+    try:
+        from auto_signin_kit.core import store
+
+        store.record_payload(payload)
+    except Exception:  # noqa: BLE001
+        pass
     is_error = isinstance(out, dict) and out.get("result") == "ERROR"
     if not silent:
         _write_stdout(payload)
@@ -113,7 +121,6 @@ def emit_result(
         log_path.parent.mkdir(parents=True, exist_ok=True)
         with log_path.open("a", encoding="utf-8") as handle:
             handle.write(payload + "\n")
-        return
     except Exception:
         # 日志写不进去时退回 stdout,至少不把结果丢掉。
         _write_stdout(payload)

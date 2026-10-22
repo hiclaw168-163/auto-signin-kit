@@ -102,6 +102,7 @@ auto-signin-kit workbuddy active    # 活跃保底: 没有对话记录就自动�
 auto-signin-kit workbuddy doctor    # 离线检查凭据格式与解密运行时
 auto-signin-kit qoder auto          # 每日 Credits 领取
 auto-signin-kit trae auto           # 每日签到领取
+auto-signin-kit history             # 签到台账: 每天/每域结果一览(不必翻日志)
 auto-signin-kit schedule status     # 看定时任务注册情况
 ```
 
@@ -131,7 +132,7 @@ auto-signin-kit schedule status     # 看定时任务注册情况
 | `config/domains/` | 各域 YAML 配置,`*.local.yaml` 是本机覆盖、不入库 |
 | `tests/` | 含**架构门禁**(`test_architecture_gate.py`)——不是普通单测 |
 | `docs/standards/` | 开发规范 STD-01~06 |
-| `docs/superpowers/specs/` | as-built 文档 SPEC-01~06 |
+| `docs/superpowers/specs/` | as-built 文档 SPEC-01~07 |
 | `docs/notes/` | 逆向取证 NOTE-01~03(端点与协议是怎么知道的) |
 | `docs/adr/` | 架构决策记录 |
 | `docs/guides/` | 本目录: 操作指南 |

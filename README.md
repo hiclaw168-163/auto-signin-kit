@@ -57,6 +57,7 @@ auto-signin-kit qoder auto                 # Qoder CN 每日 Credits 领取
 auto-signin-kit qoder auto --dry-run       # 只报告可领取项,不真领取
 auto-signin-kit trae auto                  # Trae CN 每日签到领取(幂等)
 auto-signin-kit trae doctor                # 离线检查登录态可读性与有效期
+auto-signin-kit history                    # 签到台账: 每天/每域结果一览,不必翻日志
 ```
 
 每个命令输出**一行 JSON 事件**(stdout 由机器读,过程日志走 stderr),字段
@@ -226,6 +227,7 @@ src/auto_signin_kit/
 ├── orchestration/               # pipeline.py + step.py(多步命令: 顺序执行 + 逆序回滚)
 ├── core/
 │   ├── ports/                   # 端口层: 只放 Protocol 与数据对象(定时调度)
+│   ├── store.py                 # SQLite 签到台账(结果落库,见 SPEC-07)
 │   ├── httpclient.py            # 带时间预算+退避重试的请求层(分桶退避)
 │   ├── report.py                # 一行 JSON 结果契约 + 脱敏 + 静默日志双通道
 │   ├── config/                  # 惰性配置解析 + pydantic 域 schema 基类
@@ -246,7 +248,8 @@ src/auto_signin_kit/
     ├── workbuddy/               # 签到 + 成长中心(旅行/任务/补登/兑换/盲盒)
     ├── qoder/                   # 每日 Credits(活动查询/领取/设备风控头)
     ├── trae/                    # 每日签到(status/claim,SS_AES 凭据解锁)
-    └── schedule/                # 定时调度: 注册/注销/查看每日自动任务
+    ├── schedule/                # 定时调度: 注册/注销/查看每日自动任务
+    └── history/                 # 签到台账: 每日状态一览/运行明细/日志回填
 ```
 
 文档地图(逆向取证与实现文档分工):
@@ -254,7 +257,7 @@ src/auto_signin_kit/
 | 文档 | 性质 |
 |------|------|
 | `docs/notes/NOTE-01~03` | 逆向取证:端点、信封协议与证据链(索引见 `docs/notes/README.md`) |
-| `docs/superpowers/specs/SPEC-01~06` | as-built 实现:代码实际是什么样 |
+| `docs/superpowers/specs/SPEC-01~07` | as-built 实现:代码实际是什么样 |
 | `docs/adr/ADR-0001~0003` | 架构决策:为什么这样设计 |
 | `docs/guides/GUIDE-01~03` | 操作指南: 上手 / 新增域 / 排错(索引见 `docs/guides/README.md`) |
 
