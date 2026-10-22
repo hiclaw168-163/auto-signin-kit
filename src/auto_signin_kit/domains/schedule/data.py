@@ -57,9 +57,9 @@ TASKS: tuple[ScheduleSpec, ...] = (
     ScheduleSpec(
         name="TraeDailyCheckin",
         argv=("auto-signin-kit", "trae", "auto", "--silent"),
-        times=("09:05", "13:05", "21:05"),
+        times=("09:05", "13:05", "15:05", "19:05", "21:05", "23:05"),
         limit_minutes=5,
-        description="Trae CN 每日签到",
+        description="Trae CN 每日签到(1024 活动期限流,高密度触发兜排队)",
     ),
 )
 

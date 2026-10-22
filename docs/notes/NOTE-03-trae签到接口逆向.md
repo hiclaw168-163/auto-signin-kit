@@ -33,6 +33,10 @@
   `x-device-id`,可取 storage.json 明文键 `telemetry.devDeviceId`),缺设备头
   claim 回 `code=9004`(下单参数错误);status 仍不校验。
 - `9074` = "当前参与用户太多，请稍后再试"(1024 活动期服务端限流),重试恢复。
+  **2026-10-22 复核**: 用 IDE 同款五件套设备头(`x-device-id` / `x-device-brand`
+  / `x-device-type` / `x-os-version` / `x-app-version`)复刻 claim 请求,
+  **仍稳定回 9074**,且当天 IDE 自身也未签成——确认是服务端排队而非请求缺陷。
+  对策: 同轮内退避重试(30/60/120s)+ 每天 6 次调度触发兜排队,不硬闯。
 - 响应: `{"code":0,"checked_in":true,"credits":100,"extra_credits":100,
   "enable":true,"did_checked_in":false,"message":"success"}`
   — `code` 是业务码(1001=无法认证,即 HTTP 200 里的 auth 拒绝)。
