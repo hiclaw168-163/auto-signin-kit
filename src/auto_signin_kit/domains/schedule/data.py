@@ -45,7 +45,7 @@ TASKS: tuple[ScheduleSpec, ...] = (
         argv=("auto-signin-kit", "workbuddy", "active", "--silent"),
         times=("12:05", "20:05"),
         limit_minutes=5,
-        description="WorkBuddy 活跃度检查: 今天是否已完成一次对话(活跃天数只认对话)",
+        description="WorkBuddy 活跃保底: 查今日活跃,没有就自动补一次对话(活跃天数只认对话)",
     ),
     ScheduleSpec(
         name="QoderDailyCredits",

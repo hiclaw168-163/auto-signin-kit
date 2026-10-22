@@ -51,7 +51,7 @@ uv tool uninstall auto-signin-kit     # 移除全局命令
 auto-signin-kit --help                     # 列出所有域
 auto-signin-kit workbuddy --help           # 看某个域有哪些命令
 auto-signin-kit workbuddy auto             # WorkBuddy 签到 + 成长中心(幂等)
-auto-signin-kit workbuddy active           # 查今天是否已完成一次对话(活跃天数只认对话)
+auto-signin-kit workbuddy active           # 活跃保底: 没有对话记录就自动补一次对话
 auto-signin-kit workbuddy doctor           # 离线检查凭据与解密运行时
 auto-signin-kit qoder auto                 # Qoder CN 每日 Credits 领取
 auto-signin-kit qoder auto --dry-run       # 只报告可领取项,不真领取
@@ -125,8 +125,9 @@ auto-signin-kit schedule uninstall            # 注销(同样支持 --domain / -
 | `QoderDailyCredits` | `qoder auto --silent` | 10/11/15/19/23:05 | 5 min |
 | `TraeDailyCheckin` | `trae auto --silent` | 09/13/21:05 | 5 min |
 
-`WorkBuddyActiveCheck` 是独立于签到的一类提醒: 活跃天数**只认对话**,领了积分
-没对话当天仍算断,它会明确报出来让你当天补得上。
+`WorkBuddyActiveCheck` 是独立于签到的活跃保底: 活跃天数**只认对话**,领了积分
+没对话当天仍算断。它发现当天没有活跃记录时会**自动补一次对话**并复查记分,
+不再只是提醒。
 
 ### 改时间不用动代码
 

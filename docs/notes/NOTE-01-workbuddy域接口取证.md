@@ -232,7 +232,34 @@ Base 路径:`/v2/activity/growth`。七步按固定顺序,**每步独立 try,一
 
 ---
 
-## 12. 失效与重新取证
+## 12. 对话接口(活跃保底用)
+
+→ 对应实现: `domains/workbuddy/chat.py`(活跃保底链的"补一次对话"半环)
+
+取证(2026-10-22,客户端 app.asar + 实测):
+
+- 端点: `POST {base}/v2/chat/completions`(与签到同 base),OpenAI 兼容体
+  `{"model": "...", "messages": [{"role": "user", "content": "..."}], "stream": true}`;
+  asar 内路由名 `chat.stream`,方法 POST
+- **只支持流式**: `stream=false` 回 HTTP 400 + 业务码 11101
+  ("Non-stream chat request is currently not supported")
+- **`model` 必填**: 缺失回业务码 11102("model [] service info not found");
+  可用模型经 `GET /v2/enterprises/personal/models` 查询(实测返回
+  `auto / hy4-preview / hy3 / step-5-preview / deepseek-v4.1-flash / glm-5.3 /`
+  `kimi-k3-1 / minimax-m3.1-flash` 等),`auto` 是客户端默认标签
+- **鉴权与签到同款**: `build_headers` 的 `Authorization: Bearer` + `X-User-Id`
+  直接可用,实测无需 asar 里那段 HMAC 签名(那是 Web 场景的)
+- 响应: `text/event-stream`,每行 `data: {JSON}`,聚合
+  `choices[0].delta.content`,以 `data: [DONE]` 结束
+- 实测最小对话(模型 `auto`,一句话)HTTP 200,SSE 23 个事件正常收尾;
+  **对话完成后 heatmap 当轮即记分**(实测 0 → 12)
+
+这条链的完整流程在 `rewards.run_active`: 查 heatmap → 无活跃记录 → 发保底对话
+→ 复查 heatmap 确认记分。活跃天数只认对话,所以"补对话"是防断签的唯一手段。
+
+---
+
+## 13. 失效与重新取证
 
 接口系从桌面客户端逆向获得,**可能随客户端改版失效**。症状通常是某一步开始稳定
 返回 400/404,或字段形状变了(服务端改版最爱动的就是这种细节)。

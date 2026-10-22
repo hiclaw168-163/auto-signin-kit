@@ -61,7 +61,7 @@ def active(
         False, "--silent", help="结果写日志文件而非 stdout(配合 pythonw 定时任务)"
     ),
 ) -> None:
-    """查今日活跃度: 今天是否已完成一次对话(活跃天数只认对话,领积分不算)。"""
+    """今日活跃保底: 查活跃记录,没有就自动补一次对话(活跃天数只认对话)。"""
     raise typer.Exit(_run(service.run_action, "active", _config(), silent=silent))
 
 
