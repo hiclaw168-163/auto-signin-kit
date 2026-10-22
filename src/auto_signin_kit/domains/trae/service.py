@@ -2,7 +2,9 @@
 
 契约对齐 Trae CN 桌面端 ttnet 调用(2026-10-21 重新取证): status 先行,
 ``checked_in=true`` 直接回 ALREADY;claim 的 body 为 ``{"req_source": 1}``
-且必须带 ``x-device-id`` 等设备头(缺了回业务码 9004)。写操作默认不重试,
+且必须带 ``x-device-id`` 等设备头(缺了回业务码 9004)。claim 受理响应只有
+``{"code": 0}`` 不回显 checked_in(2026-10-22 实测),签到确认以 status 复查为准。
+写操作默认不重试,
 唯一例外是 9074 活动限流——claim 服务端幂等,同轮内退避重试。
 """
 
@@ -128,11 +130,26 @@ def claim_once(api: Api, budget: Budget, *, dry_run: bool = False) -> dict:
             break
     if business:
         return business
-    if body.get("checked_in") is not True:
-        return {"result": "ERROR", "needs_attention": True,
-                "report": "领取已发出但服务端未确认签到：%s" % _short(payload)}
-    credits = body.get("credits")
-    extra = body.get("extra_credits")
+    if body.get("checked_in") is True:  # 服务端若回显 checked_in,直接采信
+        return _claimed(body.get("credits"), body.get("extra_credits"))
+    # claim 受理成功但响应不回显 checked_in(2026-10-22 实测响应只有
+    # {"code": 0, "message": "success"}),以 status 复查为准;状态有延迟,
+    # 按 0/3/8s 复查三轮,仍未确认就如实报 ERROR,交人工或下轮调度核实。
+    for wait in (0.0, 3.0, 8.0):
+        if wait:
+            if budget.remaining() < wait:
+                break
+            time.sleep(wait)
+        confirm = check_status(api, budget)
+        if confirm.get("checked_in") is True:
+            return _claimed(confirm.get("credits"), confirm.get("extra_credits"))
+    return {"result": "ERROR", "needs_attention": True,
+            "report": "领取已发出（code=0）但三轮状态复查未确认签到，"
+                      "稍后用 `trae status` 复查确认"}
+
+
+def _claimed(credits: Any, extra: Any) -> dict:
+    """CLAIMED 结果的统一形状(claim 回显与 status 复查两条路共用)。"""
     summary = "领取成功：今日 %s Credits" % ("" if credits is None else credits)
     if extra:
         summary += "（含活动附加 %s）" % extra

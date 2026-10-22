@@ -94,15 +94,18 @@ class TestSSAESDecrypt:
 
 
 class _FakeApi:
-    """duck-typed Api: status/claim 直接喂响应元组。"""
+    """duck-typed Api: status/claim 直接喂响应元组;status 可给序列按次翻转。"""
 
     def __init__(self, status=(200, {"code": 0}, None), claim=(200, {"code": 0}, None)):
-        self.status_resp, self.claim_resp = status, claim
+        self.status_resps = list(status) if isinstance(status, list) else [status]
+        self.claim_resp = claim
         self.token_expires_at = None
 
     def status(self, *, budget, retry=True):
         budget.remaining()
-        return self.status_resp
+        if len(self.status_resps) > 1:
+            return self.status_resps.pop(0)
+        return self.status_resps[0]
 
     def claim(self, *, budget):
         budget.remaining()
@@ -138,9 +141,10 @@ def _status_resp(checked: bool, credits=100) -> dict:
 
 class TestServiceMapping:
     def test_claim_when_not_checked_claims(self):
+        # 真实形状: claim 只回 {"code": 0},由 status 复查确认(2026-10-22)
         api = _FakeApi(
-            status=(200, _status_resp(False), None),
-            claim=(200, _status_resp(True), None))
+            status=[(200, _status_resp(False), None), (200, _status_resp(True), None)],
+            claim=(200, {"code": 0, "message": "success"}, None))
         out = service.claim_once(api, _NoBudget())
         assert out["result"] == "CLAIMED"
         assert out["credits"] == 100
@@ -170,6 +174,41 @@ class TestServiceMapping:
         api = _FakeApi(status=(401, {}, None))
         out = service.claim_once(api, _NoBudget())
         assert out["result"] == "AUTH_REJECTED"
+
+
+class TestClaimConfirm:
+    """claim 受理(code=0)后用 status 复查确认;响应回显 checked_in 时走快速路径。"""
+
+    @pytest.fixture(autouse=True)
+    def _no_sleep(self, monkeypatch):
+        monkeypatch.setattr(service.time, "sleep", lambda _: None)
+
+    def test_claim_body_echo_is_trusted_without_status_poll(self):
+        api = _FakeApi(
+            status=(200, _status_resp(False), None),
+            claim=(200, _status_resp(True), None))
+        out = service.claim_once(api, _NoBudget())
+        assert out["result"] == "CLAIMED"
+        assert out["credits"] == 100
+
+    def test_status_confirms_after_claim_lag(self):
+        # 复查第一轮状态还没翻转,第二轮确认(服务端状态延迟)
+        api = _FakeApi(
+            status=[(200, _status_resp(False), None),
+                    (200, _status_resp(False), None),
+                    (200, _status_resp(True), None)],
+            claim=(200, {"code": 0, "message": "success"}, None))
+        out = service.claim_once(api, _NoBudget())
+        assert out["result"] == "CLAIMED"
+
+    def test_unconfirmed_claim_reports_error(self):
+        api = _FakeApi(
+            status=(200, _status_resp(False), None),
+            claim=(200, {"code": 0, "message": "success"}, None))
+        out = service.claim_once(api, _NoBudget())
+        assert out["result"] == "ERROR"
+        assert out["needs_attention"] is True
+        assert "code=0" in out["report"]
 
 
 class TestRateLimitRetry:
