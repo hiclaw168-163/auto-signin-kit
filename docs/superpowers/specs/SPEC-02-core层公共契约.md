@@ -34,6 +34,12 @@ config · prompt · orchestration · adapters。
   硬规则: 日志目录由 `log_dir.default_log_dir()` 统一定位——
   `AUTO_SIGNIN_KIT_LOG_DIR` > 项目 `logs/` 子目录(可编辑安装时即仓库根,
   `logs/` 已 gitignore;直接写仓库**根目录**的旧方案已清理)> 平台目录。
+
+  运行时**数据**(SQLite 台账等可变状态)与日志分居,由
+  `log_dir.default_data_dir()` 统一定位,优先级同构:
+  `AUTO_SIGNIN_KIT_DATA_DIR` > 项目 `data/` 子目录(`data/` 已 gitignore)>
+  平台目录 `app_data_root()/data`。日志可清可重建,数据是积累的事实,
+  两者分目录存放,清理日志永不误伤台账。
 - 落盘文件名统一按域名派生: `<域名>.log`(workbuddy.log / qoder.log /
   trae.log),由 `result_log_path` 统一命名,域层不自起文件名。
 

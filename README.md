@@ -40,8 +40,10 @@ uv tool uninstall auto-signin-kit     # 移除全局命令
 ```
 
 可选清理: 运行日志默认在项目 `logs/` 目录(或 `AUTO_SIGNIN_KIT_LOG_DIR`
-指定的目录),随目录一起删除即可;非项目环境下在平台目录(macOS
-`~/Library/Logs/auto-signin-kit`、Windows `%LOCALAPPDATA%\auto-signin-kit`)。
+指定的目录),运行数据(SQLite 台账)在项目 `data/` 目录(或
+`AUTO_SIGNIN_KIT_DATA_DIR`),各自随目录一起删除即可;非项目环境下在平台目录
+(macOS `~/Library/Logs/auto-signin-kit`、Windows
+`%LOCALAPPDATA%\auto-signin-kit`)。
 
 ---
 
@@ -79,6 +81,12 @@ auto-signin-kit history import-server      # 把服务端的历史记录(活跃�
    Linux `$XDG_STATE_HOME/auto-signin-kit/log`(缺省 `~/.local/state/...`)。
 
 编码固定 UTF-8。`logs/` 已被 `.gitignore` 排除,不会误提交。
+
+**运行数据与日志分居**: 签到台账(`data/signin_ledger.db`,SQLite)是积累的
+事实,不跟可清理的日志放一起——目录优先级: `AUTO_SIGNIN_KIT_DATA_DIR` 环境变量
+> 项目的 `data/` 目录(`.gitignore` 已排除)> 平台目录
+`%LOCALAPPDATA%\auto-signin-kit\data`(Windows)/ macOS Application Support。
+用 `auto-signin-kit history` 看结果,不必翻日志。
 
 退出码约定:
 

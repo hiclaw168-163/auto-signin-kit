@@ -16,5 +16,8 @@ build/
 # 运行时结果日志(--silent 落盘,默认在项目 logs/ 下,见 core/adapters/log_dir.py)
 logs/
 
+# 运行时数据(SQLite 台账等可变状态,默认在项目 data/ 下,见 core/adapters/log_dir.py)
+data/
+
 # 本机覆盖配置: 含本机路径/容器名等差异,禁止入库(见 docs/standards/STD-02)
 config/domains/*.local.yaml
