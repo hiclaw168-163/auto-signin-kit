@@ -30,6 +30,7 @@ workbuddy = "auto_signin_kit.domains.workbuddy:app"
 qoder = "auto_signin_kit.domains.qoder:app"
 trae = "auto_signin_kit.domains.trae:app"
 schedule = "auto_signin_kit.domains.schedule:app"
+history = "auto_signin_kit.domains.history:app"
 
 [build-system]
 requires = ["hatchling"]
@@ -87,6 +88,7 @@ modules = [
     "auto_signin_kit.domains.qoder",
     "auto_signin_kit.domains.trae",
     "auto_signin_kit.domains.schedule",
+    "auto_signin_kit.domains.history",
 ]
 ignore_imports = [
     # 无跨域调用例外;若业务上真需要,显式在这里登记,格式:

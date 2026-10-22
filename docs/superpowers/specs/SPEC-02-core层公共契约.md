@@ -122,6 +122,7 @@ service 层禁止 import typer;需要交互时调用 `prompt_str/prompt_confirm`
 | `win_registry` | 卸载注册表项只读扫描 |
 | `win_process` | 运行进程 exe 发现 |
 | `client_discovery` | 桌面客户端安装定位(注册表/默认目录/mac bundle) |
+| `store` | SQLite 签到台账(见 SPEC-07): emit_result 挂钩 best-effort 落库,失败静默不影响签到 |
 | `scheduler/` | 定时调度三平台实现(见 SPEC-06): `windows`(schtasks)/`darwin`(launchd)/`linux`(cron),工厂 `get_scheduler()` 按 OS 分派 |
 
 注: `run_json_stdin_helper` 的 JSON-stdin 协议 + 子进程输入输出管并发限制,

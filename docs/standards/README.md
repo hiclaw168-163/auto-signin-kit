@@ -16,7 +16,7 @@
 > `tests/test_architecture_gate.py`;不能机器强制的,写进对应细则并在 `AGENTS.md`
 > 硬性规则里留一行指针。规范文档随项目增长,不做"写完就不动"的一次性文档。
 
-> 相关: as-built 架构/实现文档在 `docs/superpowers/specs/`(SPEC-01~06),
+> 相关: as-built 架构/实现文档在 `docs/superpowers/specs/`(SPEC-01~07),
 > 架构决策记录在 `docs/adr/`,逆向取证与上游分析在 `docs/notes/`(NOTE-01~03,
 > 与域 SPEC 一一对应),动手操作步骤在 `docs/guides/`(GUIDE-01~03)——本目录
 > 回答"应该是什么样",那边回答"实际是什么样""为什么知道该这么写"以及

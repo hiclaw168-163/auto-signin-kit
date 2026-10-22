@@ -14,6 +14,7 @@
 | [SPEC-04-qoder域.md](SPEC-04-qoder域.md) | Qoder CN Credits 领取(7 文件) | 已实现 |
 | [SPEC-05-trae域.md](SPEC-05-trae域.md) | Trae CN 签到(SS_AES 信封,6 文件) | 已实现 |
 | [SPEC-06-schedule域.md](SPEC-06-schedule域.md) | 定时调度: 注册/注销/查看每日自动任务(三平台) | 已实现 |
+| [SPEC-07-history域.md](SPEC-07-history域.md) | 签到台账: SQLite 存储 + history 查询/回填 | 已实现 |
 
 关键架构决策单独沉淀在 `docs/adr/`(见根目录该目录的各 ADR):
 
