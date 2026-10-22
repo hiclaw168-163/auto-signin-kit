@@ -243,21 +243,27 @@ def run_status(api: Api, budget: Budget) -> tuple[dict, int]:
 
 
 def run_action(
-    action: str, config: Any, *, silent: bool = False, dry_run: bool = False, once: bool = False
+    action: str, config: Any, *, silent: bool = False, dry_run: bool = False, once: bool = False,
+    command: str | None = None,
 ) -> int:
-    """命令分发;结果按一行 JSON 契约输出,退出码 0/1/2,本函数保证不抛业务异常。"""
+    """命令分发;结果按一行 JSON 契约输出,退出码 0/1/2,本函数保证不抛业务异常。
+
+    ``command`` 是用户/调度器实际敲的 CLI 命令名(如 ``auto``),用于台账
+    ``action`` 标识;缺省回落到内部 action 名。
+    """
     from auto_signin_kit.core.report import emit_result
     from auto_signin_kit.domains.qoder.doctor import run_doctor
 
+    label = command or action  # 台账/日志里的动作标识
     if action not in ("claim", "status", "doctor"):
         emit_result({"domain": "qoder", "result": "ERROR", "needs_attention": True,
                      "report": "未知命令：%s（可用：claim / status / doctor）" % action},
-                    log_path=log_path(), log_errors_without_silent=False)
+                    action=label, log_path=log_path(), log_errors_without_silent=False)
         return 2
     if action == "doctor":
         out, code = run_doctor()
-        emit_result(out, domain="qoder", silent=silent, log_path=log_path(), sensitive=SENSITIVE,
-                    log_errors_without_silent=False)
+        emit_result(out, domain="qoder", action=label, silent=silent, log_path=log_path(),
+                    sensitive=SENSITIVE, log_errors_without_silent=False)
         return code
 
     budget_value, warning = parse_budget(config)
@@ -268,19 +274,22 @@ def run_action(
         emit_result({"domain": "qoder", "result": "NO_AUTH",
                      "needs_attention": True, "report": str(exc),
                      "looked_in": exc.looked_in or None},
-                    silent=silent, log_path=log_path(), log_errors_without_silent=False)
+                    action=label, silent=silent, log_path=log_path(),
+                    log_errors_without_silent=False)
         return 2
     except QoderAuthError as exc:
         emit_result({"domain": "qoder", "result": "AUTH_ERROR",
                      "needs_attention": True, "report": str(exc),
                      "looked_in": exc.looked_in or None},
-                    silent=silent, log_path=log_path(), log_errors_without_silent=False)
+                    action=label, silent=silent, log_path=log_path(),
+                    log_errors_without_silent=False)
         return 1
     if staleness == "EXPIRED":
         emit_result({"domain": "qoder", "result": "AUTH_REJECTED", "needs_attention": True,
                      "token_expires_at": sess.get("expiresAt") if sess else None,
                      "report": "登录态已过期，请打开 Qoder CN 桌面端重新登录"},
-                    silent=silent, log_path=log_path(), log_errors_without_silent=False)
+                    action=label, silent=silent, log_path=log_path(),
+                    log_errors_without_silent=False)
         return 1
 
     if action == "status":
@@ -292,6 +301,6 @@ def run_action(
         code = 0 if out.get("result") in ("CLAIMED", "ALREADY", "INACTIVE", "DRY_RUN") else 1
     if warning:
         out.setdefault("config_warning", warning)
-    emit_result(out, domain="qoder", silent=silent, log_path=log_path(), sensitive=SENSITIVE,
-                log_errors_without_silent=False)
+    emit_result(out, domain="qoder", action=label, silent=silent, log_path=log_path(),
+                sensitive=SENSITIVE, log_errors_without_silent=False)
     return code

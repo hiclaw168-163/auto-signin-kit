@@ -40,7 +40,7 @@ def auto(
 ) -> None:
     """领取今日 Qoder CN Credits(幂等;重复运行只提示已领取)。"""
     raise typer.Exit(_run(service.run_action, "claim", _config(),
-                          silent=silent, dry_run=dry_run, once=once))
+                          silent=silent, dry_run=dry_run, once=once, command="auto"))
 
 
 @app.command()
