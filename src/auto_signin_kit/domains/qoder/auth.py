@@ -60,6 +60,17 @@ def find_auth_dirs() -> list[Path]:
     return [Path(r) for r in roots]
 
 
+def is_installed() -> bool:
+    """客户端是否就绪: ``QODER_TOKEN`` 可直连,或数据目录存在(已装且启动过)。
+
+    自动读取仅 Windows(见 README);非 Windows 无令牌时数据目录也找不到,
+    返回 False 是如实的——调度注册探测据此跳过跑不起来的任务。
+    """
+    if os.environ.get("QODER_TOKEN"):
+        return True
+    return any(root.is_dir() for root in find_auth_dirs())
+
+
 def _parse_iso(value: object) -> datetime | None:
     """解析 ISO8601 时间串;无时区视为 UTC。"""
     if not value:

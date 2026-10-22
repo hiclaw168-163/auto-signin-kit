@@ -99,6 +99,12 @@ ignore_imports = [
     "auto_signin_kit.domains.history.service -> auto_signin_kit.domains.workbuddy.rewards",
     "auto_signin_kit.domains.history.service -> auto_signin_kit.domains.qoder.api",
     "auto_signin_kit.domains.history.service -> auto_signin_kit.domains.qoder.schema",
+    # schedule 域注册调度前要探测各域客户端是否就绪(未就绪的任务不注册——
+    # 启用了也跑不起来的调度没有意义);探测实现在各自域,schedule 只调 is_installed,
+    # 只读探测,显式登记。
+    "auto_signin_kit.domains.schedule.service -> auto_signin_kit.domains.workbuddy.runtime",
+    "auto_signin_kit.domains.schedule.service -> auto_signin_kit.domains.qoder.auth",
+    "auto_signin_kit.domains.schedule.service -> auto_signin_kit.domains.trae.auth",
 ]
 
 [tool.pytest.ini_options]
