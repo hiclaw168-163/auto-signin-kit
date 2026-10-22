@@ -68,7 +68,7 @@ def events(
         table.add_column(column, overflow="fold")
     for row in rows:
         table.add_row(
-            row["ts"], row["domain"], row["action"] or "-",
+            row["executed_at"], row["domain"], row["action"] or "-",
             _source_mark(row["source"]),
             _mark(row["result"], row["needs_attention"]), row["report"] or "",
         )
@@ -95,7 +95,7 @@ def _print_status_table(rows: list[dict], per_day: bool) -> None:
     for column in ("日期", "域", "结果", "报告"):
         table.add_column(column, overflow="fold")
     for row in rows:
-        day = row.get("day") or row["ts"][:10]
+        day = row.get("day") or row["executed_at"][:10]
         table.add_row(
             day, row["domain"], _mark(row["result"], row["needs_attention"]),
             row["report"] or "",

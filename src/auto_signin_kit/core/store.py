@@ -47,7 +47,7 @@ SCHEDULE_DOMAIN = "schedule"
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS ask_signin_runs (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    ts              TEXT    NOT NULL,  -- ISO8601 本地时区
+    executed_at     TEXT    NOT NULL,  -- 执行时间, ISO8601 带时区(旧名 ts,已迁移)
     domain          TEXT    NOT NULL,  -- workbuddy / qoder / trae
     action          TEXT,              -- 干了什么: auto / active / claim / backfill ...
     source          TEXT    NOT NULL DEFAULT 'run',  -- 数据哪来的: run / backfill
@@ -56,12 +56,10 @@ CREATE TABLE IF NOT EXISTS ask_signin_runs (
     report          TEXT,              -- 一句人话摘要
     detail          TEXT    NOT NULL   -- 完整事件 JSON(积分/连签等全部字段)
 );
-CREATE INDEX IF NOT EXISTS idx_ask_signin_runs_ts ON ask_signin_runs(ts);
-CREATE INDEX IF NOT EXISTS idx_ask_signin_runs_domain_ts ON ask_signin_runs(domain, ts);
 
 CREATE TABLE IF NOT EXISTS ask_schedule_changes (
     id       INTEGER PRIMARY KEY AUTOINCREMENT,
-    ts       TEXT NOT NULL,
+    executed_at TEXT NOT NULL,  -- 变更时间, ISO8601 带时区(旧名 ts,已迁移)
     action   TEXT NOT NULL,  -- install / uninstall
     platform TEXT,
     tasks    TEXT,           -- 本次变更涉及的任务与时间(JSON 数组)
@@ -69,26 +67,36 @@ CREATE TABLE IF NOT EXISTS ask_schedule_changes (
 );
 """
 
-#: 依赖新列的索引与视图,必须在 _migrate 补列**之后**执行,不能进上面的建表脚本。
+#: 依赖新列/新列名的索引与视图,必须在 _migrate 补列改名**之后**执行,
+#: 不能进上面的建表脚本。历史沿革产生的三种旧索引名都在这里清掉
+#: (无前缀版是最早的表名遗留),避免老库残留重复索引。
 _SCHEMA_AFTER_MIGRATE = """
+DROP INDEX IF EXISTS idx_signin_runs_ts;
+DROP INDEX IF EXISTS idx_ask_signin_runs_ts;
+CREATE INDEX IF NOT EXISTS idx_ask_signin_runs_executed_at
+    ON ask_signin_runs(executed_at);
+DROP INDEX IF EXISTS idx_signin_runs_domain_ts;
+DROP INDEX IF EXISTS idx_ask_signin_runs_domain_ts;
+CREATE INDEX IF NOT EXISTS idx_ask_signin_runs_domain_executed_at
+    ON ask_signin_runs(domain, executed_at);
 CREATE INDEX IF NOT EXISTS idx_ask_signin_runs_source ON ask_signin_runs(source);
 
 -- 视图是纯派生物,每次连接重建(CREATE VIEW 无 IF NOT EXISTS 的改列能力,
 -- 直接 DROP+CREATE 保证老库也能拿到新列)
 DROP VIEW IF EXISTS ask_daily_checkins;
 CREATE VIEW ask_daily_checkins AS
-SELECT date(r.ts)            AS day,
+SELECT date(r.executed_at)   AS day,
        r.domain              AS domain,
        r.result              AS result,
        r.source              AS source,
        r.needs_attention     AS needs_attention,
        r.report              AS report,
-       r.ts                  AS last_run
+       r.executed_at         AS executed_at
 FROM ask_signin_runs AS r
 WHERE r.id = (
     SELECT r2.id FROM ask_signin_runs AS r2
-    WHERE date(r2.ts) = date(r.ts) AND r2.domain = r.domain
-    ORDER BY r2.ts DESC, r2.id DESC
+    WHERE date(r2.executed_at) = date(r.executed_at) AND r2.domain = r.domain
+    ORDER BY r2.executed_at DESC, r2.id DESC
     LIMIT 1
 );
 """
@@ -122,8 +130,19 @@ def connect() -> sqlite3.Connection:
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
-    """老库补列(幂等): CREATE TABLE IF NOT EXISTS 不会给已有表加列。"""
+    """老库补列/改名(幂等): CREATE TABLE IF NOT EXISTS 不会动已有表。"""
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(ask_signin_runs)")}
+    # ts → executed_at: 字段名见名知义(值不变,仍是 ISO8601 时间戳);
+    # RENAME COLUMN 会自动更新引用该列的索引定义
+    if "ts" in columns and "executed_at" not in columns:
+        with conn:
+            conn.execute("ALTER TABLE ask_signin_runs RENAME COLUMN ts TO executed_at")
+    sched_columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(ask_schedule_changes)")
+    }
+    if "ts" in sched_columns and "executed_at" not in sched_columns:
+        with conn:
+            conn.execute("ALTER TABLE ask_schedule_changes RENAME COLUMN ts TO executed_at")
     for name, add_sql, backfill_sql in _MIGRATIONS:
         if name not in columns:
             with conn:
@@ -145,8 +164,8 @@ def record_payload(payload: str) -> bool:
             with conn:
                 if record.get("domain") == SCHEDULE_DOMAIN:
                     conn.execute(
-                        "INSERT INTO ask_schedule_changes (ts, action, platform, tasks, report)"
-                        " VALUES (?, ?, ?, ?, ?)",
+                        "INSERT INTO ask_schedule_changes (executed_at, action, platform,"
+                        " tasks, report) VALUES (?, ?, ?, ?, ?)",
                         (
                             record["ts"],
                             str(record.get("action") or "unknown"),
@@ -160,7 +179,7 @@ def record_payload(payload: str) -> bool:
                     )
                 else:
                     conn.execute(
-                        "INSERT INTO ask_signin_runs (ts, domain, action, source,"
+                        "INSERT INTO ask_signin_runs (executed_at, domain, action, source,"
                         " result, needs_attention, report, detail)"
                         " VALUES (?, ?, ?, 'run', ?, ?, ?, ?)",
                         (
