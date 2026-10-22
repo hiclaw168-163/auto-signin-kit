@@ -87,6 +87,11 @@ class _Override:
         self.limit_minutes = limit_minutes
 
 
+def _noop_probe(domain):
+    """客户端探测桩: 一律就绪,不拦注册。"""
+    return None
+
+
 class TestTaskCatalogue:
     def test_times_are_parseable_hhmm(self):
         from auto_signin_kit.core.adapters.scheduler.common import parse_hhmm
@@ -161,8 +166,79 @@ class TestServiceOrchestration:
     def test_enabled_tasks_narrows_selection(self):
         scheduler = FakeScheduler()
         assert service.run_action("install", _Config(enabled=["TraeDailyCheckin"]),
-                                  scheduler=scheduler) == 0
+                                  scheduler=scheduler, probe=_noop_probe) == 0
         assert scheduler.installed == {"TraeDailyCheckin"}
+
+
+class TestPresenceGate:
+    """install 注册前按域探测客户端;未就绪的任务不注册并如实上报。"""
+
+    def test_install_skips_tasks_of_missing_client(self):
+        """客户端未就绪的域不注册,其余域照常;失败项带原因。"""
+        scheduler = FakeScheduler()
+
+        def probe(domain):
+            return "WorkBuddy 客户端未检测到，注册了也无法运行" if domain == "workbuddy" else None
+
+        code = service.run_action("install", _Config(), scheduler=scheduler, probe=probe)
+        assert code == 1
+        assert scheduler.installed == {"QoderDailyCredits", "TraeDailyCheckin"}
+        assert not scheduler.calls or all(
+            not name.startswith("WorkBuddy") for _, name in scheduler.calls)
+
+    def test_all_missing_registers_nothing_and_reports(self, capsys):
+        scheduler = FakeScheduler()
+        code = service.run_action("install", _Config(), scheduler=scheduler,
+                                  probe=lambda domain: "未检测到")
+        assert code == 1
+        assert scheduler.calls == []
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["result"] == "FAILED"
+        assert payload["needs_attention"] is True
+        assert [item["name"] for item in payload["failed"]] == [s.name for s in TASKS]
+
+    def test_dry_run_also_honours_presence_gate(self, capsys):
+        """dry-run 报告的是"会发生什么",客户端缺失同样要体现。"""
+        scheduler = FakeScheduler()
+        service.run_action("install", _Config(), scheduler=scheduler, dry_run=True,
+                           probe=lambda domain: "未检测到" if domain == "qoder" else None)
+        assert scheduler.calls == []
+        payload = json.loads(capsys.readouterr().out)
+        failed = [item["name"] for item in payload["failed"]]
+        assert failed == ["QoderDailyCredits"]
+        assert "QoderDailyCredits" not in [item["name"] for item in payload["done"]]
+
+    def test_probe_runs_once_per_domain(self):
+        """workbuddy 有三个任务,探测按域缓存只跑一次。"""
+        calls = []
+
+        def probe(domain):
+            calls.append(domain)
+            return None
+
+        ready, failed = service.filter_ready(TASKS, probe)
+        assert failed == []
+        assert len(ready) == len(TASKS)
+        assert calls == ["workbuddy", "qoder", "trae"]
+
+    def test_unknown_domain_passes_gate(self):
+        """未登记探测的域(未来新域)照常注册,不挡路。"""
+        ready, failed = service.filter_ready(TASKS, lambda domain: None)
+        assert failed == []
+        assert len(ready) == len(TASKS)
+
+    def test_cli_install_respects_default_probe(self, monkeypatch, capsys):
+        """cli 不注入 probe 时走真实探测;打桩后未就绪的域不注册。"""
+        monkeypatch.setattr(service, "get_scheduler", lambda: FakeScheduler())
+        monkeypatch.setattr(service, "_default_probe",
+                            lambda domain: "未检测到" if domain == "trae" else None)
+        from auto_signin_kit.domains.schedule.cli import app as cli_app
+
+        result = runner.invoke(cli_app, ["install", "--domain", "trae"])
+        assert result.exit_code == 1
+        payload = json.loads(capsys.readouterr().out or result.output)
+        assert payload["result"] == "FAILED"
+        assert payload["failed"][0]["name"] == "TraeDailyCheckin"
 
 
 class TestCli:
@@ -174,6 +250,7 @@ class TestCli:
 
     def test_install_dry_run_prints_all_tasks(self, monkeypatch):
         monkeypatch.setattr(service, "get_scheduler", lambda: FakeScheduler())
+        monkeypatch.setattr(service, "_default_probe", _noop_probe)
         result = runner.invoke(app, ["install", "--dry-run"])
         assert result.exit_code == 0
         assert json.loads(result.output)["result"] == "OK"

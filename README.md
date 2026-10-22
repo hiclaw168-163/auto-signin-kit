@@ -157,6 +157,11 @@ auto-signin-kit schedule uninstall            # 注销(同样支持 --domain / -
 没对话当天仍算断。它发现当天没有活跃记录时会**自动补一次对话**并复查记分,
 不再只是提醒。
 
+注册前会先探测对应客户端是否在本机就绪(WorkBuddy 查客户端、Qoder 查
+`QODER_TOKEN`/数据目录、Trae 查数据目录): 未就绪的任务**不注册**并如实
+计入失败——启用了也跑不起来的调度没有意义。装好客户端(或设好令牌)后
+重跑 `schedule install` 即可。
+
 ### 改时间不用动代码
 
 编辑 `config/domains/schedule.yaml`:

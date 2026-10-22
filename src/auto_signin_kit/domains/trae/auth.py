@@ -115,6 +115,19 @@ def data_roaming_roots(override_dir: str | None = None) -> list[Path]:
     return [base / name for name in ROAMING_DIR_NAMES]
 
 
+def is_installed() -> bool:
+    """桌面端是否在本机: TRAE_AUTH_DIR / config.data_dir / 平台默认目录任一存在。
+
+    TRAE_TOKEN 不算数——claim 的设备头取自本机 storage.json(与令牌来源
+    无关),没有桌面端数据目录任务照样跑不通,所以只认数据目录。
+    """
+    from auto_signin_kit.core.config import load_domain_config_model
+    from auto_signin_kit.domains.trae.schema import TraeDomainConfig
+
+    config = load_domain_config_model("trae", TraeDomainConfig, merge_local=True)
+    return any(root.is_dir() for root in data_roaming_roots(config.data_dir))
+
+
 def _read_storage_file(root: Path) -> tuple[Path, dict]:
     """在数据目录下找 storage.json 并读取。"""
     storage = root / STORAGE_REL
