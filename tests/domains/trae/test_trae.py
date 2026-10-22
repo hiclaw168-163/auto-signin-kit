@@ -109,6 +109,23 @@ class _FakeApi:
         return self.claim_resp
 
 
+class _SeqClaimApi:
+    """claim 按序返回预设响应,用于模拟限流后恢复。"""
+
+    def __init__(self, claim_responses):
+        self.responses = list(claim_responses)
+        self.calls = 0
+        self.token_expires_at = None
+
+    def status(self, *, budget, retry=True):
+        return 200, _status_resp(False), None
+
+    def claim(self, *, budget):
+        budget.remaining()
+        self.calls += 1
+        return self.responses[min(self.calls - 1, len(self.responses) - 1)]
+
+
 class _NoBudget:
     def remaining(self):
         return 60.0
@@ -153,6 +170,79 @@ class TestServiceMapping:
         api = _FakeApi(status=(401, {}, None))
         out = service.claim_once(api, _NoBudget())
         assert out["result"] == "AUTH_REJECTED"
+
+
+class TestRateLimitRetry:
+    """9074 限流在同轮内退避重试(claim 幂等);其他业务错误不重试。"""
+
+    @pytest.fixture(autouse=True)
+    def _no_sleep(self, monkeypatch):
+        monkeypatch.setattr(service.time, "sleep", lambda _: None)
+
+    def test_rate_limit_then_success_claims(self):
+        api = _SeqClaimApi([
+            (200, {"code": 9074, "message": "too many"}, None),
+            (200, _status_resp(True), None),
+        ])
+        out = service.claim_once(api, _NoBudget())
+        assert out["result"] == "CLAIMED"
+        assert api.calls == 2
+
+    def test_persistent_rate_limit_gives_up_after_three_attempts(self):
+        api = _SeqClaimApi([(200, {"code": 9074, "message": "too many"}, None)])
+        out = service.claim_once(api, _NoBudget())
+        assert out["result"] == "RATE_LIMITED"
+        assert api.calls == 3
+
+    def test_rate_limit_gives_up_when_budget_runs_out(self):
+        class _TinyBudget:
+            def remaining(self):
+                return 5.0  # 撑不起 20s 退避
+
+        api = _SeqClaimApi([(200, {"code": 9074, "message": "too many"}, None)])
+        out = service.claim_once(api, _TinyBudget())
+        assert out["result"] == "RATE_LIMITED"
+        assert api.calls == 1
+
+    def test_other_business_error_is_not_retried(self):
+        api = _SeqClaimApi([(200, {"code": 9004, "message": "bad order"}, None)])
+        out = service.claim_once(api, _NoBudget())
+        assert out["result"] == "ERROR"
+        assert out["code"] == 9004
+        assert api.calls == 1
+
+
+class TestDeviceMetaLockRetry:
+    """开机补跑与 IDE 启动同时碰 storage.json: 锁冲突要重试,不能直接放弃设备头。"""
+
+    @pytest.fixture(autouse=True)
+    def _no_sleep(self, monkeypatch):
+        monkeypatch.setattr(auth_m.time, "sleep", lambda _: None)
+        monkeypatch.setattr(auth_m, "data_roaming_roots", lambda _dir=None: [Path("fake")])
+
+    def test_locked_then_readable_returns_device_meta(self, monkeypatch):
+        reads = iter([("storage", {"telemetry.devDeviceId": "dev-1"})])
+
+        def read(_root):
+            try:
+                return next(reads)
+            except StopIteration:
+                raise PermissionError("file locked") from None
+
+        monkeypatch.setattr(auth_m, "_read_storage_file", read)
+        meta = auth_m.device_meta()
+        assert meta == {"device_id": "dev-1", "app_version": None}
+
+    def test_persistent_lock_degrades_after_three_reads(self, monkeypatch):
+        calls = {"n": 0}
+
+        def always_locked(_root):
+            calls["n"] += 1
+            raise PermissionError("file locked")
+
+        monkeypatch.setattr(auth_m, "_read_storage_file", always_locked)
+        assert auth_m.device_meta() == {}
+        assert calls["n"] == 3
 
 
 class TestCliSmoke:

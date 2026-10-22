@@ -39,13 +39,15 @@
 
 | 端点 | 动作 | 说明 |
 |------|------|------|
-| `/trae/api/v2/ug/checkin_credits/status` | POST | body `{"Request": {}}` |
-| `/trae/api/v2/ug/checkin_credits/claim` | POST | body 同上;写操作默认不重试 |
+| `/trae/api/v2/ug/checkin_credits/status` | POST | body `{"req_source": 1}`(对齐 NOTE-03 2026-10-21 复核) |
+| `/trae/api/v2/ug/checkin_credits/claim` | POST | body 同上;写操作默认不重试,**唯一例外 9074 限流**(见 §4) |
 
 - 鉴权 `Authorization: Cloud-IDE-JWT <用户JWT>`(JWT RS256,`iss=trae`)。
-- `x-device-id` 等设备头抢救过(`_applyUgDeviceHeaders` 五件套),**实测非必需**。
+- `x-device-id` 取 storage.json 明文键 `telemetry.devDeviceId`(配 `device_meta`
+  的 3×2s 锁重试): **2026-10-21 复核 claim 已强制设备头,缺失回业务码 9004**;
+  status 不校验。
 - 业务码走 HTTP 200 + `code` 字段: `0`=成功,**`1001`=无法认证→AUTH_REJECTED**
-  (先于通用 HTTP 判定)。
+  (先于通用 HTTP 判定);`9074`=活动期限流。
 - 正常响应: `checked_in / credits / extra_credits / enable / did_checked_in`。
 
 ## 4. 业务映射(service.py)
@@ -59,7 +61,13 @@
 | `--dry-run` 且未签 | `DRY_RUN` | 0 |
 | 业务码 1001 / HTTP 401 | `AUTH_REJECTED` | 1 |
 | HTTP 403 | `FORBIDDEN` | 1 |
+| 业务码 9074(活动限流) | `RATE_LIMITED`(见下) | 1 |
 | 其他 code≠0 | `ERROR`(带 code+message) | 1 |
+
+**9074 限流重试**(2026-10-22 加入): 1024 活动期服务端会以"参与人数过多"限流
+claim。claim 服务端幂等,按"确认幂等的签到接口可重试"的项目约定在**同轮内**退避
+20s/40s 重试(共 3 次尝试,预算不足时提前收尾),全失败才回 `RATE_LIMITED` 交给
+下一次调度——否则一天三次触发全撞限流就整日白跑。写操作其余场景仍不重试。
 
 结果每轮必写(ALREADY/INACTIVE 也落盘,记录即定时任务心跳);日志文件
 `trae.log`(`TRAE_SIGNIN_LOG` 覆盖)。
