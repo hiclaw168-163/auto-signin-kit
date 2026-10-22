@@ -58,6 +58,7 @@ auto-signin-kit qoder auto --dry-run       # 只报告可领取项,不真领取
 auto-signin-kit trae auto                  # Trae CN 每日签到领取(幂等)
 auto-signin-kit trae doctor                # 离线检查登录态可读性与有效期
 auto-signin-kit history                    # 签到台账: 每天/每域结果一览,不必翻日志
+auto-signin-kit history import-server      # 把服务端的历史记录(活跃日历等)回填进台账
 ```
 
 每个命令输出**一行 JSON 事件**(stdout 由机器读,过程日志走 stderr),字段

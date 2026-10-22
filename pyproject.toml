@@ -91,8 +91,14 @@ modules = [
     "auto_signin_kit.domains.history",
 ]
 ignore_imports = [
-    # 无跨域调用例外;若业务上真需要,显式在这里登记,格式:
-    # "auto_signin_kit.domains.a.xxx.service -> auto_signin_kit.domains.b.yyy.service"
+    # history 域的"服务端历史回填"需要读各域的接口层取服务端历史(见 SPEC-07 §4),
+    # 是只读的报告型聚合,已在下方显式登记;其余跨域调用仍然禁止。
+    "auto_signin_kit.domains.history.service -> auto_signin_kit.domains.workbuddy.service",
+    "auto_signin_kit.domains.history.service -> auto_signin_kit.domains.workbuddy.net",
+    "auto_signin_kit.domains.history.service -> auto_signin_kit.domains.workbuddy.schema",
+    "auto_signin_kit.domains.history.service -> auto_signin_kit.domains.workbuddy.rewards",
+    "auto_signin_kit.domains.history.service -> auto_signin_kit.domains.qoder.api",
+    "auto_signin_kit.domains.history.service -> auto_signin_kit.domains.qoder.schema",
 ]
 
 [tool.pytest.ini_options]

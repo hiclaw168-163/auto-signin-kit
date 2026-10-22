@@ -65,10 +65,17 @@ def events(
     console.print(table)
 
 
-@app.command()
+@app.command("import-logs")
 def import_logs() -> None:
     """把现有 JSONL 日志一次性回填进台账(幂等,重复导入自动去重)。"""
     result = service.import_logs()
+    console.print(json.dumps(result, ensure_ascii=False))
+
+
+@app.command("import-server")
+def import_server() -> None:
+    """把服务端还能查到的历史回填进台账(workbuddy 活跃日历 / qoder 领取记录)。"""
+    result = service.server_backfill()
     console.print(json.dumps(result, ensure_ascii=False))
 
 
