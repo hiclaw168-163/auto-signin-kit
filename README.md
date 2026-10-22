@@ -1,16 +1,33 @@
 # auto-signin-kit
 
-各编程助手(WorkBuddy / CodeBuddy 系、Qoder CN、Trae CN)每日签到、领奖的
-自动化工具箱。用 `polydomain-cli` 的多域 CLI 架构搭出来的项目: 新增一个域
-不用碰组合根,新增一种外部系统支持不用改其他域。
+**AI 编程助手每日签到自动化工具箱** | *Daily auto check-in & rewards toolkit for AI coding assistants*
 
-内置的 `schedule` 域可以把这些命令注册成**系统级定时任务**(Windows 任务计划
-程序 / macOS launchd / Linux crontab),一次 `schedule install` 之后每天自动跑,
-不用再手动执行。调度怎么配置见 [定时调度](#定时调度让它每天自己跑)。
+![License](https://img.shields.io/badge/license-MIT-green)
+![Python](https://img.shields.io/badge/python-3.11%2B-blue)
+![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
 
-第一次接触这个仓库想动手改?操作指南在 `docs/guides/`
+每天手动签到,忘了就断积分?让这台机器替你记得——配置一次,以后每天自动签。
+
+| 支持的 AI 编程助手 | 能做什么 |
+|---|---|
+| **WorkBuddy / CodeBuddy 系** | 每日签到领积分;成长中心活跃保底(没对话就自动补一条,活跃天数不断) |
+| **Qoder CN** | 活动窗口内自动领取 Credits(幂等,重复跑不多领) |
+| **Trae CN** | 每日签到领 Credits(1024 活动限流期自动多轮重试) |
+
+- **一次配置,每天自动跑** — 内置 `schedule` 域把签到命令注册成系统级定时任务
+  (Windows 任务计划程序 / macOS launchd / Linux crontab),`schedule install` 之后无需再管
+- **结果看得见** — `history` 域提供 SQLite 签到台账: 每天/每域结果一目了然,
+  服务端历史(活跃日历、领取记录)一键回填,不必翻日志
+- **加一个签到目标很省事** — 多域 CLI 插件架构: 新增一个域不用碰组合根,
+  新增一种外部系统支持不用改其他域
+
+用 `polydomain-cli` 的多域 CLI 架构搭出来的项目。第一次接触这个仓库想动手改?
+操作指南在 `docs/guides/`
 ([上手](docs/guides/GUIDE-01-开发者上手.md) / [新增域](docs/guides/GUIDE-02-新增一个域.md) /
 [排错](docs/guides/GUIDE-03-排错手册.md))。
+
+> 关键词: Trae 签到 / Qoder 自动签到 / WorkBuddy CodeBuddy 签到 / AI 编程助手积分 /
+> check-in automation / daily rewards bot / auto signin script / scheduled task
 
 ---
 
