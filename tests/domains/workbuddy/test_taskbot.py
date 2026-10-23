@@ -49,7 +49,9 @@ def test_actions_cover_known_task_codes():
     """当前任务单里的可自动化码必须都有动作;公众号任务显式不做。"""
     assert {"create_canvas", "template_5", "expert_5", "Expert_team_use_3",
             "Expert_lighthouse", "Library_read", "Hp_Appearance", "skill_1",
-            "chat_5", "WorkBuddy_Valorant"} <= set(taskbot.ACTIONS)
+            "chat_5", "WorkBuddy_Valorant", "expert_use_maidehao",
+            "expert_use_douyinyin", "expert_use_shangjia_xuanchuan",
+            "expert_use_bowangwang"} <= set(taskbot.ACTIONS)
     assert "wb_wechat_oa_subscribe_task" not in taskbot.ACTIONS
 
 
@@ -148,14 +150,27 @@ def test_act_expert_runs_full_chain_per_expert():
     assert use["mode"] == "craft"
 
 
-def test_act_valorant_requires_matching_expert():
-    """无畏契约专家按名匹配;市场没有匹配项时报错而不是拿任意专家凑数。"""
+def test_find_expert_searches_by_keyword_and_never_settles():
+    """指定专家: keyword 搜索→名字命中;全 miss 报错,不拿任意专家凑数。"""
     net = _Net(posts=[(200, {"data": {"experts": [_EXPERT]}})])
     with pytest.raises(ev.ActionError):
-        taskbot._act_valorant(net, {})
-    matched = _Net(posts=[(200, {"data": {"experts": [
-        dict(_EXPERT, display_name_zh="无畏契约拼豆专家")]}})] + [_SSE_OK] * 3)
-    assert "无畏契约拼豆专家" in taskbot._act_valorant(matched, {})
+        taskbot._find_expert(net, ["无畏契约", "拼豆"])
+    hit = _Net(posts=[(200, {"data": {"experts": [
+        _EXPERT, dict(_EXPERT, display_name_zh="无畏契约拼豆专家")]}})])
+    found = taskbot._find_expert(hit, ["无畏契约", "拼豆"])
+    assert found["display_name_zh"] == "无畏契约拼豆专家"
+    assert hit.calls[0][2]["keyword"] == "无畏契约"  # 按序用关键词搜索
+
+
+def test_act_named_expert_runs_chain_with_matched_expert():
+    """expert_use_*: 命中指定专家后完成召唤+真实对话+使用链。"""
+    net = _Net(posts=[(200, {"data": {"experts": [
+        dict(_EXPERT, display_name_zh="商家宣传设计师")]}})] + [_SSE_OK] * 3)
+    msg = taskbot.ACTIONS["expert_use_shangjia_xuanchuan"][1](net, {})
+    assert "商家宣传设计师" in msg
+    kinds = [p[0].get("eventCode") if isinstance(p, list) else "chat"
+             for _m, _s, p in net.calls[1:]]
+    assert kinds == ["web_element_click", "chat", "agent_task_created"]
 
 
 def test_act_lighthouse_uses_local_mode_and_empty_type():
