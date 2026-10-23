@@ -179,14 +179,30 @@ def _act_skill(net: Net, task: dict) -> str:
     return "已上报真实对话 + skill_info 技能加载事件"
 
 
-def _act_valorant(net: Net, task: dict) -> str:
-    """WorkBuddy_Valorant: 市场里找「无畏契约/拼豆」专家,完成一次使用链。"""
-    for expert in ev.market_experts(net, "agent"):
-        name = str(expert.get("display_name_zh") or "")
-        if "无畏契约" in name or "拼豆" in name:
-            _expert_chain_once(net, expert)
-            return "已完成「%s」召唤+使用链" % name
-    raise ev.ActionError("专家市场未找到无畏契约拼豆专家")
+def _find_expert(net: Net, keywords: list[str]) -> dict:
+    """按关键词搜索市场里的指定专家;依次尝试,返回第一个名字命中者。
+
+    任务码拼音=官方指定专家真名(实测: maidehao=卖得好、bowangwang=播旺旺),
+    任务标题是宣传文案,两组线索都进候选;服务端计分认「真实 id + 真实对话」,
+    同名多个不挑。全 miss 抛 ActionError,不拿任意专家凑数。
+    """
+    for kw in keywords:
+        for expert in ev.market_experts(net, "agent", keyword=kw, page_size=20):
+            name = str(expert.get("display_name_zh") or "")
+            if any(k in name for k in keywords):
+                return expert
+    raise ev.ActionError("专家市场未找到 %s" % "/".join(keywords))
+
+
+def _act_named_expert(keywords: list[str]) -> Action:
+    """指定专家体验类任务(expert_use_*): 搜到即完成一次召唤+真实对话+使用链。"""
+
+    def action(net: Net, task: dict) -> str:
+        expert = _find_expert(net, keywords)
+        _expert_chain_once(net, expert)
+        return "已完成「%s」召唤+使用链" % expert.get("display_name_zh")
+
+    return action
 
 
 #: 动作表: 顺序即执行顺序(便宜动作在前,烧配额的在后)。
@@ -203,7 +219,12 @@ ACTIONS: dict[str, tuple[str, Action]] = {
     "Hp_Appearance": ("设置主题 + 皮肤生效事件", _act_appearance),
     "Model_chat_GLM5.2": ("指定模型真实对话 + 对齐上报", _act_model_chat),
     "skill_1": ("真实对话 + skill_info 事件", _act_skill),
-    "WorkBuddy_Valorant": ("无畏契约拼豆专家使用链", _act_valorant),
+    "WorkBuddy_Valorant": ("无畏契约拼豆专家使用链",
+                           _act_named_expert(["无畏契约", "拼豆"])),
+    "expert_use_maidehao": ("指定专家使用链", _act_named_expert(["卖得好", "中国电商运营"])),
+    "expert_use_douyinyin": ("指定专家使用链", _act_named_expert(["抖音策略师", "斗音音"])),
+    "expert_use_shangjia_xuanchuan": ("指定专家使用链", _act_named_expert(["商家宣传"])),
+    "expert_use_bowangwang": ("指定专家使用链", _act_named_expert(["播旺旺", "直播电商教练"])),
     "expert_5": ("真实专家召唤+使用链 ×5", lambda n, t: _act_expert(n, t, "agent", 5)),
     "Expert_team_use_3": ("专家团召唤+使用链 ×3", lambda n, t: _act_expert(n, t, "team", 3)),
     "Expert_lighthouse": ("轻量云专家召唤+使用链", _act_lighthouse),

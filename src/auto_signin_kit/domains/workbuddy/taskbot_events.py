@@ -163,16 +163,22 @@ def real_chat(net: Net, expert_id: str = "", model: str = CHAT_MODEL) -> tuple[s
     return conv, found.group(1)
 
 
-def market_experts(net: Net, expert_type: str) -> list[dict[str, Any]]:
+def market_experts(
+    net: Net, expert_type: str, keyword: str = "", page_size: int = 50,
+) -> list[dict[str, Any]]:
     """拉专家市场真实专家列表(expert_type: agent=单专家 / team=专家团)。
 
+    keyword 走服务端搜索(实测 200),指定专家类任务凭它精确定位,免全量翻页——
+    市场总量 2 万+,reco_rank 排序翻页永远翻不到指定专家。
     expert_actual_use 判据要求 id 真实存在,编造 id 不计数,故列表是前置。
     """
     payload: dict[str, Any] = {
-        "page": 1, "page_size": 50, "sort_by": "reco_rank", "sort_order": "desc",
+        "page": 1, "page_size": page_size, "sort_by": "reco_rank", "sort_order": "desc",
     }
     if expert_type:
         payload["expert_type"] = expert_type
+    if keyword:
+        payload["keyword"] = keyword
     code, body = net.post(EXPERT_LIST, payload, extra_headers=_desktop_headers(net.endpoint))
     _ok(code, body, "专家市场列表")
     experts = dig(body, "experts")
