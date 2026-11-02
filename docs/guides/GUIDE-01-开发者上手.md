@@ -75,6 +75,26 @@ auto-signin-kit --help
 要让它每天自己跑: `auto-signin-kit schedule install`(详见根 `README.md`
 的「定时调度」)。
 
+### Web 管理台(可选,见 SPEC-09)
+
+不想碰命令行的话,可以装上可选的 web 依赖、构建前端,然后用浏览器管理:
+
+```bash
+# ① web 依赖(uv 版本较老不支持 --extra 时,用 --with fastapi --with uvicorn 等效)
+uv tool install --editable . --force --extra web
+
+# ② 构建前端(需要 Node.js 18+;产物在 frontend/dist,由 ③ 自动托管)
+cd frontend && npm install && npm run build && cd ..
+
+# ③ 启动(默认 http://127.0.0.1:8688,只绑本机)
+auto-signin-kit ui serve
+```
+
+浏览器打开后: **看板**(各域今日状态 + 一键手动签到)、**历史**(签到台账)、
+**调度**(注册/注销定时任务)、**诊断**(各域 doctor 的结构化展示)。
+前端没构建也不影响 API——`/api/docs` 有交互文档。CLI 与定时任务**完全不依赖
+web 栈**,不装 `[web]` extra 一切照旧。
+
 ### 卸载
 
 **顺序有讲究: 必须先撤定时任务、再卸命令**——`schedule uninstall` 依赖

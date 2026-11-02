@@ -67,6 +67,11 @@ def _default_probe(domain: str) -> str | None:
     return None if check() else "%s 客户端未检测到，注册了也无法运行" % app
 
 
+#: 对外稳定的探测入口(Web 管理台复用,语义同 install 前的探测);
+#: 探测实现仍归属各域,这里只是起了个不带下划线的名字。
+default_probe = _default_probe
+
+
 def filter_ready(
     tasks: tuple[ScheduleSpec, ...], probe: Callable[[str], str | None]
 ) -> tuple[tuple[ScheduleSpec, ...], list[dict]]:

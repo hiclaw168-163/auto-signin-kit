@@ -1,6 +1,17 @@
 # SPEC-09: Web 管理台(ui 层 + frontend 前端包)
 
-状态:**规划中(设计定稿,未实现)**。实现后本行改为"已实现"并补齐偏差。
+状态:**已实现**。与设计稿的偏差(as-built):
+
+- doctor 不设独立 `GET /api/doctor/{domain}` 路由——诊断同样走
+  `POST /api/run/{domain}?action=doctor` + job 轮询(诊断可能耗时,同步等在
+  HTTP 请求里会卡死前端);动作白名单 `runner.ACTIONS` 统一管 auto/doctor。
+- `uv tool install` 的本机版本不支持 `--extra`,GUIDE-01 补了
+  `--with fastapi --with uvicorn` 的等效写法。
+- §7 前置核实结论: doubao 一直经 `emit_result` 正常落库(台账 7 条记录),
+  无需改码;顺手把 `history.SIGNIN_DOMAINS` 补上 doubao,使其回填/看板
+  语义与其他域一致。
+- 前端 naive-ui 全量引入(bundle ~1.4MB,gzip ~410KB)——本机 localhost
+  工具,不为此上按需引入/分包,复杂度不值。
 
 ## 1. 定位与边界
 

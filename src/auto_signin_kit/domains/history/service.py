@@ -18,7 +18,8 @@ from auto_signin_kit.core.adapters.log_dir import default_log_dir
 from auto_signin_kit.core.store import connect
 
 #: 台账覆盖的签到域;回填时按这个名字找对应日志文件。
-SIGNIN_DOMAINS = ("workbuddy", "qoder", "trae")
+#: doubao 与其他域同走 emit_result 落库(已核实台账有记录),纳入正式名单。
+SIGNIN_DOMAINS = ("workbuddy", "qoder", "trae", "doubao")
 
 #: detail JSON 里值得在台账视图中单列的汇总字段(按域可能缺省,查不到就不显示)。
 _SUMMARY_KEYS = ("credits", "streak_days", "total_credits", "score")

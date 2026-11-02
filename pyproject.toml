@@ -19,6 +19,14 @@ dependencies = [
   # 项目自己的业务依赖(渲染库/客户端 SDK 等)加在这里
 ]
 
+# Web 管理台可选依赖(SPEC-09): CLI/定时任务的安装不引 web 栈,
+# 装界面才需要: uv tool install 'auto-signin-kit[web]'
+[project.optional-dependencies]
+web = [
+  "fastapi>=0.110",
+  "uvicorn>=0.30",
+]
+
 [project.scripts]
 auto-signin-kit = "auto_signin_kit.cli:main"
 # 如果想要额外的短命令别名,加一行就行,只要键名不重复即可:
@@ -35,6 +43,10 @@ schedule = "auto_signin_kit.domains.schedule:app"
 history = "auto_signin_kit.domains.history:app"
 doubao = "auto_signin_kit.domains.doubao:app"
 
+# Web 管理台(非业务域,独立 entry-point 组,SPEC-09);cli.py 同样只遍历挂载。
+[project.entry-points."auto_signin_kit.ui"]
+ui = "auto_signin_kit.ui.cli:app"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -50,7 +62,10 @@ packages = ["src/auto_signin_kit"]
 # "config" = "auto_signin_kit/config"
 
 [dependency-groups]
-dev = ["pytest>=8.0", "ruff>=0.16", "import-linter>=2.0"]
+dev = ["pytest>=8.0", "ruff>=0.16", "import-linter>=2.0",
+       # ui 层测试(SPEC-09): TestClient 依赖 httpx;fastapi 只进 dev 与 web extra,
+       # 基础安装(schtasks 无头运行)始终精瘦。
+       "fastapi>=0.110", "httpx>=0.27"]
 
 # --- 架构门禁: import-linter -------------------------------------------
 # import-linter 管得了的用它;管不了的(单文件行数、cli.py 是否混入业务逻辑
@@ -63,11 +78,19 @@ root_package = "auto_signin_kit"
 name = "总体分层"
 type = "layers"
 layers = [
+    "auto_signin_kit.ui",
     "auto_signin_kit.cli",
     "auto_signin_kit.domains",
     "auto_signin_kit.orchestration",
     "auto_signin_kit.core",
 ]
+
+# ui 层只准走 service/子进程,不准 import 各域的 cli 模块(SPEC-09 §2)。
+[[tool.importlinter.contracts]]
+name = "ui 不碰各域 cli"
+type = "forbidden"
+source_modules = ["auto_signin_kit.ui"]
+forbidden_modules = ["auto_signin_kit.domains.*.cli"]
 
 [[tool.importlinter.contracts]]
 name = "core 不依赖 domains"

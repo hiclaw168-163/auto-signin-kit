@@ -19,6 +19,8 @@
   (Windows 任务计划程序 / macOS launchd / Linux crontab),`schedule install` 之后无需再管
 - **结果看得见** — `history` 域提供 SQLite 签到台账: 每天/每域结果一目了然,
   服务端历史(活跃日历、领取记录)一键回填,不必翻日志
+- **可选 Web 管理台** — `ui serve` 起本地服务(只绑 127.0.0.1): 浏览器看板、
+  一键手动签到、调度任务管理、诊断展示;CLI 与定时任务不依赖 web 栈
 - **加一个签到目标很省事** — 多域 CLI 插件架构: 新增一个域不用碰组合根,
   新增一种外部系统支持不用改其他域
 
@@ -280,8 +282,12 @@ src/auto_signin_kit/
     ├── workbuddy/               # 签到 + 成长中心(旅行/任务/补登/兑换/盲盒)
     ├── qoder/                   # 每日 Credits(活动查询/领取/设备风控头)
     ├── trae/                    # 每日签到(status/claim,SS_AES 凭据解锁)
+    ├── doubao/                  # 豆包签到领额度(Cookie 解密 + CDP 兜底,仅 Windows)
     ├── schedule/                # 定时调度: 注册/注销/查看每日自动任务
     └── history/                 # 签到台账: 每日状态一览/运行明细/日志回填
+
+src/auto_signin_kit/ui/          # Web 管理台 API 层(SPEC-09): /api 路由 + 托管前端产物
+frontend/                        # 管理台前端包(Vue 3 + Vite + Naive UI,与 src 同层)
 ```
 
 文档地图(逆向取证与实现文档分工):
@@ -289,7 +295,7 @@ src/auto_signin_kit/
 | 文档 | 性质 |
 |------|------|
 | `docs/notes/NOTE-01~03` | 逆向取证:端点、信封协议与证据链(索引见 `docs/notes/README.md`) |
-| `docs/superpowers/specs/SPEC-01~07` | as-built 实现:代码实际是什么样 |
+| `docs/superpowers/specs/SPEC-01~09` | as-built 实现:代码实际是什么样 |
 | `docs/adr/ADR-0001~0003` | 架构决策:为什么这样设计 |
 | `docs/guides/GUIDE-01~03` | 操作指南: 上手 / 新增域 / 排错(索引见 `docs/guides/README.md`) |
 

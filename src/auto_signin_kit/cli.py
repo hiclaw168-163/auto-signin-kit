@@ -15,7 +15,7 @@ from auto_signin_kit.core.logging import log_error
 
 
 def build_app() -> typer.Typer:
-    """遍历 auto_signin_kit.domains entry_points 挂载各域。"""
+    """遍历 entry_points 挂载各域与扩展(ui 等),本文件不做任何具体注册。"""
     root = typer.Typer(help="auto-signin-kit: 各编程助手每日签到/领奖的自动化工具箱")
     eps = sorted(entry_points(group="auto_signin_kit.domains"), key=lambda e: e.name)
     if not eps:
@@ -26,6 +26,9 @@ def build_app() -> typer.Typer:
             # 这是一个真实会踩到、但报错信息一给就能自己解决的坑。
         )
     for ep in eps:
+        root.add_typer(ep.load(), name=ep.name)
+    # 扩展组(如 Web 管理台): 不是业务域,同样零手工注册。
+    for ep in sorted(entry_points(group="auto_signin_kit.ui"), key=lambda e: e.name):
         root.add_typer(ep.load(), name=ep.name)
     return root
 
