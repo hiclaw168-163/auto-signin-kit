@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { h, onMounted, ref } from 'vue'
+import { h, onMounted, reactive, ref } from 'vue'
 import { useMessage } from 'naive-ui'
 import { dashboardApi } from '../api'
 import StatusTag from '../components/common/StatusTag.vue'
@@ -16,8 +16,24 @@ const events = ref<EventRow[] | null>(null)
 const eventsTitle = ref('')
 const loading = ref(false)
 
+// 客户端分页: 台账最多 90 天 × 域数行,量级小,不必给 API 加 offset/total
+function makePagination(defaultSize: number) {
+  const p = reactive({
+    page: 1,
+    pageSize: defaultSize,
+    showSizePicker: true,
+    pageSizes: [10, 20, 50, 100],
+    onChange: (page: number) => { p.page = page },
+    onUpdatePageSize: (size: number) => { p.pageSize = size; p.page = 1 },
+  })
+  return p
+}
+const pagination = makePagination(20)
+const eventPagination = makePagination(10)
+
 async function load() {
   loading.value = true
+  pagination.page = 1
   try {
     rows.value = await dashboardApi.history(days.value, domain.value ?? undefined)
   } catch (e) {
@@ -31,6 +47,7 @@ async function drill(row: DailyRow) {
   try {
     events.value = await dashboardApi.events({ date: row.day, domain: row.domain, limit: 100 })
     eventsTitle.value = `${row.domain} · ${row.day} 明细`
+    eventPagination.page = 1
   } catch (e) {
     message.error(String(e))
   }
@@ -50,6 +67,17 @@ const columns = [
     render: (row: DailyRow) =>
       h('a', { style: 'cursor:pointer;color:var(--ask-info)', onClick: () => drill(row) }, '明细'),
   },
+]
+
+const eventColumns = [
+  { title: '时间', key: 'executed_at', width: 190 },
+  { title: '动作', key: 'action', width: 90, render: (e: EventRow) => e.action ?? '-' },
+  { title: '来源', key: 'source', width: 90, render: (e: EventRow) => e.source ?? '-' },
+  {
+    title: '结果', key: 'result', width: 110,
+    render: (e: EventRow) => h(StatusTag, { result: e.result }),
+  },
+  { title: '摘要', key: 'report' },
 ]
 
 onMounted(async () => {
@@ -75,24 +103,13 @@ onMounted(async () => {
     </n-space>
 
     <n-data-table :columns="columns" :data="rows" :bordered="false" size="small"
+                  :pagination="pagination"
                   :row-class-name="(r: DailyRow) => (r.needs_attention ? 'row-attention' : '')"
                   style="background: var(--ask-surface)" />
 
     <n-card v-if="events" :title="eventsTitle" size="small" style="background: var(--ask-surface)">
-      <n-table size="small" :single-line="false">
-        <thead>
-          <tr><th>时间</th><th>动作</th><th>来源</th><th>结果</th><th>摘要</th></tr>
-        </thead>
-        <tbody>
-          <tr v-for="(e, i) in events" :key="i">
-            <td>{{ e.executed_at }}</td>
-            <td>{{ e.action ?? '-' }}</td>
-            <td>{{ e.source ?? '-' }}</td>
-            <td><StatusTag :result="e.result" /></td>
-            <td>{{ e.report }}</td>
-          </tr>
-        </tbody>
-      </n-table>
+      <n-data-table :columns="eventColumns" :data="events" :bordered="false" size="small"
+                    :pagination="eventPagination" />
     </n-card>
   </n-space>
 </template>
