@@ -103,6 +103,7 @@ watch([days, domain], load)
         { label: '近 90 天', value: 90 },
       ]" />
       <n-button @click="load">刷新</n-button>
+      <n-text depth="3" style="margin-left: auto">共 {{ rows.length }} 条(每天每域一行,非每次运行)</n-text>
     </n-space>
 
     <n-data-table :columns="columns" :data="rows" :bordered="false" size="small"
