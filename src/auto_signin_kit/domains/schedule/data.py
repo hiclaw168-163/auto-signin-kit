@@ -14,7 +14,8 @@
    所以**不要"优化"掉看起来多余的时间点**。
 2. **平台的执行时限必须大于脚本自己的时间预算**。各域预算: workbuddy 主入口
    ≤540s / 轮询 ≤240s(见 ``config/domains/workbuddy.yaml``),qoder、trae
-   均 ≤240s。时限留了余量(PT10M / PT5M),改预算时同步改这里的时限。
+   均 ≤240s,doubao ≤60s。时限留了余量(PT10M / PT5M),改预算时同步改这里
+   的时限。
 """
 
 from __future__ import annotations
@@ -60,6 +61,13 @@ TASKS: tuple[ScheduleSpec, ...] = (
         times=("09:05", "13:05", "15:05", "19:05", "21:05", "23:05"),
         limit_minutes=5,
         description="Trae CN 每日签到(1024 活动期限流,高密度触发兜排队)",
+    ),
+    ScheduleSpec(
+        name="DoubaoDailyCheckin",
+        argv=("auto-signin-kit", "doubao", "auto", "--silent"),
+        times=("00:05", "09:05", "13:05", "19:05", "23:05"),
+        limit_minutes=5,
+        description="豆包每日签到 + 任务奖励清扫(签到后自动领取已完成任务奖励)",
     ),
 )
 

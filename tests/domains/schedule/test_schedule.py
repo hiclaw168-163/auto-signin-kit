@@ -18,13 +18,15 @@ from auto_signin_kit.domains.schedule.data import TASKS, domain_of, known_domain
 runner = CliRunner()
 
 #: 各任务的**最低**执行时限(分钟);低于它就会在脚本自己收尾前被平台强杀。
-#: 数字来自各域的时间预算上限: workbuddy 主入口 540s、轮询 240s、qoder/trae 240s。
+#: 数字来自各域的时间预算上限: workbuddy 主入口 540s、轮询 240s、qoder/trae 240s、
+#: doubao 60s。
 MIN_LIMIT_MINUTES = {
     "WorkBuddyAutoSignin": 10,
     "WorkBuddyGrowthPoll": 5,
     "WorkBuddyActiveCheck": 5,
     "QoderDailyCredits": 5,
     "TraeDailyCheckin": 5,
+    "DoubaoDailyCheckin": 5,
 }
 
 
@@ -182,7 +184,8 @@ class TestPresenceGate:
 
         code = service.run_action("install", _Config(), scheduler=scheduler, probe=probe)
         assert code == 1
-        assert scheduler.installed == {"QoderDailyCredits", "TraeDailyCheckin"}
+        assert scheduler.installed == {
+            "QoderDailyCredits", "TraeDailyCheckin", "DoubaoDailyCheckin"}
         assert not scheduler.calls or all(
             not name.startswith("WorkBuddy") for _, name in scheduler.calls)
 
@@ -219,7 +222,7 @@ class TestPresenceGate:
         ready, failed = service.filter_ready(TASKS, probe)
         assert failed == []
         assert len(ready) == len(TASKS)
-        assert calls == ["workbuddy", "qoder", "trae"]
+        assert calls == ["workbuddy", "qoder", "trae", "doubao"]
 
     def test_unknown_domain_passes_gate(self):
         """未登记探测的域(未来新域)照常注册,不挡路。"""

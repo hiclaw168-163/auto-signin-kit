@@ -22,3 +22,6 @@ tasks:
   TraeDailyCheckin:
     times: ["09:05", "13:05", "15:05", "19:05", "21:05", "23:05"]
     limit_minutes: 5
+  DoubaoDailyCheckin:
+    times: ["00:05", "09:05", "13:05", "19:05", "23:05"]
+    limit_minutes: 5
