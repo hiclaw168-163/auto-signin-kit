@@ -16,6 +16,7 @@
 | [SPEC-06-schedule域.md](SPEC-06-schedule域.md) | 定时调度: 注册/注销/查看每日自动任务(三平台) | 已实现 |
 | [SPEC-07-history域.md](SPEC-07-history域.md) | 签到台账: SQLite 存储 + history 查询/回填 | 已实现 |
 | [SPEC-08-doubao域.md](SPEC-08-doubao域.md) | 豆包签到领额度(Chromium Cookie 解密 + CDP 兜底,6 文件) | 已实现 |
+| [SPEC-09-Web管理台.md](SPEC-09-Web管理台.md) | 本地 Web UI(FastAPI API 层 + frontend/ Vue3 前端包) | 规划中(设计定稿) |
 
 关键架构决策单独沉淀在 `docs/adr/`(见根目录该目录的各 ADR):
 
