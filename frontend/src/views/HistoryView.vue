@@ -116,8 +116,8 @@ function resetFilters() {
       ]" />
       <n-select v-model:value="result" clearable placeholder="全部结果" style="width: 180px"
                 :options="resultOpts" />
-      <n-button @click="load">查询</n-button>
       <n-button quaternary type="primary" :disabled="!filtered" @click="resetFilters">重置</n-button>
+      <n-button @click="load">查询</n-button>
       <n-text depth="3" style="margin-left: auto">共 {{ rows.length }} 条(每天每域一行,非每次运行)</n-text>
     </n-space>
 
