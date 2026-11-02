@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { h, onMounted, reactive, ref } from 'vue'
+import { h, onMounted, reactive, ref, watch } from 'vue'
 import { useMessage } from 'naive-ui'
 import { dashboardApi } from '../api'
 import StatusTag from '../components/common/StatusTag.vue'
@@ -86,6 +86,9 @@ onMounted(async () => {
   } catch { /* 域下拉退化: 不填也能查全部 */ }
   await load()
 })
+
+// 筛选变化自动重查: 不自动刷的话表格停在旧数据,看起来像"数据不对"
+watch([days, domain], load)
 </script>
 
 <template>
