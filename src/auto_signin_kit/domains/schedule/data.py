@@ -1,12 +1,16 @@
-"""schedule 域的任务清单: 要注册哪些定时任务、默认什么时候跑。
+"""schedule 域的任务清单来源: 各域自声明,schedule 不再硬编码任务表。
 
-命令行(``argv``)固定写死在这里——它是代码结构,不是可调参数。
-触发时间与执行时限的**默认值**也在这里,但可以被
-``config/domains/schedule.yaml`` 的 ``tasks`` 覆盖(见 :func:`apply_overrides`):
-日常调时间改配置即可,不必动代码。清单保留默认值是为了让"只改一个任务"
+**依赖方向**(2026-11 重构): 任务定义、触发时间、客户端就绪探测全部归属
+各域的 ``schedule_meta.py``,经 ``auto_signin_kit.schedule_meta`` entry-point
+注册表被发现——schedule 域不 import 任何业务域,新增平台零改动本域
+(Hollywood principle: 域声明自己怎么被调度,而不是调度认识域)。
+
+触发时间与执行时限的**默认值**在各域声明,可被
+``config/domains/schedule.yaml`` 的 ``tasks`` 覆盖(:func:`apply_overrides`):
+日常调时间改配置即可,不必动代码。声明保留默认值是为了让"只改一个任务"
 的用户不必把整张表抄一遍,也作为配置缺失时的兜底。
 
-两条从原项目(``NOTE-01`` §5)承袭下来的设计约束,改这张表前务必先读:
+两条从原项目(``NOTE-01`` §5)承袭下来的设计约束,改各域声明前务必先读:
 
 1. **高密度触发 + 幂等领取 = 兜底单点失败**。每个任务都挂多个触发时间,不是
    为了多领(领取接口幂等,重复调用只返回"已领"),而是因为触发时刻机器可能
@@ -14,62 +18,50 @@
    所以**不要"优化"掉看起来多余的时间点**。
 2. **平台的执行时限必须大于脚本自己的时间预算**。各域预算: workbuddy 主入口
    ≤540s / 轮询 ≤240s(见 ``config/domains/workbuddy.yaml``),qoder、trae
-   均 ≤240s,doubao ≤60s。时限留了余量(PT10M / PT5M),改预算时同步改这里
-   的时限。
+   均 ≤240s,doubao ≤60s。时限留了余量(PT10M / PT5M),改预算时同步改声明。
 """
 
 from __future__ import annotations
 
+import sys
 from dataclasses import replace
+from functools import lru_cache
+from importlib.metadata import entry_points
+from types import ModuleType
 from typing import Any
 
 from auto_signin_kit.core.ports.scheduler import ScheduleSpec
 
-#: 定时任务清单;``name`` 是跨平台共用的任务标识。
-TASKS: tuple[ScheduleSpec, ...] = (
-    ScheduleSpec(
-        name="WorkBuddyAutoSignin",
-        argv=("auto-signin-kit", "workbuddy", "auto", "--silent"),
-        times=("00:05",),
-        limit_minutes=10,
-        description="WorkBuddy 每日签到 + 成长中心(每日主入口)",
-    ),
-    ScheduleSpec(
-        name="WorkBuddyGrowthPoll",
-        argv=("auto-signin-kit", "workbuddy", "poll"),
-        times=("01:05", "09:05", "17:05", "21:05"),
-        limit_minutes=5,
-        description="WorkBuddy 成长中心轮询(每次先查签到,兼做主入口的兜底)",
-    ),
-    ScheduleSpec(
-        name="WorkBuddyActiveCheck",
-        argv=("auto-signin-kit", "workbuddy", "active", "--silent"),
-        times=("12:05", "20:05"),
-        limit_minutes=5,
-        description="WorkBuddy 活跃保底: 查今日活跃,没有就自动补一次对话(活跃天数只认对话)",
-    ),
-    ScheduleSpec(
-        name="QoderDailyCredits",
-        argv=("auto-signin-kit", "qoder", "auto", "--silent"),
-        times=("10:05", "11:05", "15:05", "19:05", "23:05"),
-        limit_minutes=5,
-        description="Qoder CN 每日 Credits 领取",
-    ),
-    ScheduleSpec(
-        name="TraeDailyCheckin",
-        argv=("auto-signin-kit", "trae", "auto", "--silent"),
-        times=("09:05", "13:05", "15:05", "19:05", "21:05", "23:05"),
-        limit_minutes=5,
-        description="Trae CN 每日签到(1024 活动期限流,高密度触发兜排队)",
-    ),
-    ScheduleSpec(
-        name="DoubaoDailyCheckin",
-        argv=("auto-signin-kit", "doubao", "auto", "--silent"),
-        times=("00:05", "09:05", "13:05", "19:05", "23:05"),
-        limit_minutes=5,
-        description="豆包每日签到 + 任务奖励清扫(签到后自动领取已完成任务奖励)",
-    ),
-)
+#: 各域调度声明的 entry-point 组;值指向 ``<域>/schedule_meta.py`` 模块,
+#: 模块契约: ``SPECS``(任务元组)/ ``DISPLAY_NAME``(展示名)/ ``ready``(探测,可为 None)。
+META_GROUP = "auto_signin_kit.schedule_meta"
+
+
+@lru_cache(maxsize=1)
+def providers() -> tuple[tuple[str, ModuleType], ...]:
+    """(域名, 声明模块) 注册表;按 entry-point 名排序保证输出顺序稳定。"""
+    eps = sorted(entry_points(group=META_GROUP), key=lambda ep: ep.name)
+    return tuple((ep.name, ep.load()) for ep in eps)
+
+
+def provider_of(domain: str) -> ModuleType | None:
+    """域名 → 该域的调度声明模块;未声明调度元数据的域返回 ``None``。"""
+    for name, module in providers():
+        if name == domain:
+            return module
+    return None
+
+
+def all_specs() -> tuple[ScheduleSpec, ...]:
+    """汇总所有域声明的任务;顺序 = 注册表顺序(稳定,测试与展示依赖它)。"""
+    specs: list[ScheduleSpec] = []
+    for _, module in providers():
+        specs.extend(module.SPECS)
+    return tuple(specs)
+
+
+#: 全量任务清单(模块导入时发现一次;测试与 status 展示依赖其稳定性)。
+TASKS: tuple[ScheduleSpec, ...] = all_specs()
 
 
 def domain_of(spec: ScheduleSpec) -> str:
@@ -95,10 +87,10 @@ def tasks_for(domain: str | None) -> tuple[ScheduleSpec, ...]:
 
 
 def apply_overrides(spec: ScheduleSpec, override: Any) -> ScheduleSpec:
-    """把配置里的 ``times`` / ``limit_minutes`` 覆盖到清单项上。
+    """把配置里的 ``times`` / ``limit_minutes`` 覆盖到声明项上。
 
-    ``override`` 为 ``None`` 或某字段没给时沿用清单默认值——这样只想改一个
-    任务的用户不必把整张时间表抄一遍,而清单仍能作为"配置缺失时的兜底"。
+    ``override`` 为 ``None`` 或某字段没给时沿用声明默认值——这样只想改一个
+    任务的用户不必把整张时间表抄一遍,而声明仍能作为"配置缺失时的兜底"。
     """
     if override is None:
         return spec
@@ -108,4 +100,17 @@ def apply_overrides(spec: ScheduleSpec, override: Any) -> ScheduleSpec:
         spec,
         times=times,
         limit_minutes=spec.limit_minutes if limit is None else limit,
+    )
+
+
+def _reset_providers_cache() -> None:
+    """测试辅助: 清掉注册表缓存(测试注入假声明模块后用)。"""
+    providers.cache_clear()
+
+
+# entry-point 发现失败时给出可操作的报错(import 时就炸,别等到 install 半途)
+if not TASKS:
+    sys.stderr.write(
+        "警告: schedule_meta 注册表为空——新装环境需执行"
+        " `uv sync && uv tool install --editable '.[web]' --force` 刷新 entry-points\n"
     )

@@ -51,9 +51,10 @@ uv run ruff check && uv run lint-imports && uv run pytest -q
 
 细则与完整清单见 `docs/standards/STD-01-新增命令与域规范.md`,速查:
 
-1. `src/auto_signin_kit/domains/<域名>/{__init__.py,schema.py,service.py,cli.py}`
+1. `src/auto_signin_kit/domains/<域名>/{__init__.py,schema.py,service.py,cli.py,schedule_meta.py}`
    —— 复制 `docs/standards/templates/domain/` 下的模板改
-2. `pyproject.toml` 的 entry-points 加一行
+2. `pyproject.toml` 的 entry-points 加两行(`domains` + `schedule_meta` 调度声明;
+   schedule 域经注册表发现各域任务,不反向 import 业务域)
 3. `config/domains/<域名>.yaml` + `config/examples/<域名>.yaml.example`
 4. `tests/domains/<域名>/` 补测试
 5. `uv sync && uv tool install --editable '.[web]' --force`

@@ -46,9 +46,9 @@ src/auto_signin_kit/domains/<域>/
 | # | 步骤 | 说明 |
 |---|------|------|
 | 1 | (按需)core 契约 | 仅当新域需要**新的平台能力或跨域基础设施**时,才动 `core/ports/` + `core/adapters/`,见 STD-05 |
-| 2 | 域三件套 | 复制 `docs/standards/templates/domain/`,替换占位业务逻辑 |
+| 2 | 域三件套 + 调度声明 | 复制 `docs/standards/templates/domain/`,替换占位业务逻辑;`schedule_meta.py` 声明本域定时任务与客户端探测(schedule 域经注册表发现,不反向 import) |
 | 3 | 配置模板 | `config/examples/<域>.yaml.example` + `config/domains/<域>.yaml`,见 STD-02 |
-| 4 | 注册 | pyproject entry_points 一行 + `uv sync && uv tool install --editable . --force` |
+| 4 | 注册 | pyproject entry_points 两行(`domains` + `schedule_meta`)+ `uv sync && uv tool install --editable . --force` |
 | 5 | 测试 | `tests/domains/<域>/`,分层与写法见 STD-03;`--help` 与 `-y` 旗标必须有用例 |
 | 6 | 文档同步 | `AGENTS.md`(若规则变化)、`docs/standards/README.md`(若引入新形态)、架构 spec(若有) |
 | 7 | 门禁 | `uv run ruff check && uv run lint-imports && uv run pytest -q` 全绿后提交 |

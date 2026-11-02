@@ -3,8 +3,9 @@
 OS 差异全部收口在 ``core/adapters/scheduler``(STD-05),本层只见
 ``Scheduler`` 协议——不出现 schtasks / launchctl / crontab,也不出现平台分支。
 
-install 注册前按域探测客户端是否就绪(:data:`_PRESENCE`,探测实现在各自域):
-未就绪的任务不注册——启用了也跑不起来的调度没有意义,但失败要如实上报。
+install 注册前按域探测客户端是否就绪(探测实现在各域的
+``schedule_meta.ready``,经 entry-point 注册表发现):未就绪的任务不注册——
+启用了也跑不起来的调度没有意义,但失败要如实上报。
 
 ``scheduler`` 参数用于测试注入;不传时惰性取工厂(架构门禁禁止 domains 直接
 subprocess,也不要求 cli 层反向 import 适配器)。
@@ -23,6 +24,7 @@ from auto_signin_kit.domains.schedule.data import (
     apply_overrides,
     domain_of,
     known_domains,
+    provider_of,
     tasks_for,
 )
 
@@ -30,41 +32,18 @@ from auto_signin_kit.domains.schedule.data import (
 ACTIONS = ("install", "uninstall", "status")
 
 
-def _probe_workbuddy() -> bool:
-    from auto_signin_kit.domains.workbuddy.runtime import is_installed
-
-    return is_installed()
-
-
-def _probe_qoder() -> bool:
-    from auto_signin_kit.domains.qoder.auth import is_installed
-
-    return is_installed()
-
-
-def _probe_trae() -> bool:
-    from auto_signin_kit.domains.trae.auth import is_installed
-
-    return is_installed()
-
-
-#: 域名 → (客户端就绪探测, 客户端展示名)。"装在哪"的路径知识归属各域,
-#: schedule 不复制;跨域 import 已在 pyproject.toml 的 ignore_imports 显式登记。
-#: 未登记探测的域(未来新域)照常注册,不挡路。
-_PRESENCE: dict[str, tuple[Callable[[], bool], str]] = {
-    "workbuddy": (_probe_workbuddy, "WorkBuddy"),
-    "qoder": (_probe_qoder, "Qoder CN"),
-    "trae": (_probe_trae, "Trae CN"),
-}
-
-
 def _default_probe(domain: str) -> str | None:
-    """域名 → 客户端未就绪原因;``None`` = 就绪(或无探测,不挡注册)。"""
-    entry = _PRESENCE.get(domain)
-    if entry is None:
+    """域名 → 客户端未就绪原因;``None`` = 就绪(或无探测/未声明,不挡注册)。
+
+    探测实现归属各域(schedule_meta.ready),这里只做注册表查找与文案包装。
+    """
+    module = provider_of(domain)
+    if module is None:
         return None
-    check, app = entry
-    return None if check() else "%s 客户端未检测到，注册了也无法运行" % app
+    ready = getattr(module, "ready", None)
+    if ready is None:
+        return None
+    return None if ready() else "%s 客户端未检测到，注册了也无法运行" % module.DISPLAY_NAME
 
 
 #: 对外稳定的探测入口(Web 管理台复用,语义同 install 前的探测);

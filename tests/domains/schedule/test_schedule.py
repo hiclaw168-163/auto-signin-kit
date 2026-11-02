@@ -115,6 +115,20 @@ class TestTaskCatalogue:
     def test_tasks_for_unknown_domain_is_empty(self):
         assert tasks_for("nope") == ()
 
+    def test_registry_covers_every_signin_domain(self):
+        """每个签到域都必须有 schedule_meta 声明——新域漏注册调度就静默缺失。
+
+        域注册表(auto_signin_kit.domains)去掉 schedule 本身后,剩下的业务域
+        必须与调度声明注册表(auto_signin_kit.schedule_meta)一一对应。
+        """
+        from importlib.metadata import entry_points
+
+        business = {ep.name for ep in entry_points(group="auto_signin_kit.domains")}
+        business.discard("schedule")  # 工具域,不参与签到调度
+        metas = {ep.name for ep in entry_points(group="auto_signin_kit.schedule_meta")}
+        assert metas <= business, f"调度声明指向未注册的域: {metas - business}"
+        assert business <= metas, f"业务域缺少调度声明: {business - metas}"
+
 
 class TestServiceOrchestration:
     def test_install_reports_partial_failure_and_keeps_going(self):
@@ -222,7 +236,8 @@ class TestPresenceGate:
         ready, failed = service.filter_ready(TASKS, probe)
         assert failed == []
         assert len(ready) == len(TASKS)
-        assert calls == ["workbuddy", "qoder", "trae", "doubao"]
+        # 顺序 = schedule_meta 注册表顺序(entry-point 名字母序,稳定)
+        assert calls == ["doubao", "qoder", "trae", "workbuddy"]
 
     def test_unknown_domain_passes_gate(self):
         """未登记探测的域(未来新域)照常注册,不挡路。"""
