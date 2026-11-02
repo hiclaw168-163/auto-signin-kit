@@ -9,7 +9,7 @@ import type { DailyRow, EventRow, Overview } from '../types'
 
 const message = useMessage()
 const overview = ref<Overview | null>(null)
-const days = ref(7)
+const days = ref(14)
 const domain = ref<string | null>(null)
 const rows = ref<DailyRow[]>([])
 const events = ref<EventRow[] | null>(null)
@@ -28,7 +28,7 @@ function makePagination(defaultSize: number) {
   })
   return p
 }
-const pagination = makePagination(20)
+const pagination = makePagination(10)
 const eventPagination = makePagination(10)
 
 async function load() {
@@ -97,10 +97,10 @@ watch([days, domain], load)
       <n-select v-model:value="domain" clearable placeholder="全部域" style="width: 180px"
                 :options="(overview?.cards ?? []).map((c) => ({ label: c.domain, value: c.domain }))" />
       <n-select v-model:value="days" style="width: 130px" :options="[
-        { label: '近 7 天', value: 7 },
         { label: '近 14 天', value: 14 },
         { label: '近 30 天', value: 30 },
         { label: '近 90 天', value: 90 },
+        { label: '近 180 天', value: 180 },
       ]" />
       <n-button @click="load">刷新</n-button>
       <n-text depth="3" style="margin-left: auto">共 {{ rows.length }} 条(每天每域一行,非每次运行)</n-text>

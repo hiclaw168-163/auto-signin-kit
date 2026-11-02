@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { darkTheme, type GlobalThemeOverrides } from 'naive-ui'
+import { darkTheme, dateZhCN, zhCN, type GlobalThemeOverrides } from 'naive-ui'
 import { loadResultLabels } from './api/meta'
 
 // 词表加载失败不挡界面: StatusTag 会退回显示原始值(如 OK),可自愈重试。
@@ -25,7 +25,7 @@ const overrides: GlobalThemeOverrides = {
 </script>
 
 <template>
-  <n-config-provider :theme="darkTheme" :theme-overrides="overrides">
+  <n-config-provider :theme="darkTheme" :theme-overrides="overrides" :locale="zhCN" :date-locale="dateZhCN">
     <n-message-provider>
       <n-dialog-provider>
         <router-view />
