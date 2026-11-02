@@ -224,3 +224,18 @@ class TestRunActiveChain:
         assert out["result"] == "NO_ACTIVITY"
         assert out["needs_attention"] is False
         assert out["chatted"] is True
+
+
+class TestScheduleSkip:
+    """静默调度时当天已成功签到 → 不执行、不 emit、不落库。"""
+
+    def test_silent_auto_skips_when_done_today(self, monkeypatch):
+        monkeypatch.setattr("auto_signin_kit.domains.workbuddy.service.done_today",
+                            lambda domain: True)
+        emitted: list = []
+        monkeypatch.setattr("auto_signin_kit.domains.workbuddy.service.emit_result",
+                            lambda out, **kw: emitted.append(out))
+        from types import SimpleNamespace
+
+        assert service.run_action("auto", SimpleNamespace(), silent=True) == 0
+        assert emitted == []

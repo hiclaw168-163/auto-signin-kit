@@ -378,3 +378,18 @@ class TestRunStatus:
         out, code = service.run_status(_FakeApi(campaigns=(NO_NETWORK, None, "x")), _NoBudget())
         assert out["result"] == "NETWORK"
         assert code == 1
+
+
+class TestScheduleSkip:
+    """静默调度时当天已成功领取 → 不执行、不 emit、不落库。"""
+
+    def test_silent_claim_skips_when_done_today(self, monkeypatch):
+        monkeypatch.setattr("auto_signin_kit.core.store.done_today", lambda domain: True)
+        emitted: list = []
+        monkeypatch.setattr("auto_signin_kit.core.report.emit_result",
+                            lambda out, **kw: emitted.append(out))
+        from types import SimpleNamespace
+
+        cfg = SimpleNamespace(budget_seconds=None, base_url="https://cfg.example")
+        assert service.run_action("claim", cfg, silent=True) == 0
+        assert emitted == []

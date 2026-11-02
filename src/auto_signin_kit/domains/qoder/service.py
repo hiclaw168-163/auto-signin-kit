@@ -268,6 +268,14 @@ def run_action(
                     sensitive=SENSITIVE, log_errors_without_silent=False)
         return code
 
+    # 调度兜底触发(高密度时间点): 当天已成功领取就不再执行,也不重复落库
+    from auto_signin_kit.core.logging import log_debug
+    from auto_signin_kit.core.store import done_today
+
+    if silent and action == "claim" and done_today("qoder"):
+        log_debug("qoder: 今日已成功领取,调度触发跳过(不执行、不落库)")
+        return 0
+
     budget_value, warning = parse_budget(config)
     budget = Budget(budget_value)
     try:

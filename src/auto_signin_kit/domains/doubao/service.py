@@ -11,8 +11,9 @@ from typing import Any
 
 from auto_signin_kit.core.errors import AutoSignInKitError
 from auto_signin_kit.core.httpclient import NO_NETWORK, Budget
-from auto_signin_kit.core.logging import result_log_path
+from auto_signin_kit.core.logging import log_debug, result_log_path
 from auto_signin_kit.core.report import emit_result, make_result
+from auto_signin_kit.core.store import done_today
 from auto_signin_kit.domains.doubao import cookies
 from auto_signin_kit.domains.doubao.api import DoubaoApi
 from auto_signin_kit.domains.doubao.schema import DoubaoDomainConfig
@@ -192,6 +193,10 @@ def run_action(
         return 2
     if action == "doctor":
         return _doctor(config, action=label, silent=silent)
+    # 调度兜底触发(高密度时间点): 当天已成功签到就不再执行,也不重复落库
+    if silent and action == "claim" and done_today("doubao"):
+        log_debug("doubao: 今日已成功签到,调度触发跳过(不执行、不落库)")
+        return 0
     try:
         api = _build_api(config, once=once)
     except AutoSignInKitError as exc:

@@ -369,3 +369,18 @@ class TestCliSmoke:
         api, info, staleness = build_api(cfg)
         assert staleness is None
         assert info["token"] == INFO["token"]
+
+
+class TestScheduleSkip:
+    """静默调度时当天已成功签到 → 不执行、不 emit、不落库。"""
+
+    def test_silent_claim_skips_when_done_today(self, monkeypatch, tmp_path):
+        monkeypatch.setattr("auto_signin_kit.core.store.done_today", lambda domain: True)
+        emitted: list = []
+        monkeypatch.setattr("auto_signin_kit.core.report.emit_result",
+                            lambda out, **kw: emitted.append(out))
+        from types import SimpleNamespace
+
+        code = service.run_action("claim", SimpleNamespace(data_dir=tmp_path), silent=True)
+        assert code == 0
+        assert emitted == []

@@ -8,7 +8,7 @@
 - ``ask_schedule_changes`` **调度变更审计**: 定时任务的注册/注销动作记录,
                            回答"任务是什么时候被谁改成的什么时间"
 - ``ask_daily_checkins``   **视图**(非实体表): 每天每域最后一次运行 = 当天最终状态,
-                           把"一天多次运行"折叠成一行,history 命令与人工查库都读它
+                           把"一天多次运行"折叠成一行,Web 台账页与人工查库都读它
 
 两个标识列的分工(查数据先想清楚用哪个):
 
@@ -148,6 +148,118 @@ def _migrate(conn: sqlite3.Connection) -> None:
             with conn:
                 conn.execute(add_sql)
                 conn.execute(backfill_sql)
+
+
+#: 台账覆盖的签到域(Web 总览按它补齐"还没有任何记录"的域卡片)。
+#: doubao 与其他域同走 emit_result 落库,纳入正式名单。
+SIGNIN_DOMAINS = ("workbuddy", "qoder", "trae", "doubao")
+
+
+def daily_status(days: int = 7, *, domain: str | None = None,
+                 source: str | None = None) -> list[dict[str, Any]]:
+    """最近 N 天每天每域的最终状态(读 ``ask_daily_checkins`` 视图),新的一天在前。"""
+    conn = connect()
+    try:
+        sql = (
+            "SELECT day, domain, result, source, needs_attention, report, executed_at"
+            " FROM ask_daily_checkins WHERE day >= date('now', ?)"
+        )
+        params: list[Any] = ["-%d days" % max(1, days)]
+        if domain:
+            sql += " AND domain = ?"
+            params.append(domain)
+        if source:
+            sql += " AND source = ?"
+            params.append(source)
+        rows = conn.execute(sql + " ORDER BY day DESC, domain", params).fetchall()
+    finally:
+        conn.close()
+    return [dict(row) for row in rows]
+
+
+def events(
+    *,
+    date: str | None = None,
+    domain: str | None = None,
+    attention_only: bool = False,
+    source: str | None = None,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    """按条件查 ``ask_signin_runs`` 明细,最新在前;``source`` 过滤 run/backfill。"""
+    sql = ("SELECT executed_at, domain, action, source, result, needs_attention, report"
+           " FROM ask_signin_runs WHERE 1=1")
+    params: list[Any] = []
+    if date:
+        sql += " AND date(executed_at) = ?"
+        params.append(date)
+    if domain:
+        sql += " AND domain = ?"
+        params.append(domain)
+    if source:
+        sql += " AND source = ?"
+        params.append(source)
+    if attention_only:
+        sql += " AND needs_attention = 1"
+    sql += " ORDER BY executed_at DESC, id DESC LIMIT ?"
+    params.append(limit)
+    conn = connect()
+    try:
+        rows = conn.execute(sql, params).fetchall()
+    finally:
+        conn.close()
+    return [dict(row) for row in rows]
+
+
+#: 算"当天已成功签到"的结果词(签到语义的成功;ACTIVE/OK 是相邻语义,不算)。
+SIGNIN_DONE_RESULTS = ("CLAIMED", "ALREADY")
+
+
+def done_today(domain: str) -> bool:
+    """该域今天(source=run)是否已有成功签到行;调度兜底触发的跳过判断用。
+
+    时间口径与 ``ask_daily_checkins`` 视图一致: ``executed_at`` 存本地 ISO
+    时间戳,``date()`` 取其日期部分;右侧用 ``date('now','localtime')``
+    得到今天本地日期。
+    """
+    conn = connect()
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM ask_signin_runs WHERE domain = ? AND source = 'run'"
+            " AND result IN (?, ?) AND date(executed_at) = date('now', 'localtime')"
+            " LIMIT 1", (domain, *SIGNIN_DONE_RESULTS)).fetchone()
+    finally:
+        conn.close()
+    return row is not None
+
+
+def compact_history() -> dict[str, Any]:
+    """清理高密度调度留下的历史冗余成功行;返回 {"deleted", "per_domain"}。
+
+    每天 (day, domain) 只保留: **首条成功行**(真正完成签到的那次)与**当天
+    最后一行**(``ask_daily_checkins`` 视图的最终状态取它);失败/需关注行与
+    backfill 行一律不动。幂等——清完再跑 deleted=0。
+    """
+    conn = connect()
+    try:
+        rows = conn.execute(
+            "SELECT id, domain FROM ask_signin_runs"
+            " WHERE source = 'run' AND result IN ('CLAIMED', 'ALREADY')"
+            "   AND id NOT IN (SELECT MIN(id) FROM ask_signin_runs"
+            "                  WHERE source = 'run' AND result IN ('CLAIMED', 'ALREADY')"
+            "                  GROUP BY date(executed_at), domain)"
+            "   AND id NOT IN (SELECT MAX(id) FROM ask_signin_runs"
+            "                  GROUP BY date(executed_at), domain)"
+        ).fetchall()
+        per_domain: dict[str, int] = {}
+        ids = []
+        for row in rows:
+            per_domain[row["domain"]] = per_domain.get(row["domain"], 0) + 1
+            ids.append((row["id"],))
+        with conn:
+            conn.executemany("DELETE FROM ask_signin_runs WHERE id = ?", ids)
+    finally:
+        conn.close()
+    return {"deleted": len(ids), "per_domain": per_domain}
 
 
 def record_payload(payload: str) -> bool:

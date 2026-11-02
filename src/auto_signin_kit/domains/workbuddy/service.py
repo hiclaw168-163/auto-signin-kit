@@ -8,8 +8,9 @@ from pathlib import Path
 from typing import Any
 
 from auto_signin_kit.core.httpclient import Budget
-from auto_signin_kit.core.logging import result_log_path
+from auto_signin_kit.core.logging import log_debug, result_log_path
 from auto_signin_kit.core.report import emit_result, make_result
+from auto_signin_kit.core.store import done_today
 from auto_signin_kit.domains.workbuddy import checkin, daily, rewards
 from auto_signin_kit.domains.workbuddy.credentials import find_auth_file, load_session_retry
 from auto_signin_kit.domains.workbuddy.extras import run_growth
@@ -35,6 +36,12 @@ POLL_MAX_BUDGET = 240.0
 KNOWN_ACTIONS = (
     "auto", "silent", "growth", "poll", "silent-poll", "silent-growth",
     "status", "claim", "all", "doctor", "active",
+)
+
+#: 静默调度时,当天已成功签到即可整体跳过的动作(签到主入口与其兜底/轮询);
+#: active(活跃保底)/growth(成长查询)/status/doctor 各有独立职责,不跳。
+SKIP_WHEN_DONE = (
+    "auto", "silent", "claim", "all", "poll", "silent-poll", "silent-growth",
 )
 
 
@@ -141,6 +148,10 @@ def run_action(action: str, config: WorkbuddyDomainConfig, *, silent: bool = Fal
             action=action, silent=silent, log_path=log_path(),
         )
         return 2
+    # 调度兜底触发(高密度时间点): 当天已成功签到就不再执行,也不重复落库
+    if silent and action in SKIP_WHEN_DONE and done_today("workbuddy"):
+        log_debug("workbuddy: 今日已成功签到,调度触发跳过(不执行、不落库)")
+        return 0
     poll = action in POLL_ACTIONS
     budget_value, warning = parse_budget(config, poll=poll)
     budget = Budget(budget_value)
