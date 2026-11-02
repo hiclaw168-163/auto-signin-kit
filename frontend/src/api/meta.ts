@@ -18,6 +18,12 @@ export function resultLabel(result?: string | null): string {
   return labels.value[result] ?? result
 }
 
+/** 结果筛选下拉的选项: label + 原始值,与词表同源,后端加词前端自动跟上。 */
+export function resultOptions(): { label: string; value: string }[] {
+  return Object.entries(labels.value)
+    .map(([value, label]) => ({ label: `${label} (${value})`, value }))
+}
+
 export function isOkResult(result?: string | null): boolean {
   // 成功语义判断: 词表后端不发集合,这里按同源规则判定(与 RESULT_OK 一致)
   return !!result && ['CLAIMED', 'ALREADY', 'ACTIVE', 'OK'].includes(result)

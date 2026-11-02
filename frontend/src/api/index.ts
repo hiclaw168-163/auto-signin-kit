@@ -13,9 +13,9 @@ import { get, post, put } from './http'
 
 export const dashboardApi = {
   overview: () => get<Overview>('/api/overview'),
-  history: (days: number, domain?: string) =>
-    get<DailyRow[]>('/api/history', { days, domain }),
-  events: (query: { date?: string; domain?: string; attention_only?: boolean; limit?: number }) =>
+  history: (days: number, domain?: string, result?: string) =>
+    get<DailyRow[]>('/api/history', { days, domain, result }),
+  events: (query: { date?: string; domain?: string; attention_only?: boolean; result?: string; limit?: number }) =>
     get<EventRow[]>('/api/events', query),
 }
 

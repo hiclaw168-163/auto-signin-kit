@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import time
+from datetime import datetime, timedelta
 from typing import Any
 
 import pytest
@@ -41,12 +42,16 @@ class _FakeScheduler:
         return f"# {spec.name}"
 
 
+_TODAY = datetime.now().astimezone().date().isoformat()
+_YESTERDAY = (datetime.now().astimezone().date() - timedelta(days=1)).isoformat()
+
+# 日期用运行时"今天/昨天": 写死日历日期的桩过不了午夜(真实踩坑)
 _DAILY_ROWS = [
-    {"day": "2026-11-02", "domain": "doubao", "result": "CLAIMED",
+    {"day": _TODAY, "domain": "doubao", "result": "CLAIMED",
      "source": "run", "needs_attention": 0, "report": "签到成功", "executed_at": "t"},
-    {"day": "2026-11-02", "domain": "qoder", "result": "NO_AUTH",
+    {"day": _TODAY, "domain": "qoder", "result": "NO_AUTH",
      "source": "run", "needs_attention": 1, "report": "登录过期", "executed_at": "t"},
-    {"day": "2026-11-01", "domain": "doubao", "result": "ALREADY",
+    {"day": _YESTERDAY, "domain": "doubao", "result": "ALREADY",
      "source": "run", "needs_attention": 0, "report": "已签到", "executed_at": "t"},
 ]
 
@@ -56,9 +61,12 @@ def _patch_history(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     calls: dict[str, Any] = {}
 
     def daily_status(days: int = 7, *, domain: str | None = None,
-                     source: str | None = None) -> list[dict]:
-        calls["daily"] = {"days": days, "domain": domain, "source": source}
-        return [r for r in _DAILY_ROWS if domain is None or r["domain"] == domain]
+                     source: str | None = None,
+                     result: str | None = None) -> list[dict]:
+        calls["daily"] = {"days": days, "domain": domain, "source": source,
+                          "result": result}
+        rows = [r for r in _DAILY_ROWS if domain is None or r["domain"] == domain]
+        return [r for r in rows if result is None or r["result"] == result]
 
     def events(**kwargs: Any) -> list[dict]:
         calls["events"] = kwargs
@@ -104,8 +112,15 @@ class TestReadRoutes:
     def test_history_passes_days_and_domain(self, client, monkeypatch):
         calls = _patch_history(monkeypatch)
         rows = client.get("/api/history", params={"days": 3, "domain": "doubao"}).json()
-        assert calls["daily"] == {"days": 3, "domain": "doubao", "source": None}
+        assert calls["daily"] == {"days": 3, "domain": "doubao", "source": None,
+                                  "result": None}
         assert all(r["domain"] == "doubao" for r in rows)
+
+    def test_history_passes_result_filter(self, client, monkeypatch):
+        calls = _patch_history(monkeypatch)
+        rows = client.get("/api/history", params={"days": 3, "result": "CLAIMED"}).json()
+        assert calls["daily"]["result"] == "CLAIMED"
+        assert all(r["result"] == "CLAIMED" for r in rows)
 
     def test_history_rejects_out_of_range_days(self, client):
         assert client.get("/api/history", params={"days": 0}).status_code == 422
@@ -117,7 +132,7 @@ class TestReadRoutes:
             "date": "2026-11-02", "domain": "doubao", "attention_only": True, "limit": 5})
         assert calls["events"] == {
             "date": "2026-11-02", "domain": "doubao",
-            "attention_only": True, "limit": 5}
+            "attention_only": True, "result": None, "limit": 5}
 
 
 # ---------------------------------------------------------------- 调度管理

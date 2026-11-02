@@ -51,6 +51,7 @@ RESULT_LABELS = {
     "AUTH_ERROR": "认证失败",
     "AUTH_REJECTED": "认证被拒",
     "FORBIDDEN": "无权限",
+    "INACTIVE_ERROR": "活动不在期",
     "ERROR": "执行失败",
     "NETWORK": "网络异常",
     "TIMEOUT": "超时",
@@ -60,6 +61,39 @@ RESULT_LABELS = {
 
 #: 算"成功"的取值(签到成功/活跃达标/操作成功);聚合统计用,与词表同源。
 RESULT_OK = frozenset({"CLAIMED", "ALREADY", "ACTIVE", "OK"})
+
+#: 常见非标准取值 → 标准词(落库前归一化用)。只收真实出现过的历史拼写与
+#: 高概率第三方变体,不做万能猜测;认不出的归 UNKNOWN,查询侧才能统一。
+_RESULT_ALIASES = {
+    # 操作语义
+    "SUCCESS": "OK", "SUCCEEDED": "OK", "DONE": "OK", "FINISHED": "OK",
+    "FAIL": "FAILED", "FAILURE": "FAILED",
+    # 签到语义
+    "SIGNED": "CLAIMED", "SIGNED_IN": "CLAIMED",
+    "CHECKED": "CLAIMED", "CHECKED_IN": "CLAIMED",
+    "ALREADY_SIGNED": "ALREADY", "ALREADY_CHECKED": "ALREADY",
+    "SIGNED_TODAY": "ALREADY", "DUPLICATE": "ALREADY", "REPEAT": "ALREADY",
+    "GROWTH": "ACTIVE",  # workbuddy 活跃链 2026-10 前的旧取值
+    # 失败/需关注语义
+    "UNAUTHORIZED": "NO_AUTH", "EXPIRED": "NO_AUTH", "NOT_LOGGED_IN": "NO_AUTH",
+    "NO_LOGIN": "NO_AUTH", "SESSION_EXPIRED": "NO_AUTH",
+    "RATE_LIMIT": "RATE_LIMITED", "LIMITED": "RATE_LIMITED",
+    "NETWORK_ERROR": "NETWORK", "NET_ERROR": "NETWORK",
+    "TIMEOUT_ERROR": "TIMEOUT",
+}
+
+
+def normalize_result(raw: Any) -> str:
+    """把任意来源的 result 归一化到标准词表,认不出的按 UNKNOWN 收口。
+
+    台账查询要统一,取值必须收口: 域代码原则上直接用标准词(词表即事实源),
+    这里兜住历史遗留与第三方拼写(大小写不敏感);空值/词表外一律 UNKNOWN,
+    绝不让域各自的"方言"混进台账。
+    """
+    value = str(raw or "").strip().upper()
+    if not value:
+        return "UNKNOWN"
+    return _RESULT_ALIASES.get(value, value if value in RESULT_LABELS else "UNKNOWN")
 
 
 def make_result(result: str, report: str, **extra: Any) -> dict[str, Any]:

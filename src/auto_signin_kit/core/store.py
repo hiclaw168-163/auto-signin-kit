@@ -37,6 +37,7 @@ import sqlite3
 from typing import Any
 
 from auto_signin_kit.core.adapters.log_dir import default_data_dir
+from auto_signin_kit.core.report import normalize_result
 
 #: 台账文件名(运行时数据目录,与日志分居;同样被 .gitignore 排除)。
 LEDGER_FILENAME = "auto-signin-kit.db"
@@ -159,7 +160,8 @@ SIGNIN_DOMAINS = ("workbuddy", "qoder", "trae", "doubao")
 
 
 def daily_status(days: int = 7, *, domain: str | None = None,
-                 source: str | None = None) -> list[dict[str, Any]]:
+                 source: str | None = None,
+                 result: str | None = None) -> list[dict[str, Any]]:
     """最近 N 天每天每域的最终状态(读 ``ask_daily_checkins`` 视图),新的一天在前。"""
     conn = connect()
     try:
@@ -174,6 +176,9 @@ def daily_status(days: int = 7, *, domain: str | None = None,
         if source:
             sql += " AND source = ?"
             params.append(source)
+        if result:
+            sql += " AND result = ?"
+            params.append(normalize_result(result))
         rows = conn.execute(sql + " ORDER BY day DESC, domain", params).fetchall()
     finally:
         conn.close()
@@ -186,6 +191,7 @@ def events(
     domain: str | None = None,
     attention_only: bool = False,
     source: str | None = None,
+    result: str | None = None,
     limit: int = 50,
 ) -> list[dict[str, Any]]:
     """按条件查 ``ask_signin_runs`` 明细,最新在前;``source`` 过滤 run/backfill。"""
@@ -201,6 +207,9 @@ def events(
     if source:
         sql += " AND source = ?"
         params.append(source)
+    if result:
+        sql += " AND result = ?"
+        params.append(normalize_result(result))
     if attention_only:
         sql += " AND needs_attention = 1"
     sql += " ORDER BY executed_at DESC, id DESC LIMIT ?"
@@ -301,7 +310,9 @@ def record_payload(payload: str) -> bool:
                             record["ts"],
                             str(record.get("domain") or "unknown"),
                             record.get("action"),
-                            str(record.get("result") or "UNKNOWN"),
+                            # 归一化到标准词表: 各域"方言"(大小写/别名)进库前收口,
+                            # 查询与聚合才有统一口径
+                            normalize_result(record.get("result")),
                             1 if record.get("needs_attention") else 0,
                             record.get("report"),
                             payload,

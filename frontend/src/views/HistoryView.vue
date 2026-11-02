@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { h, onMounted, reactive, ref, watch } from 'vue'
+import { computed, h, onMounted, reactive, ref, watch } from 'vue'
 import { useMessage } from 'naive-ui'
 import { dashboardApi } from '../api'
+import { resultOptions } from '../api/meta'
 import StatusTag from '../components/common/StatusTag.vue'
 import type { DailyRow, EventRow, Overview } from '../types'
 
@@ -11,6 +12,9 @@ const message = useMessage()
 const overview = ref<Overview | null>(null)
 const days = ref(14)
 const domain = ref<string | null>(null)
+const result = ref<string | null>(null)
+// computed 包一层: 词表由 App.vue 全局加载,晚到时选项自动补上
+const resultOpts = computed(resultOptions)
 const rows = ref<DailyRow[]>([])
 const events = ref<EventRow[] | null>(null)
 const eventsTitle = ref('')
@@ -35,7 +39,7 @@ async function load() {
   loading.value = true
   pagination.page = 1
   try {
-    rows.value = await dashboardApi.history(days.value, domain.value ?? undefined)
+    rows.value = await dashboardApi.history(days.value, domain.value ?? undefined, result.value ?? undefined)
   } catch (e) {
     message.error(String(e))
   } finally {
@@ -45,7 +49,7 @@ async function load() {
 
 async function drill(row: DailyRow) {
   try {
-    events.value = await dashboardApi.events({ date: row.day, domain: row.domain, limit: 100 })
+    events.value = await dashboardApi.events({ date: row.day, domain: row.domain, result: result.value ?? undefined, limit: 100 })
     eventsTitle.value = `${row.domain} · ${row.day} 明细`
     eventPagination.page = 1
   } catch (e) {
@@ -88,7 +92,7 @@ onMounted(async () => {
 })
 
 // 筛选变化自动重查: 不自动刷的话表格停在旧数据,看起来像"数据不对"
-watch([days, domain], load)
+watch([days, domain, result], load)
 </script>
 
 <template>
@@ -102,7 +106,9 @@ watch([days, domain], load)
         { label: '近 90 天', value: 90 },
         { label: '近 180 天', value: 180 },
       ]" />
-      <n-button @click="load">刷新</n-button>
+      <n-select v-model:value="result" clearable placeholder="全部结果" style="width: 180px"
+                :options="resultOpts" />
+      <n-button @click="load">查询</n-button>
       <n-text depth="3" style="margin-left: auto">共 {{ rows.length }} 条(每天每域一行,非每次运行)</n-text>
     </n-space>
 

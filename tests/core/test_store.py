@@ -48,6 +48,22 @@ class TestRecordAndQuery:
         assert len(store.events(source="backfill")) == 1
         assert store.events() == store.events(source="run") + store.events(source="backfill")
 
+    def test_record_payload_normalizes_result_dialects(self):
+        # 落库前归一化: 域报 "success" 这类方言,库里的必须是标准词 OK
+        store.record_payload(json.dumps(_record(result="success"), ensure_ascii=False))
+        rows = store.events(domain="trae")
+        assert rows[0]["result"] == "OK"
+
+    def test_result_filter_normalizes_and_matches(self):
+        store.record_payload(json.dumps(_record(result="success"), ensure_ascii=False))
+        # 查询侧同样归一化: 用方言查和标准词查,结果一致
+        assert len(store.events(result="success")) == 1
+        assert len(store.events(result="OK")) == 1
+        assert store.events(result="NO_AUTH") == []
+        # 折叠视图同口径
+        assert len(store.daily_status(days=30, result="OK")) == 1
+        assert store.daily_status(days=30, result="CLAIMED") == []
+
     def test_schedule_domain_routes_to_audit_table(self):
         payload = json.dumps({"ts": "2026-10-22T10:00:00+08:00", "domain": "schedule",
                               "action": "install", "platform": "windows",

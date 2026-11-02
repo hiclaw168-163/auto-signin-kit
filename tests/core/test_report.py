@@ -11,6 +11,22 @@ def _read_records(path: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
 
 
+def test_normalize_result_maps_dialects_into_vocab():
+    # 域"方言"/历史拼写 → 标准词(大小写不敏感)
+    assert report.normalize_result("success") == "OK"
+    assert report.normalize_result("Already_Signed") == "ALREADY"
+    assert report.normalize_result("growth") == "ACTIVE"  # workbuddy 旧取值
+    assert report.normalize_result("  expired  ") == "NO_AUTH"
+    # 标准词原样通过
+    assert report.normalize_result("CLAIMED") == "CLAIMED"
+
+
+def test_normalize_result_unknowns_collapse_to_unknown():
+    assert report.normalize_result(None) == "UNKNOWN"
+    assert report.normalize_result("") == "UNKNOWN"
+    assert report.normalize_result("mystery_word") == "UNKNOWN"  # 词表外不进台账
+
+
 def test_log_line_is_pure_jsonl_with_standard_fields(tmp_path):
     """日志行必须是完整 JSON(时间戳在字段里,不再拼在行首),ts 带时区可解析。"""
     log = tmp_path / "signin.log"

@@ -69,9 +69,10 @@ def overview() -> dict[str, Any]:
 def history(
     days: int = Query(7, ge=1, le=90),
     domain: str | None = Query(None),
+    result: str | None = Query(None),
 ) -> list[dict[str, Any]]:
     """每日折叠视图(每天每域最后一次运行 = 当天最终状态)。"""
-    return store.daily_status(days, domain=domain)
+    return store.daily_status(days, domain=domain, result=result)
 
 
 @router.get("/events")
@@ -79,11 +80,13 @@ def events(
     date: str | None = Query(None, description="YYYY-MM-DD"),
     domain: str | None = Query(None),
     attention_only: bool = Query(False),
+    result: str | None = Query(None),
     limit: int = Query(50, ge=1, le=500),
 ) -> list[dict[str, Any]]:
     """运行明细,最新在前;attention_only=1 只看需要人工介入的。"""
     return store.events(
-        date=date, domain=domain, attention_only=attention_only, limit=limit)
+        date=date, domain=domain, attention_only=attention_only,
+        result=result, limit=limit)
 
 
 @router.get("/schedule")
