@@ -39,47 +39,45 @@ RESULT_LABELS = {
     "ALREADY": "今日已签",
     "ACTIVE": "活跃达标",
     "NO_ACTIVITY": "今日未活跃",
-    "INACTIVE": "未激活",
-    "PENDING": "待生效",
     # 操作语义
     "OK": "执行成功",
     "PARTIAL": "部分成功",
     "FAILED": "执行失败",
-    # 失败/需关注语义
+    # 异常语义
     "NO_AUTH": "登录过期",
-    "NO_SESSION": "会话缺失",
-    "AUTH_ERROR": "认证失败",
-    "AUTH_REJECTED": "认证被拒",
-    "FORBIDDEN": "无权限",
-    "INACTIVE_ERROR": "活动不在期",
-    "ERROR": "执行失败",
     "NETWORK": "网络异常",
-    "TIMEOUT": "超时",
-    "RATE_LIMITED": "限流",
     "UNKNOWN": "未知",
 }
 
 #: 算"成功"的取值(签到成功/活跃达标/操作成功);聚合统计用,与词表同源。
 RESULT_OK = frozenset({"CLAIMED", "ALREADY", "ACTIVE", "OK"})
 
-#: 常见非标准取值 → 标准词(落库前归一化用)。只收真实出现过的历史拼写与
-#: 高概率第三方变体,不做万能猜测;认不出的归 UNKNOWN,查询侧才能统一。
+#: 域内部细粒度码 → 标准词(落库前归一化用)。域代码可以继续用细分码表达
+#: 上下文(细分说明放 report 文本),台账只存 10 词,查询聚合才有统一口径;
+#: 大小写不敏感,认不出的归 UNKNOWN,绝不让方言进库。
 _RESULT_ALIASES = {
-    # 操作语义
+    # 认证类 → NO_AUTH
+    "NO_SESSION": "NO_AUTH", "AUTH_ERROR": "NO_AUTH", "AUTH_REJECTED": "NO_AUTH",
+    "FORBIDDEN": "NO_AUTH", "UNAUTHORIZED": "NO_AUTH", "EXPIRED": "NO_AUTH",
+    "NOT_LOGGED_IN": "NO_AUTH", "NO_LOGIN": "NO_AUTH", "SESSION_EXPIRED": "NO_AUTH",
+    # 失败类 → FAILED(ERROR 与 FAILED 语义重复,二选一;未激活/限流也归失败,
+    # 细节看 report 文本)
+    "ERROR": "FAILED", "FAIL": "FAILED", "FAILURE": "FAILED",
+    "INACTIVE": "FAILED", "INACTIVE_ERROR": "NO_ACTIVITY",  # 活动不在期≈未活跃
+    "RATE_LIMITED": "FAILED", "LIMITED": "FAILED",
+    # 网络类 → NETWORK(超时是网络问题的一种)
+    "TIMEOUT": "NETWORK", "TIMEOUT_ERROR": "NETWORK",
+    "NETWORK_ERROR": "NETWORK", "NET_ERROR": "NETWORK",
+    # 待生效/演练/部分提交 → OK
+    "PENDING": "OK", "DRY_RUN": "OK",
+    # 通用成功措辞 → OK
     "SUCCESS": "OK", "SUCCEEDED": "OK", "DONE": "OK", "FINISHED": "OK",
-    "FAIL": "FAILED", "FAILURE": "FAILED",
     # 签到语义
     "SIGNED": "CLAIMED", "SIGNED_IN": "CLAIMED",
     "CHECKED": "CLAIMED", "CHECKED_IN": "CLAIMED",
     "ALREADY_SIGNED": "ALREADY", "ALREADY_CHECKED": "ALREADY",
     "SIGNED_TODAY": "ALREADY", "DUPLICATE": "ALREADY", "REPEAT": "ALREADY",
     "GROWTH": "ACTIVE",  # workbuddy 活跃链 2026-10 前的旧取值
-    # 失败/需关注语义
-    "UNAUTHORIZED": "NO_AUTH", "EXPIRED": "NO_AUTH", "NOT_LOGGED_IN": "NO_AUTH",
-    "NO_LOGIN": "NO_AUTH", "SESSION_EXPIRED": "NO_AUTH",
-    "RATE_LIMIT": "RATE_LIMITED", "LIMITED": "RATE_LIMITED",
-    "NETWORK_ERROR": "NETWORK", "NET_ERROR": "NETWORK",
-    "TIMEOUT_ERROR": "TIMEOUT",
 }
 
 
@@ -136,16 +134,18 @@ def emit_result(
     log_path: Path | None = None,
     sensitive: set[str] | None = None,
     log_errors_without_silent: bool = True,
+    request: dict[str, Any] | None = None,
 ) -> None:
     """按双通道契约输出结果;本函数保证不抛异常。
 
     两个通道输出**同一条 JSON Lines 事件记录**,整行是完整 JSON
     (``jq -c 'select(.level=="ERROR")' 日志文件`` 可直接过滤):
 
-    - ``ts``: ISO 8601 带时区;
+    - ``ts``: ISO 8601 带时区(台账落库时转本地无时区时间);
     - ``level``: ``ERROR``=needs_attention(需要人工),其余 ``INFO``;
     - ``domain``/``action``: 来源域与命令,来自同名参数或 out 里的同名字段,
       两者都没有则省略;
+    - ``request``: 请求参数 dict(可选参数注入),台账与 response 配对存列;
     - 其余字段原样并入(out 的同名字段优先于参数缺省)。
 
     ``silent``: 写日志文件而非 stdout(定时任务静默运行)。
@@ -167,6 +167,8 @@ def emit_result(
         record["domain"] = domain
     if action:
         record["action"] = action
+    if request:
+        record["request"] = {k: v for k, v in request.items() if k not in record}
     payload = _dumps(record)
     for value in sensitive or ():
         payload = payload.replace(value, "[REDACTED]")

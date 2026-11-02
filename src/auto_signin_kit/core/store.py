@@ -38,123 +38,19 @@ from typing import Any
 
 from auto_signin_kit.core.adapters.log_dir import default_data_dir
 from auto_signin_kit.core.report import normalize_result
+from auto_signin_kit.core.store_migrations import (
+    _SCHEMA,
+    _SCHEMA_AFTER_MIGRATE,
+    _migrate,
+    _split_record,
+    local_naive,
+)
 
 #: 台账文件名(运行时数据目录,与日志分居;同样被 .gitignore 排除)。
 LEDGER_FILENAME = "auto-signin-kit.db"
 
 #: 调度域的结果不进签到台账,单独记审计表。
 SCHEDULE_DOMAIN = "schedule"
-
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS ask_signin_runs (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    executed_at     TEXT    NOT NULL,  -- 执行时间, ISO8601 带时区(旧名 ts,已迁移)
-    domain          TEXT    NOT NULL,  -- workbuddy / qoder / trae
-    action          TEXT,              -- 干了什么: auto / active / claim / backfill ...
-    source          TEXT    NOT NULL DEFAULT 'run',  -- 数据哪来的: run / backfill
-    result          TEXT    NOT NULL,  -- CLAIMED / ALREADY / ACTIVE / NO_AUTH ...
-    needs_attention INTEGER NOT NULL DEFAULT 0,
-    report          TEXT,              -- 一句人话摘要
-    detail          TEXT    NOT NULL   -- 完整事件 JSON(积分/连签等全部字段)
-);
-
-CREATE TABLE IF NOT EXISTS ask_schedule_changes (
-    id       INTEGER PRIMARY KEY AUTOINCREMENT,
-    executed_at TEXT NOT NULL,  -- 变更时间, ISO8601 带时区(旧名 ts,已迁移)
-    action   TEXT NOT NULL,  -- install / uninstall
-    platform TEXT,
-    tasks    TEXT,           -- 本次变更涉及的任务与时间(JSON 数组)
-    report   TEXT
-);
-"""
-
-#: 依赖新列/新列名的索引与视图,必须在 _migrate 补列改名**之后**执行,
-#: 不能进上面的建表脚本。历史沿革产生的三种旧索引名都在这里清掉
-#: (无前缀版是最早的表名遗留),避免老库残留重复索引。
-_SCHEMA_AFTER_MIGRATE = """
-DROP INDEX IF EXISTS idx_signin_runs_ts;
-DROP INDEX IF EXISTS idx_ask_signin_runs_ts;
-CREATE INDEX IF NOT EXISTS idx_ask_signin_runs_executed_at
-    ON ask_signin_runs(executed_at);
-DROP INDEX IF EXISTS idx_signin_runs_domain_ts;
-DROP INDEX IF EXISTS idx_ask_signin_runs_domain_ts;
-CREATE INDEX IF NOT EXISTS idx_ask_signin_runs_domain_executed_at
-    ON ask_signin_runs(domain, executed_at);
-CREATE INDEX IF NOT EXISTS idx_ask_signin_runs_source ON ask_signin_runs(source);
-
--- 视图是纯派生物,每次连接重建(CREATE VIEW 无 IF NOT EXISTS 的改列能力,
--- 直接 DROP+CREATE 保证老库也能拿到新列)
-DROP VIEW IF EXISTS ask_daily_checkins;
--- 日期一律 date(..., 'localtime'): executed_at 带时区后缀,裸 date() 会转成
--- UTC 日期——本地 0~8 点的运行会被记到"昨天",台账看起来就像调度没跑
-CREATE VIEW ask_daily_checkins AS
-SELECT date(r.executed_at, 'localtime') AS day,
-       r.domain              AS domain,
-       r.result              AS result,
-       r.source              AS source,
-       r.needs_attention     AS needs_attention,
-       r.report              AS report,
-       r.executed_at         AS executed_at
-FROM ask_signin_runs AS r
-WHERE r.id = (
-    SELECT r2.id FROM ask_signin_runs AS r2
-    WHERE date(r2.executed_at, 'localtime') = date(r.executed_at, 'localtime')
-      AND r2.domain = r.domain
-    ORDER BY r2.executed_at DESC, r2.id DESC
-    LIMIT 1
-);
-"""
-
-#: 老库迁移: ALTER 加列后,把历史上靠 action 标记的回填行规整到 source 列。
-_MIGRATIONS = (
-    ("source", "ALTER TABLE ask_signin_runs ADD COLUMN source TEXT NOT NULL DEFAULT 'run'",
-     "UPDATE ask_signin_runs SET source = 'backfill' WHERE action = 'backfill'"),
-)
-
-
-def db_path() -> Any:
-    """台账文件路径: 运行时数据目录(尊重 ``AUTO_SIGNIN_KIT_DATA_DIR``)。"""
-    return default_data_dir() / LEDGER_FILENAME
-
-
-def connect() -> sqlite3.Connection:
-    """打开台账连接并确保表结构存在(含老库加列迁移);调用方负责 close。
-
-    顺序有讲究: 建表 → 老库补列 → 建依赖新列的索引/视图,
-    否则老库上视图/索引引用尚不存在的列会直接报错。
-    """
-    conn = sqlite3.connect(db_path(), timeout=3.0)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=3000")
-    conn.executescript(_SCHEMA)
-    _migrate(conn)
-    # 视图重建(DROP+CREATE)必须原子: 多进程并发 connect(CLI 落库 vs UI 服务)时,
-    # 两个非事务的 executescript 交错会在 CREATE VIEW 撞 "already exists"。
-    # BEGIN IMMEDIATE 拿写锁把整个脚本串行化,抢不到锁的等 busy_timeout。
-    conn.executescript("BEGIN IMMEDIATE;\n" + _SCHEMA_AFTER_MIGRATE + "\nCOMMIT;")
-    return conn
-
-
-def _migrate(conn: sqlite3.Connection) -> None:
-    """老库补列/改名(幂等): CREATE TABLE IF NOT EXISTS 不会动已有表。"""
-    columns = {row["name"] for row in conn.execute("PRAGMA table_info(ask_signin_runs)")}
-    # ts → executed_at: 字段名见名知义(值不变,仍是 ISO8601 时间戳);
-    # RENAME COLUMN 会自动更新引用该列的索引定义
-    if "ts" in columns and "executed_at" not in columns:
-        with conn:
-            conn.execute("ALTER TABLE ask_signin_runs RENAME COLUMN ts TO executed_at")
-    sched_columns = {
-        row["name"] for row in conn.execute("PRAGMA table_info(ask_schedule_changes)")
-    }
-    if "ts" in sched_columns and "executed_at" not in sched_columns:
-        with conn:
-            conn.execute("ALTER TABLE ask_schedule_changes RENAME COLUMN ts TO executed_at")
-    for name, add_sql, backfill_sql in _MIGRATIONS:
-        if name not in columns:
-            with conn:
-                conn.execute(add_sql)
-                conn.execute(backfill_sql)
 
 
 #: 台账覆盖的签到域(Web 总览按它补齐"还没有任何记录"的域卡片)。
@@ -198,11 +94,12 @@ def events(
     limit: int = 50,
 ) -> list[dict[str, Any]]:
     """按条件查 ``ask_signin_runs`` 明细,最新在前;``source`` 过滤 run/backfill。"""
-    sql = ("SELECT executed_at, domain, action, source, result, needs_attention, report"
+    sql = ("SELECT executed_at, domain, action, source, result, needs_attention, report,"
+           " request, response"
            " FROM ask_signin_runs WHERE 1=1")
     params: list[Any] = []
     if date:
-        sql += " AND date(executed_at, 'localtime') = ?"
+        sql += " AND date(executed_at) = ?"
         params.append(date)
     if domain:
         sql += " AND domain = ?"
@@ -242,7 +139,7 @@ def done_today(domain: str) -> bool:
         row = conn.execute(
             "SELECT 1 FROM ask_signin_runs WHERE domain = ? AND source = 'run'"
             " AND result IN (?, ?)"
-            " AND date(executed_at, 'localtime') = date('now', 'localtime')"
+            " AND date(executed_at) = date('now', 'localtime')"
             " LIMIT 1", (domain, *SIGNIN_DONE_RESULTS)).fetchone()
     finally:
         conn.close()
@@ -263,9 +160,9 @@ def compact_history() -> dict[str, Any]:
             " WHERE source = 'run' AND result IN ('CLAIMED', 'ALREADY')"
             "   AND id NOT IN (SELECT MIN(id) FROM ask_signin_runs"
             "                  WHERE source = 'run' AND result IN ('CLAIMED', 'ALREADY')"
-            "                  GROUP BY date(executed_at, 'localtime'), domain)"
+            "                  GROUP BY date(executed_at), domain)"
             "   AND id NOT IN (SELECT MAX(id) FROM ask_signin_runs"
-            "                  GROUP BY date(executed_at, 'localtime'), domain)"
+            "                  GROUP BY date(executed_at), domain)"
         ).fetchall()
         per_domain: dict[str, int] = {}
         ids = []
@@ -279,10 +176,36 @@ def compact_history() -> dict[str, Any]:
     return {"deleted": len(ids), "per_domain": per_domain}
 
 
+def db_path() -> Any:
+    """台账文件路径: 运行时数据目录(尊重 ``AUTO_SIGNIN_KIT_DATA_DIR``)。"""
+    return default_data_dir() / LEDGER_FILENAME
+
+
+def connect() -> sqlite3.Connection:
+    """打开台账连接并确保表结构存在(含老库加列迁移);调用方负责 close。
+
+    顺序有讲究: 建表 → 老库补列/存量规整 → 建依赖新列的索引/视图,
+    否则老库上视图/索引引用尚不存在的列会直接报错。
+    """
+    conn = sqlite3.connect(db_path(), timeout=3.0)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=3000")
+    conn.executescript(_SCHEMA)
+    _migrate(conn)
+    # 视图重建(DROP+CREATE)必须原子: 多进程并发 connect(CLI 落库 vs UI 服务)时,
+    # 两个非事务的 executescript 交错会在 CREATE VIEW 撞 "already exists"。
+    # BEGIN IMMEDIATE 拿写锁把整个脚本串行化,抢不到锁的等 busy_timeout。
+    conn.executescript("BEGIN IMMEDIATE;\n" + _SCHEMA_AFTER_MIGRATE + "\nCOMMIT;")
+    return conn
+
+
 def record_payload(payload: str) -> bool:
     """把 emit_result 脱敏后的一行 JSON 事件落库;失败返回 False,绝不抛。
 
     按域分流: 调度域进 ``ask_schedule_changes``,签到域进 ``ask_signin_runs``。
+    请求/响应拆列: ``request`` 收动作入参(emit_result 的 request= 注入),
+    ``response`` 收其余业务返回字段,两列一一对应;``detail`` 保留整行兼容。
     """
     try:
         record = json.loads(payload)
@@ -296,7 +219,7 @@ def record_payload(payload: str) -> bool:
                         "INSERT INTO ask_schedule_changes (executed_at, action, platform,"
                         " tasks, report) VALUES (?, ?, ?, ?, ?)",
                         (
-                            record["ts"],
+                            local_naive(record["ts"]),
                             str(record.get("action") or "unknown"),
                             record.get("platform"),
                             json.dumps(
@@ -307,19 +230,22 @@ def record_payload(payload: str) -> bool:
                         ),
                     )
                 else:
+                    request, response = _split_record(record)
                     conn.execute(
                         "INSERT INTO ask_signin_runs (executed_at, domain, action, source,"
-                        " result, needs_attention, report, detail)"
-                        " VALUES (?, ?, ?, 'run', ?, ?, ?, ?)",
+                        " result, needs_attention, report, request, response, detail)"
+                        " VALUES (?, ?, ?, 'run', ?, ?, ?, ?, ?, ?)",
                         (
-                            record["ts"],
+                            local_naive(record["ts"]),
                             str(record.get("domain") or "unknown"),
                             record.get("action"),
-                            # 归一化到标准词表: 各域"方言"(大小写/别名)进库前收口,
-                            # 查询与聚合才有统一口径
+                            # 归一化到标准词表: 域内部细粒度码(大小写/别名)进库
+                            # 前收口成 10 词,查询与聚合才有统一口径
                             normalize_result(record.get("result")),
                             1 if record.get("needs_attention") else 0,
                             record.get("report"),
+                            request,
+                            response,
                             payload,
                         ),
                     )

@@ -54,6 +54,32 @@ class TestRecordAndQuery:
         rows = store.events(domain="trae")
         assert rows[0]["result"] == "OK"
 
+    def test_fine_grained_words_collapse_into_slim_vocab(self):
+        # 词表 19→10: 域内部细粒度码落库时坍缩(AUTH_REJECTED→NO_AUTH),
+        # 细节说明留在 report 文本里
+        store.record_payload(json.dumps(_record(result="AUTH_REJECTED"), ensure_ascii=False))
+        rows = store.events(domain="trae")
+        assert rows[0]["result"] == "NO_AUTH"
+
+    def test_executed_at_stored_as_local_naive(self):
+        # 时区不逐行落库: 带 +08:00 的 ts 落库转本地裸时间,SQL date() 直接可用
+        store.record_payload(json.dumps(_record(ts="2026-10-22T09:05:03+08:00"),
+                                        ensure_ascii=False))
+        rows = store.events(domain="trae")
+        assert rows[0]["executed_at"] == "2026-10-22 09:05:03"
+
+    def test_request_response_paired_columns(self):
+        # 请求参数与响应结果一一对应: request= 注入 + 业务返回字段自动进 response
+        record = _record(result="CLAIMED", silent=True, today_credit=100,
+                         streak_days=34, request={"dry_run": False})
+        store.record_payload(json.dumps(record, ensure_ascii=False))
+        row = store.events(domain="trae")[0]
+        assert json.loads(row["request"]) == {"dry_run": False}
+        resp = json.loads(row["response"])
+        assert resp["silent"] is True
+        assert resp["today_credit"] == 100 and resp["streak_days"] == 34
+        assert "result" not in resp and "report" not in resp  # 信封字段不混入
+
     def test_result_filter_normalizes_and_matches(self):
         store.record_payload(json.dumps(_record(result="success"), ensure_ascii=False))
         # 查询侧同样归一化: 用方言查和标准词查,结果一致
@@ -65,15 +91,17 @@ class TestRecordAndQuery:
         assert store.daily_status(days=30, result="CLAIMED") == []
 
     def test_daily_view_files_early_morning_runs_on_local_day(self):
-        # 回归: executed_at 带时区后缀,裸 date() 转 UTC 后凌晨 0~8 点的运行
-        # 会被记到"昨天",台账看起来就像调度没跑(2026-11-03 真实踩坑)
+        # 回归: 旧版 executed_at 带时区后缀,裸 date() 转 UTC 后凌晨 0~8 点的运行
+        # 会被记到"昨天",台账看起来就像调度没跑(2026-11-03 真实踩坑)。
+        # 落库时已转本地裸时间,视图的 date() 直接取本地日期
         ts = "2026-11-03T00:05:00+08:00"
         store.record_payload(json.dumps(_record(ts=ts, result="CLAIMED"),
                                         ensure_ascii=False))
         expected_day = datetime.fromisoformat(ts).astimezone().date().isoformat()
         rows = store.daily_status(days=3650)
-        row = next(r for r in rows if r["executed_at"] == ts)
-        assert row["day"] == expected_day
+        assert len(rows) == 1
+        assert rows[0]["day"] == expected_day
+        assert rows[0]["executed_at"] == "2026-11-03 00:05:00"
 
     def test_done_today_counts_today_runs(self):
         ts = datetime.now().astimezone().isoformat(timespec="seconds")
