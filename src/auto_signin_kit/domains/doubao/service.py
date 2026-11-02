@@ -41,9 +41,41 @@ def _emit(out: dict[str, Any], *, action: str, silent: bool) -> None:
                 log_path=_log_path(), log_errors_without_silent=False)
 
 
+def _sweep_rewards(api: DoubaoApi, config: DoubaoDomainConfig) -> dict[str, Any]:
+    """清扫活动任务奖励: 只领 ``task_status=2``(已完成待领取)的项。
+
+    体验任务(生成文档/表格/PPT 等)须先在产品里真实完成对应操作才会变为
+    可领取(status=2),清扫对未完成项不做任何事——不能凭空硬领。
+    """
+    scode, body, err = api.campaign_detail(config.campaign_code)
+    payload = body if isinstance(body, dict) else {}
+    if scode != 200 or payload.get("code") != 0:
+        return {"error": "活动详情查询失败(http=%s code=%s)" % (scode, payload.get("code"))}
+    data = payload.get("data") or {}
+    items = (data.get("tasks") or []) + (data.get("milestones") or [])
+    claimable = [t for t in items if t.get("task_status") == 2]
+    claimed: list[dict[str, Any]] = []
+    failures: list[str] = []
+    for task in claimable:
+        code = task.get("campaign_code") or ""
+        title = task.get("title") or code
+        csc, cbody, cerr = api.claim_task(code, config.campaign_code)
+        cpayload = cbody if isinstance(cbody, dict) else {}
+        cdata = cpayload.get("data") or {}
+        biz = cdata.get("biz_error") or {}
+        if csc == 200 and cpayload.get("code") == 0 and not biz:
+            rewards = task.get("reward_summaries") or [{}]
+            claimed.append({"code": code, "title": title,
+                            "amount": rewards[0].get("reward_amount")})
+        else:
+            failures.append("%s: %s" % (title, biz.get("message") or cerr or csc))
+    pending = sum(1 for t in items if t.get("task_status") == 1)
+    return {"claimed": claimed, "failures": failures, "pending": pending}
+
+
 def _checkin(api: DoubaoApi, config: DoubaoDomainConfig, *, dry_run: bool,
              action: str, silent: bool) -> int:
-    """签到主流程;幂等接口,重复运行返回已签状态。"""
+    """签到 + 任务奖励清扫;幂等接口,重复运行返回已签状态。"""
     if dry_run:
         scode, body, err = api.landing_page(config.campaign_code)
         ok = scode == 200 and isinstance(body, dict) and body.get("code") == 0
@@ -71,19 +103,36 @@ def _checkin(api: DoubaoApi, config: DoubaoDomainConfig, *, dry_run: bool,
             needs_attention=True, domain="doubao", http=scode, biz_code=code)
         _emit(out, action=action, silent=silent)
         return 1
+
+    # 签到成功/已签后,清扫活动任务奖励(详情查询失败不掩盖签到结果)
+    sweep: dict[str, Any] = _sweep_rewards(api, config)
+    parts: list[str] = []
     amount = data.get("reward_amount")
     days = data.get("continuous_days")
-    detail = "+%s额度(连签%s天)" % (amount if amount is not None else "?",
-                                  days if days is not None else "?")
     if data.get("idempotent"):
-        out = make_result("ALREADY", "今日已签到 %s" % detail, domain="doubao",
-                          checkin_date=data.get("checkin_date"), reward_amount=amount,
-                          continuous_days=days)
-        _emit(out, action=action, silent=silent)
-        return 0
-    out = make_result("CLAIMED", "签到成功 %s" % detail, domain="doubao",
+        parts.append("今日已签到 +%s额度(连签%s天)" % (amount if amount is not None else "?",
+                                                    days if days is not None else "?"))
+        result = "ALREADY"
+    else:
+        parts.append("签到成功 +%s额度(连签%s天)" % (amount if amount is not None else "?",
+                                                    days if days is not None else "?"))
+        result = "CLAIMED"
+    claimed = sweep.get("claimed") or []
+    task_amount = sum(c["amount"] or 0 for c in claimed)
+    if claimed:
+        result = "CLAIMED"
+        parts.append("任务奖励 %d 项 +%s额度(%s)" % (
+            len(claimed), task_amount, "、".join(c["title"] for c in claimed)))
+    if sweep.get("pending"):
+        parts.append("%d 项任务未完成(完成后面板可领)" % sweep["pending"])
+    if sweep.get("failures"):
+        parts.append("领取失败: %s" % "; ".join(sweep["failures"]))
+    if sweep.get("error"):
+        parts.append("[%s]" % sweep["error"])
+    out = make_result(result, "; ".join(parts), domain="doubao",
                       checkin_date=data.get("checkin_date"), reward_amount=amount,
-                      continuous_days=days)
+                      continuous_days=days, task_rewards=claimed,
+                      task_pending=sweep.get("pending", 0))
     _emit(out, action=action, silent=silent)
     return 0
 

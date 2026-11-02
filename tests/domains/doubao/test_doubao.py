@@ -144,31 +144,95 @@ def no_cookies(monkeypatch):
                         lambda user_data_dir=None: "sessionid=fake")
 
 
+def _router(routes):
+    """按 URL 子串路由的假传输层: routes = [(子串, (status, body, err)), ...]"""
+
+    def fake_call(url, **kwargs):
+        for sub, resp in routes:
+            if sub in url:
+                return resp
+        return 404, {"code": -1}, None
+
+    return fake_call
+
+
+CHECKIN_ALREADY = ("/landing/checkin", (200, {"code": 0, "data": {
+    "checked_in": True, "idempotent": True, "reward_amount": 400,
+    "continuous_days": 1, "checkin_date": "2026-11-02"}}, None))
+CHECKIN_FRESH = ("/landing/checkin", (200, {"code": 0, "data": {
+    "checked_in": True, "idempotent": False, "reward_amount": 200,
+    "continuous_days": 1}}, None))
+DETAIL_MIXED = ("/v3/detail", (200, {"code": 0, "data": {"tasks": [
+    {"title": "每日签到", "campaign_code": "daily_signin", "task_status": 3},
+    {"title": "整理文档", "campaign_code": "t_doc", "task_status": 2,
+     "reward_summaries": [{"reward_amount": 100}]},
+    {"title": "生成PPT", "campaign_code": "t_ppt", "task_status": 1,
+     "reward_summaries": [{"reward_amount": 100}]},
+], "milestones": [
+    {"title": "累计500", "campaign_code": "points_milestone_500",
+     "task_status": 1, "reward_summaries": [{"reward_amount": 200}]},
+]}}, None))
+CLAIM_OK = ("/reward/claim", (200, {"code": 0, "data": {}}, None))
+
+
+@pytest.fixture
+def emitted(monkeypatch):
+    """捕获 emit_result 记录,供断言 result/字段。"""
+    records = []
+    monkeypatch.setattr("auto_signin_kit.domains.doubao.service.emit_result",
+                        lambda out, **kw: records.append(out))
+    return records
+
+
 class TestServiceActions:
-    def test_claim_already_is_zero_and_info(self, monkeypatch, no_cookies):
-        monkeypatch.setattr("auto_signin_kit.domains.doubao.api.call", lambda *a, **k: (
-            200, {"code": 0, "data": {"checked_in": True, "idempotent": True,
-                                      "reward_amount": 400, "continuous_days": 1,
-                                      "checkin_date": "2026-11-02"}}, None))
-        assert service.run_action("claim", _config(no_cookies), command="auto") == 0
-
-    def test_claim_fresh_returns_claimed(self, monkeypatch, no_cookies):
-        monkeypatch.setattr("auto_signin_kit.domains.doubao.api.call", lambda *a, **k: (
-            200, {"code": 0, "data": {"checked_in": True, "idempotent": False,
-                                      "reward_amount": 200, "continuous_days": 1}}, None))
-        assert service.run_action("claim", _config(no_cookies)) == 0
-
-    def test_claim_biz_error_is_attention(self, monkeypatch, no_cookies):
-        monkeypatch.setattr("auto_signin_kit.domains.doubao.api.call", lambda *a, **k: (
-            200, {"code": 710010702, "msg": "系统错误", "data": None}, None))
-        assert service.run_action("claim", _config(no_cookies)) == 1
-
-    def test_claim_network_error_is_attention(self, monkeypatch, no_cookies):
+    def test_already_with_claimable_task_sweeps_reward(self, monkeypatch, no_cookies, emitted):
         monkeypatch.setattr("auto_signin_kit.domains.doubao.api.call",
-                            lambda *a, **k: (0, None, "connection refused"))
-        assert service.run_action("claim", _config(no_cookies)) == 1
+                            _router([CHECKIN_ALREADY, DETAIL_MIXED, CLAIM_OK]))
+        assert service.run_action("claim", _config(no_cookies), command="auto") == 0
+        assert emitted[0]["result"] == "CLAIMED"  # 任务奖励到账
+        assert emitted[0]["task_rewards"] == [
+            {"code": "t_doc", "title": "整理文档", "amount": 100}]
+        assert emitted[0]["task_pending"] == 2  # 1 个未完成任务 + 1 个未达标里程碑
 
-    def test_dry_run_does_not_checkin(self, monkeypatch, no_cookies):
+    def test_already_nothing_claimable_stays_already(self, monkeypatch, no_cookies, emitted):
+        detail = ("/v3/detail", (200, {"code": 0, "data": {"tasks": [
+            {"title": "每日签到", "campaign_code": "daily_signin", "task_status": 3}],
+            "milestones": []}}, None))
+        monkeypatch.setattr("auto_signin_kit.domains.doubao.api.call",
+                            _router([CHECKIN_ALREADY, detail]))
+        assert service.run_action("claim", _config(no_cookies)) == 0
+        assert emitted[0]["result"] == "ALREADY"
+
+    def test_claim_biz_error_recorded_not_fatal(self, monkeypatch, no_cookies, emitted):
+        claim_bad = ("/reward/claim", (200, {"code": 0, "data": {
+            "biz_error": {"code": 3,
+                          "message": "领取结果确认中，请稍后重试"}}}, None))
+        monkeypatch.setattr("auto_signin_kit.domains.doubao.api.call",
+                            _router([CHECKIN_ALREADY, DETAIL_MIXED, claim_bad]))
+        assert service.run_action("claim", _config(no_cookies)) == 0
+        assert emitted[0]["result"] == "ALREADY"  # 领取失败不误报为 CLAIMED
+        assert any("领取失败" in part for part in emitted[0]["report"].split("; "))
+
+    def test_fresh_checkin_is_claimed(self, monkeypatch, no_cookies, emitted):
+        monkeypatch.setattr("auto_signin_kit.domains.doubao.api.call",
+                            _router([CHECKIN_FRESH, DETAIL_MIXED, CLAIM_OK]))
+        assert service.run_action("claim", _config(no_cookies)) == 0
+        assert emitted[0]["result"] == "CLAIMED"
+
+    def test_claim_biz_error_is_attention(self, monkeypatch, no_cookies, emitted):
+        monkeypatch.setattr("auto_signin_kit.domains.doubao.api.call", _router([
+            ("/landing/checkin",
+             (200, {"code": 710010702, "msg": "系统错误", "data": None}, None))]))
+        assert service.run_action("claim", _config(no_cookies)) == 1
+        assert emitted[0]["result"] == "ERROR"
+
+    def test_claim_network_error_is_attention(self, monkeypatch, no_cookies, emitted):
+        monkeypatch.setattr("auto_signin_kit.domains.doubao.api.call", _router([
+            ("/landing/checkin", (0, None, "connection refused"))]))
+        assert service.run_action("claim", _config(no_cookies)) == 1
+        assert emitted[0]["result"] == "NETWORK"
+
+    def test_dry_run_does_not_checkin(self, monkeypatch, no_cookies, emitted):
         seen = []
 
         def fake_call(url, **kwargs):
@@ -177,11 +241,20 @@ class TestServiceActions:
 
         monkeypatch.setattr("auto_signin_kit.domains.doubao.api.call", fake_call)
         assert service.run_action("claim", _config(no_cookies), dry_run=True) == 0
-        assert "/alice/ug/campaign/landing/get" in seen[0]  # 只查落地页,不 POST checkin
+        assert any("/landing/get" in u for u in seen)  # 只查落地页
+        assert not any("/landing/checkin" in u for u in seen)
 
-    def test_status_campaign_gone_is_inactive(self, monkeypatch, no_cookies):
-        monkeypatch.setattr("auto_signin_kit.domains.doubao.api.call", lambda *a, **k: (
-            200, {"code": 2, "msg": "campaign not found", "data": None}, None))
+    def test_detail_query_failure_noted_not_fatal(self, monkeypatch, no_cookies, emitted):
+        monkeypatch.setattr("auto_signin_kit.domains.doubao.api.call", _router([
+            CHECKIN_ALREADY,
+            ("/v3/detail", (200, {"code": 2, "msg": "campaign not found"}, None))]))
+        assert service.run_action("claim", _config(no_cookies)) == 0
+        assert emitted[0]["result"] == "ALREADY"  # 清扫失败不掩盖签到结果
+        assert "活动详情查询失败" in emitted[0]["report"]
+
+    def test_status_campaign_gone_is_inactive(self, monkeypatch, no_cookies, emitted):
+        monkeypatch.setattr("auto_signin_kit.domains.doubao.api.call", _router([
+            ("/v3/detail", (200, {"code": 2, "msg": "campaign not found", "data": None}, None))]))
         assert service.run_action("status", _config(no_cookies)) == 1
 
     def test_unknown_action_is_exit_2(self, no_cookies):
@@ -193,6 +266,9 @@ class TestServiceActions:
 
         monkeypatch.setattr(cookies_mod, "load_cookie_header", raise_no_auth)
         assert service.run_action("claim", _config(tmp_path)) == 2  # DoubaoCookieError.exit_code
+
+
+
 
 
 class TestCli:

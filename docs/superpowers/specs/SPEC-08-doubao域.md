@@ -24,6 +24,12 @@ cookies.py                    api.py                    service.py
   (关闭客户端落盘 / 带端口启动),不用随机值硬闯。
 - **幂等重试**: 服务端幂等(`idempotent:true`),网络类失败可安全重试。
 
+**任务奖励清扫**(2026-11-02): `auto` 在签到后自动遍历 `v3/detail` 的
+tasks/milestones,只对 `task_status=2`(已完成待领取)发 claim
+(`/alice/ug/campaign/item/reward/claim/`,task_id 空串);体验任务须先真实完成
+对应操作,清扫不伪造完成状态。结果聚合进同一条台账记录
+(`task_rewards`/`task_pending` 字段)。
+
 ## 3. 命令面
 
 ```bash

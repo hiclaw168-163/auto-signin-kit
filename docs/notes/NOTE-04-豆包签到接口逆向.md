@@ -34,6 +34,16 @@
 - 鉴权完全靠 Cookie;无 a_bogus/msToken 签名要求。业务错误码:
   710012001=登录已过期(cookie 旧),710010702=system error(参数/活动态)。
 
+- 领任务奖励(2026-11-02 实测):
+  `POST /alice/ug/campaign/item/reward/claim/` body
+  `{"task_id": "", "campaign_group_code": "...", "campaign_item_code": "<campaign_code>",
+  "AgwCommonParam": {}}`(task_id 对活动项为空串即可);
+  不可领时 HTTP 仍 200,回 `data.biz_error.code=3`(toast 提示);
+  可领取时无 biz_error,奖励直接入账。
+- 任务/里程碑状态机: `task_status` 1=未完成(须先在产品里真实完成对应操作)、
+  2=已完成待领取、3=已领取;里程碑 reward_mode=2 为达标自动发放。
+  任务/里程碑清单在 `v3/detail` 的 `tasks[]/milestones[]`(campaign_code 是主键)。
+
 ## 3. 本工具的实现与已知边界
 
 - `domains/doubao/cookies.py`: 多 profile 合并(库 mtime 新者优先)+ 32 字节

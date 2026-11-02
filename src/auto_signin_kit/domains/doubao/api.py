@@ -31,6 +31,7 @@ COMMON_QUERY = (
 CHECKIN_PATH = "/alice/ug/campaign/landing/checkin/"
 DETAIL_PATH = "/alice/ug/campaign/v3/detail/"
 LANDING_PATH = "/alice/ug/campaign/landing/get"
+CLAIM_PATH = "/alice/ug/campaign/item/reward/claim/"
 
 #: 网络类退避(签到幂等,网络错误可安全重试)。
 _RETRY_POLICY = RetryPolicy(network_delays=(0.0, 2.0, 4.0), server_delays=(2.0,))
@@ -75,3 +76,13 @@ class DoubaoApi:
     def landing_page(self, campaign_code: str) -> tuple[int, Any, str | None]:
         """活动落地页状态(只读;dry-run 用)。"""
         return self._post(LANDING_PATH, {"scene": campaign_code})
+
+    def claim_task(self, campaign_code: str, group_code: str) -> tuple[int, Any, str | None]:
+        """领取任务奖励(2026-11-02 实测: task_id 对活动项为空串即可)。
+
+        不可领取时服务端回 ``data.biz_error``(code=3 toast 提示),HTTP 仍 200;
+        可领取时无 biz_error,奖励直接入账。
+        """
+        body = {"task_id": "", "campaign_group_code": group_code,
+                "campaign_item_code": campaign_code, "AgwCommonParam": {}}
+        return self._post(CLAIM_PATH, body)
