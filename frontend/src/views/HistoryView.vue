@@ -93,6 +93,14 @@ onMounted(async () => {
 
 // 筛选变化自动重查: 不自动刷的话表格停在旧数据,看起来像"数据不对"
 watch([days, domain, result], load)
+
+// 重置 = 回到默认查询条件;watch 会自动触发重查
+const filtered = computed(() => domain.value !== null || result.value !== null || days.value !== 14)
+function resetFilters() {
+  domain.value = null
+  result.value = null
+  days.value = 14
+}
 </script>
 
 <template>
@@ -109,6 +117,7 @@ watch([days, domain, result], load)
       <n-select v-model:value="result" clearable placeholder="全部结果" style="width: 180px"
                 :options="resultOpts" />
       <n-button @click="load">查询</n-button>
+      <n-button quaternary type="primary" :disabled="!filtered" @click="resetFilters">重置</n-button>
       <n-text depth="3" style="margin-left: auto">共 {{ rows.length }} 条(每天每域一行,非每次运行)</n-text>
     </n-space>
 
