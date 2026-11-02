@@ -18,6 +18,12 @@
 - 2026-11-02: 一键启动——`ui build --if-missing` / `serve --open` 收进 CLI
   (构建判断逻辑必须进门禁,STD-06 红线),`scripts/` 只放无分支的纯入口
   (bat + sh);白屏修复: `useMessage` 必须有 `n-message-provider` 祖先。
+- 2026-11-02: 界面重构——前端按业界分层规范重组(api/http+按资源模块、
+  components/common+dashboard、composables、router、layouts、styles token);
+  暗色设计系统(语义绿主色,对比度/无障碍按 ui-ux-pro-max 清单);新增
+  「配置」页(YAML 动态编辑,保存必过各域 schema,原子写回)与看板汇总
+  统计卡 + 近 7 天条形 + 最近运行时间线;index.html 强制 no-cache(防旧
+  html 引用已删 JS 的白屏);启动脚本统一英文名 start-ui.bat。
 
 ## 1. 定位与边界
 

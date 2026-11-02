@@ -1,0 +1,45 @@
+import type {
+  ConfigItem,
+  DailyRow,
+  EventRow,
+  JobInfo,
+  Overview,
+  ScheduleInfo,
+  ScheduleOpResult,
+} from '../types'
+import { get, post, put } from './http'
+
+// 接口层按资源分组;URL 与 Python 侧 ui/api.py + ui/config_api.py 一一对应。
+
+export const dashboardApi = {
+  overview: () => get<Overview>('/api/overview'),
+  history: (days: number, domain?: string) =>
+    get<DailyRow[]>('/api/history', { days, domain }),
+  events: (query: { date?: string; domain?: string; attention_only?: boolean; limit?: number }) =>
+    get<EventRow[]>('/api/events', query),
+}
+
+export const scheduleApi = {
+  status: () => get<ScheduleInfo>('/api/schedule'),
+  install: (domains?: string[]) =>
+    post<ScheduleOpResult>('/api/schedule/install', domains ? { domains } : {}),
+  uninstall: (domains?: string[]) =>
+    post<ScheduleOpResult>('/api/schedule/uninstall', domains ? { domains } : {}),
+}
+
+export const jobApi = {
+  run: (domain: string, action: string) =>
+    post<{ job: JobInfo }>(
+      `/api/run/${encodeURIComponent(domain)}?action=${encodeURIComponent(action)}`,
+    ),
+  get: (id: string) => get<{ job: JobInfo }>(`/api/jobs/${encodeURIComponent(id)}`),
+}
+
+export const configApi = {
+  list: () => get<ConfigItem[]>('/api/config'),
+  get: (domain: string) => get<{ domain: string; content: string }>(`/api/config/${encodeURIComponent(domain)}`),
+  validate: (domain: string, content: string) =>
+    post<{ ok: boolean }>(`/api/config/${encodeURIComponent(domain)}/validate`, { content }),
+  save: (domain: string, content: string) =>
+    put<{ ok: boolean; path: string }>(`/api/config/${encodeURIComponent(domain)}`, { content }),
+}

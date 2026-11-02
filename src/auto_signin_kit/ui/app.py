@@ -12,7 +12,7 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from auto_signin_kit.ui import api
+from auto_signin_kit.ui import api, config_api
 
 #: editable 安装时 src/auto_signin_kit/ui/app.py 的上三级就是仓库根。
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -32,6 +32,17 @@ def create_app() -> FastAPI:
         redoc_url=None,
     )
     app.include_router(api.router, prefix="/api")
+    app.include_router(config_api.router, prefix="/api")
+
+    @app.middleware("http")
+    async def _no_cache_html(request, call_next):
+        # index.html 永远协商缓存: 构建产物是哈希文件名,html 引用变了就必须
+        # 立刻拿到新 html,否则浏览器拿旧 html 引用已删除的 JS → 白屏(踩过)。
+        response = await call_next(request)
+        if request.url.path == "/":
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
     dist = _dist_dir()
     if dist is not None:
         # html=True: 访问 / 直接给 index.html;路由已在 /api 注册,优先命中。

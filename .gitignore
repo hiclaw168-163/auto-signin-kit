@@ -24,3 +24,4 @@ config/domains/*.local.yaml
 
 # Web 管理台前端(SPEC-09): 依赖与构建产物均不入库
 frontend/node_modules/
+.playwright-cli/

@@ -1,0 +1,44 @@
+/* 设计 token(ui-ux-pro-max 设计原则落地):
+   - 暗色管理台,文字对比度 >= 4.5:1(浅灰字配深底)
+   - 语义色与业务语义绑定: green=成功 / amber=需关注 / red=失败 / sky=信息
+   - 颜色不作为唯一信息载体(标签永远带文字)
+   - 不用 emoji 当图标(全部 SVG,@vicons/ionicons5) */
+:root {
+  --ask-bg: #0f1115;
+  --ask-surface: #171a21;
+  --ask-surface-2: #1d222c;
+  --ask-border: #262b36;
+  --ask-text: #e5e7eb;
+  --ask-muted: #9aa3b2;
+  --ask-primary: #22c55e;
+  --ask-warning: #f59e0b;
+  --ask-danger: #ef4444;
+  --ask-info: #38bdf8;
+  --ask-radius: 10px;
+  --ask-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  height: 100%;
+  background: var(--ask-bg);
+  color: var(--ask-text);
+  font-family: var(--ask-font);
+}
+
+/* 尊重 prefers-reduced-motion(ui-ux-pro-max 交付清单) */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.mono {
+  font-family: "JetBrains Mono", Consolas, "Courier New", monospace;
+}

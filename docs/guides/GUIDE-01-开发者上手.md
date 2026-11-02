@@ -79,7 +79,7 @@ auto-signin-kit --help
 
 不想碰命令行的话,可以装上可选的 web 依赖,然后用浏览器管理。
 
-**一键启动**(推荐): 装好 web 依赖后,双击 `scripts/启动管理台.bat`(Windows)或
+**一键启动**(推荐): 装好 web 依赖后,双击 `scripts/start-ui.bat`(Windows)或
 运行 `scripts/start-ui.sh`(macOS/Linux)——前端没构建会先自动构建(需要
 Node.js 18+),然后起服务并自动打开浏览器。
 
