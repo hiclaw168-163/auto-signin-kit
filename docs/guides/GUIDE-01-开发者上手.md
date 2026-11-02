@@ -134,8 +134,8 @@ auto-signin-kit workbuddy active    # 活跃保底: 没有对话记录就自动�
 auto-signin-kit workbuddy doctor    # 离线检查凭据格式与解密运行时
 auto-signin-kit qoder auto          # 每日 Credits 领取
 auto-signin-kit trae auto           # 每日签到领取
-auto-signin-kit history             # 签到台账: 每天/每域结果一览(不必翻日志)
 auto-signin-kit schedule status     # 看定时任务注册情况
+auto-signin-kit ui serve            # Web 管理台: 总览/台账等(台账数据读 SQLite,也可直接查库)
 ```
 
 每个命令输出**一行 JSON 事件**(stdout 给机器读,过程日志走 stderr),关键字段

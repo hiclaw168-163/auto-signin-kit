@@ -40,7 +40,6 @@ workbuddy = "auto_signin_kit.domains.workbuddy:app"
 qoder = "auto_signin_kit.domains.qoder:app"
 trae = "auto_signin_kit.domains.trae:app"
 schedule = "auto_signin_kit.domains.schedule:app"
-history = "auto_signin_kit.domains.history:app"
 doubao = "auto_signin_kit.domains.doubao:app"
 
 # Web 管理台(非业务域,独立 entry-point 组,SPEC-09);cli.py 同样只遍历挂载。
@@ -114,18 +113,9 @@ modules = [
     "auto_signin_kit.domains.qoder",
     "auto_signin_kit.domains.trae",
     "auto_signin_kit.domains.schedule",
-    "auto_signin_kit.domains.history",
     "auto_signin_kit.domains.doubao",
 ]
 ignore_imports = [
-    # history 域的"服务端历史回填"需要读各域的接口层取服务端历史(见 SPEC-07 §4),
-    # 是只读的报告型聚合,已在下方显式登记;其余跨域调用仍然禁止。
-    "auto_signin_kit.domains.history.service -> auto_signin_kit.domains.workbuddy.service",
-    "auto_signin_kit.domains.history.service -> auto_signin_kit.domains.workbuddy.net",
-    "auto_signin_kit.domains.history.service -> auto_signin_kit.domains.workbuddy.schema",
-    "auto_signin_kit.domains.history.service -> auto_signin_kit.domains.workbuddy.rewards",
-    "auto_signin_kit.domains.history.service -> auto_signin_kit.domains.qoder.api",
-    "auto_signin_kit.domains.history.service -> auto_signin_kit.domains.qoder.schema",
     # schedule 域注册调度前要探测各域客户端是否就绪(未就绪的任务不注册——
     # 启用了也跑不起来的调度没有意义);探测实现在各自域,schedule 只调 is_installed,
     # 只读探测,显式登记。

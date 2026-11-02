@@ -125,7 +125,10 @@ def connect() -> sqlite3.Connection:
     conn.execute("PRAGMA busy_timeout=3000")
     conn.executescript(_SCHEMA)
     _migrate(conn)
-    conn.executescript(_SCHEMA_AFTER_MIGRATE)
+    # 视图重建(DROP+CREATE)必须原子: 多进程并发 connect(CLI 落库 vs UI 服务)时,
+    # 两个非事务的 executescript 交错会在 CREATE VIEW 撞 "already exists"。
+    # BEGIN IMMEDIATE 拿写锁把整个脚本串行化,抢不到锁的等 busy_timeout。
+    conn.executescript("BEGIN IMMEDIATE;\n" + _SCHEMA_AFTER_MIGRATE + "\nCOMMIT;")
     return conn
 
 

@@ -5,7 +5,7 @@ import { dashboardApi } from '../api'
 import StatusTag from '../components/common/StatusTag.vue'
 import type { DailyRow, EventRow, Overview } from '../types'
 
-// 历史: 每日折叠视图(每天每域最后一次运行 = 当天最终状态) + 按日期下钻明细。
+// 签到台账: 每日折叠视图(每天每域最后一次运行 = 当天最终状态) + 按日期下钻明细。
 
 const message = useMessage()
 const overview = ref<Overview | null>(null)

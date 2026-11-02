@@ -9,8 +9,8 @@ import StatCard from '../components/dashboard/StatCard.vue'
 import StatusTag from '../components/common/StatusTag.vue'
 import type { DailyRow, EventRow, Overview, ScheduleInfo } from '../types'
 
-// 看板 = 汇总统计卡 + 每域状态卡(近 7 天条形) + 最近运行时间线。
-// 所有数据来自 SQLite 台账(history 域),不重复实现业务。
+// 签到总览 = 汇总统计卡 + 每域状态卡(近 7 天条形) + 最近运行时间线。
+// 所有数据来自 SQLite 台账(core/store),不重复实现业务。
 
 const message = useMessage()
 const overview = ref<Overview | null>(null)

@@ -1,7 +1,7 @@
 import { onBeforeUnmount, reactive } from 'vue'
 import { jobApi } from '../api'
 
-// 手动触发 + 轮询 job 的共用状态: 看板的"立即签到"与诊断页的 doctor 共用。
+// 手动触发 + 轮询 job 的共用状态: 签到总览的"立即签到"与体检页的 doctor 共用。
 // 每域同时只允许一个在跑(后端也拦,双保险),轮询到终态自动停并回调。
 
 export type JobDone = (job: import('../types').JobInfo) => void

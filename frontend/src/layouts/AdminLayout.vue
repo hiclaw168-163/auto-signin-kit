@@ -20,11 +20,11 @@ function icon(render: () => typeof NIcon) {
 }
 
 const menus: MenuOption[] = [
-  { label: '看板', key: 'dashboard', icon: icon(() => h(StatsChartOutline)) },
-  { label: '历史', key: 'history', icon: icon(() => h(TimeOutline)) },
-  { label: '调度', key: 'schedule', icon: icon(() => h(CalendarClearOutline)) },
-  { label: '配置', key: 'config', icon: icon(() => h(SettingsOutline)) },
-  { label: '诊断', key: 'doctor', icon: icon(() => h(MedkitOutline)) },
+  { label: '签到总览', key: 'dashboard', icon: icon(() => h(StatsChartOutline)) },
+  { label: '签到台账', key: 'history', icon: icon(() => h(TimeOutline)) },
+  { label: '定时任务', key: 'schedule', icon: icon(() => h(CalendarClearOutline)) },
+  { label: '域配置', key: 'config', icon: icon(() => h(SettingsOutline)) },
+  { label: '体检', key: 'doctor', icon: icon(() => h(MedkitOutline)) },
 ]
 
 const active = computed(() => String(route.name ?? 'dashboard'))

@@ -1,8 +1,7 @@
 """FastAPI 路由: 只编排,零业务逻辑(SPEC-09 §4)。
 
-数据读 = 进程内调 history / schedule 的 service;触发 = 经 runner 子进程调
-CLI。任何"看起来该在域里做"的判断都不在这里写——想往路由里塞业务前先问:
-这个域的 cli.py 为什么不直接提供?
+数据读 = 进程内调 core.store(SQLite 台账)与 schedule 域的 service;
+触发 = 经 runner 子进程调 CLI。任何"看起来该在域里做"的判断都不在这里写。
 
 错误口径与 CLI 对齐: 业务失败 HTTP 200 + 业务错误体(exit code 语义放在
 body 里),基础设施错误(域不存在/动作不合法/忙)才用 4xx。
@@ -16,19 +15,16 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
+from auto_signin_kit.core import store
 from auto_signin_kit.core.adapters.scheduler import get_scheduler
 from auto_signin_kit.core.config import load_domain_config_model
 from auto_signin_kit.core.report import RESULT_LABELS, RESULT_OK
-from auto_signin_kit.domains.history import service as history_service
 from auto_signin_kit.domains.schedule import service as schedule_service
 from auto_signin_kit.domains.schedule.schema import ScheduleDomainConfig
 from auto_signin_kit.ui import runner
 from auto_signin_kit.ui.schema import ScheduleOp
 
 router = APIRouter()
-
-#: 看板里不出现的"域"(它们是命令域,不是签到域,台账里永远没有它们的行)。
-_NON_SIGNIN_DOMAINS = frozenset({"schedule", "history"})
 
 
 def _known_domains() -> tuple[str, ...]:
@@ -53,12 +49,9 @@ def meta_results() -> dict[str, str]:
 @router.get("/overview")
 def overview() -> dict[str, Any]:
     """看板首页数据: 每个签到域一张卡(今日状态 + 近 7 天成功占比)。"""
-    week = history_service.daily_status(7)
+    week = store.daily_status(7)
     today = datetime.now().date().isoformat()
-    domains = sorted(
-        {str(row["domain"]) for row in week}
-        | (set(history_service.SIGNIN_DOMAINS) - _NON_SIGNIN_DOMAINS)
-    )
+    domains = sorted({str(row["domain"]) for row in week} | set(store.SIGNIN_DOMAINS))
     cards = []
     for domain in domains:
         rows = [r for r in week if r["domain"] == domain]
@@ -78,7 +71,7 @@ def history(
     domain: str | None = Query(None),
 ) -> list[dict[str, Any]]:
     """每日折叠视图(每天每域最后一次运行 = 当天最终状态)。"""
-    return history_service.daily_status(days, domain=domain)
+    return store.daily_status(days, domain=domain)
 
 
 @router.get("/events")
@@ -89,7 +82,7 @@ def events(
     limit: int = Query(50, ge=1, le=500),
 ) -> list[dict[str, Any]]:
     """运行明细,最新在前;attention_only=1 只看需要人工介入的。"""
-    return history_service.events(
+    return store.events(
         date=date, domain=domain, attention_only=attention_only, limit=limit)
 
 

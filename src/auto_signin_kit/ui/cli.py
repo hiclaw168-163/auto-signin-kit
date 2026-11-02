@@ -11,7 +11,7 @@ import typer
 from auto_signin_kit.core.errors import ConfigError
 from auto_signin_kit.core.logging import log_error
 
-app = typer.Typer(help="Web 管理台: 本地起服务,浏览器管理看板/调度/历史")
+app = typer.Typer(help="Web 管理台: 本地起服务,浏览器管理总览/台账/定时任务/配置/体检")
 
 
 @app.callback()

@@ -1,6 +1,6 @@
 """ui 层测试: API 编排 + runner 子进程桩(SPEC-09 §8)。
 
-原则: 单元测试绝不真跑签到、绝不真改系统调度——history/schedule service
+原则: 单元测试绝不真跑签到、绝不真改系统调度——store/schedule service
 与 runner 的 subprocess 全部打桩;真机验收留给手动步骤。
 """
 
@@ -52,7 +52,7 @@ _DAILY_ROWS = [
 
 
 def _patch_history(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
-    """把 history service 的两个查询换成读桩数据,并记录调用参数。"""
+    """把 store 的两个台账查询换成读桩数据,并记录调用参数。"""
     calls: dict[str, Any] = {}
 
     def daily_status(days: int = 7, *, domain: str | None = None,
@@ -64,8 +64,8 @@ def _patch_history(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         calls["events"] = kwargs
         return [{"executed_at": "t", "domain": "doubao", "result": "CLAIMED"}]
 
-    monkeypatch.setattr("auto_signin_kit.ui.api.history_service.daily_status", daily_status)
-    monkeypatch.setattr("auto_signin_kit.ui.api.history_service.events", events)
+    monkeypatch.setattr("auto_signin_kit.ui.api.store.daily_status", daily_status)
+    monkeypatch.setattr("auto_signin_kit.ui.api.store.events", events)
     return calls
 
 

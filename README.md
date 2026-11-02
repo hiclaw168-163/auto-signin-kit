@@ -17,8 +17,8 @@
 
 - **一次配置,每天自动跑** — 内置 `schedule` 域把签到命令注册成系统级定时任务
   (Windows 任务计划程序 / macOS launchd / Linux crontab),`schedule install` 之后无需再管
-- **结果看得见** — `history` 域提供 SQLite 签到台账: 每天/每域结果一目了然,
-  服务端历史(活跃日历、领取记录)一键回填,不必翻日志
+- **结果看得见** — SQLite 签到台账(`core/store`): 每天/每域结果一目了然,
+  Web 管理台或直接查库,不必翻日志
 - **可选 Web 管理台** — `ui serve` 起本地服务(只绑 127.0.0.1): 浏览器看板、
   一键手动签到、调度任务管理、诊断展示;CLI 与定时任务不依赖 web 栈
 - **加一个签到目标很省事** — 多域 CLI 插件架构: 新增一个域不用碰组合根,
@@ -79,8 +79,7 @@ auto-signin-kit qoder auto                 # Qoder CN 每日 Credits 领取
 auto-signin-kit qoder auto --dry-run       # 只报告可领取项,不真领取
 auto-signin-kit trae auto                  # Trae CN 每日签到领取(幂等)
 auto-signin-kit trae doctor                # 离线检查登录态可读性与有效期
-auto-signin-kit history                    # 签到台账: 每天/每域结果一览,不必翻日志
-auto-signin-kit history import-server      # 把服务端的历史记录(活跃日历等)回填进台账
+auto-signin-kit ui serve                   # Web 管理台: 总览/台账/调度/配置/诊断(读 SQLite 台账)
 ```
 
 每个命令输出**一行 JSON 事件**(stdout 由机器读,过程日志走 stderr),字段
@@ -106,7 +105,8 @@ auto-signin-kit history import-server      # 把服务端的历史记录(活跃�
 事实,不跟可清理的日志放一起——目录优先级: `AUTO_SIGNIN_KIT_DATA_DIR` 环境变量
 > 项目的 `data/` 目录(`.gitignore` 已排除)> 平台目录
 `%LOCALAPPDATA%\auto-signin-kit\data`(Windows)/ macOS Application Support。
-用 `auto-signin-kit history` 看结果,不必翻日志。
+台账查询直接 `sqlite3 data/auto-signin-kit.db`(读 `ask_daily_checkins` 视图),
+或打开 Web 管理台的「签到台账」页,不必翻日志。
 
 退出码约定:
 
@@ -285,9 +285,9 @@ src/auto_signin_kit/
     ├── qoder/                   # 每日 Credits(活动查询/领取/设备风控头)
     ├── trae/                    # 每日签到(status/claim,SS_AES 凭据解锁)
     ├── doubao/                  # 豆包签到领额度(Cookie 解密 + CDP 兜底,仅 Windows)
-    ├── schedule/                # 定时调度: 注册/注销/查看每日自动任务
-    └── history/                 # 签到台账: 每日状态一览/运行明细/日志回填
+    └── schedule/                # 定时调度: 注册/注销/查看每日自动任务
 
+src/auto_signin_kit/core/store.py  # SQLite 签到台账: 每日状态视图/运行明细/冗余清理
 src/auto_signin_kit/ui/          # Web 管理台 API 层(SPEC-09): /api 路由 + 托管前端产物
 frontend/                        # 管理台前端包(Vue 3 + Vite + Naive UI,与 src 同层)
 ```
