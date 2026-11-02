@@ -27,6 +27,8 @@
 - 2026-11-02: 结果标准词表——`core.report.RESULT_LABELS`(取值→中文标签,
   唯一事实源)与 `RESULT_OK`(成功语义集合);经 `GET /api/meta/results`
   下发,前端 StatusTag/时间线不自造文案;新增 result 取值必须在词表登记。
+- 2026-11-02: 后台运行——`ui serve --daemon` + `ui stop` / `ui status`
+  (SPEC-10);一键启动脚本改为后台拉起,配对 `scripts/stop-ui.*`。
 
 ## 1. 定位与边界
 

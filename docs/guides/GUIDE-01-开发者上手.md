@@ -81,7 +81,8 @@ auto-signin-kit --help
 
 **一键启动**(推荐): 装好 web 依赖后,双击 `scripts/start-ui.bat`(Windows)或
 运行 `scripts/start-ui.sh`(macOS/Linux)——前端没构建会先自动构建(需要
-Node.js 18+),然后起服务并自动打开浏览器。
+Node.js 18+),然后**后台**起服务并自动打开浏览器,脚本立即退出。
+关闭用 `scripts/stop-ui.bat` / `stop-ui.sh`(或 `auto-signin-kit ui stop`)。
 
 手动方式:
 
@@ -93,7 +94,10 @@ uv tool install --editable . --force --extra web
 auto-signin-kit ui build
 
 # ③ 启动(默认 http://127.0.0.1:8688,只绑本机;--no-open 不弹浏览器)
-auto-signin-kit ui serve
+auto-signin-kit ui serve            # 前台,Ctrl+C 关闭
+auto-signin-kit ui serve --daemon   # 后台,配 ui stop / ui status 使用
+auto-signin-kit ui status           # 查运行状态与日志路径
+auto-signin-kit ui stop             # 停止后台实例(幂等)
 ```
 
 浏览器打开后: **看板**(各域今日状态 + 一键手动签到)、**历史**(签到台账)、

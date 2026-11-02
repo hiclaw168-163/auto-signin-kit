@@ -35,12 +35,30 @@ def serve(
     port: int = typer.Option(8688, help="监听端口"),
     open_browser: bool = typer.Option(True, "--open/--no-open",
                                       help="服务就绪后自动打开浏览器"),
+    daemon: bool = typer.Option(False, "--daemon",
+                                help="后台运行: 拉起守护进程后本命令退出"),
+    daemon_child: bool = typer.Option(False, "--daemon-child", hidden=True),
 ) -> None:
     """启动本地 Web 管理台(需要 [web] extra: uv tool install 'auto-signin-kit[web]')。"""
-    _run(_serve, host, port, open_browser)
+    _run(_serve, host, port, open_browser, daemon, daemon_child)
 
 
-def _serve(host: str, port: int, open_browser: bool) -> None:
+def _serve(host: str, port: int, open_browser: bool,
+           daemon: bool, daemon_child: bool) -> None:
+    from auto_signin_kit.ui import daemon as daemon_mod
+
+    if daemon and daemon_child:
+        raise ConfigError("--daemon 与 --daemon-child 不能同时使用")
+    if daemon_child:
+        daemon_mod.run_child(host, port, open_browser)
+        return
+    if daemon:
+        typer.echo(daemon_mod.start_daemon(host, port, open_browser))
+        return
+    _foreground(host, port, open_browser)
+
+
+def _foreground(host: str, port: int, open_browser: bool) -> None:
     try:
         import uvicorn
     except ImportError as exc:
@@ -58,6 +76,30 @@ def _serve(host: str, port: int, open_browser: bool) -> None:
         # 延迟打开: 等 uvicorn 进入事件循环,否则浏览器抢跑拿到连接拒绝。
         threading.Timer(1.5, webbrowser.open, args=(url,)).start()
     uvicorn.run(create_app(), host=host, port=port, log_level="info")
+
+
+@app.command()
+def stop() -> None:
+    """停止后台运行的 Web 管理台(幂等;前台进程请直接 Ctrl+C)。"""
+    _run(_stop)
+
+
+def _stop() -> None:
+    from auto_signin_kit.ui import daemon as daemon_mod
+
+    typer.echo(daemon_mod.stop_service())
+
+
+@app.command()
+def status() -> None:
+    """查看后台服务的运行状态与日志路径。"""
+    _run(_status)
+
+
+def _status() -> None:
+    from auto_signin_kit.ui import daemon as daemon_mod
+
+    typer.echo(daemon_mod.status_text())
 
 
 @app.command()

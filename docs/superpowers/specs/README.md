@@ -17,7 +17,7 @@
 | [SPEC-07-history域.md](SPEC-07-history域.md) | 签到台账: SQLite 存储 + history 查询/回填 | 已实现 |
 | [SPEC-08-doubao域.md](SPEC-08-doubao域.md) | 豆包签到领额度(Chromium Cookie 解密 + CDP 兜底,6 文件) | 已实现 |
 | [SPEC-09-Web管理台.md](SPEC-09-Web管理台.md) | 本地 Web UI(ui/ API 层 + frontend/ Vue3 前端包) | 已实现 |
-| [SPEC-10-ui后台运行与停止.md](SPEC-10-ui后台运行与停止.md) | ui serve --daemon + stop/status(PID 文件 + 日志落盘) | 待评审 |
+| [SPEC-10-ui后台运行与停止.md](SPEC-10-ui后台运行与停止.md) | ui serve --daemon + stop/status(PID 文件 + 日志落盘) | 已实现 |
 
 关键架构决策单独沉淀在 `docs/adr/`(见根目录该目录的各 ADR):
 

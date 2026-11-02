@@ -1,11 +1,18 @@
 # SPEC-10: ui 后台运行与停止(daemon / stop / status)
 
-> 日期: 2026-11-02 · 状态: 待评审 · 关联: [SPEC-09](SPEC-09-Web管理台.md) · [STD-06](../../standards/STD-06-脚本与资产规范.md)
+> 日期: 2026-11-02 · 状态: 已实现 · 关联: [SPEC-09](SPEC-09-Web管理台.md) · [STD-06](../../standards/STD-06-脚本与资产规范.md)
 
 变更记录:
 
 - 2026-11-02: 初稿。`ui serve` 此前只有前台阻塞模式,停止脚本无处安放;
   本 SPEC 补后台运行(`--daemon`)+ `ui stop` / `ui status`。
+- 2026-11-02: 实现落地,两处 as-built 偏差:
+  ① **就绪判定不用端口探测**——真机验收发现残留前台服务占着 8688 时,
+  子进程绑定失败退出、父进程却探到"端口可连"(别人在服务)误判就绪。
+  改为子进程用 `uvicorn.Server`(线程)+ `started` 标志,**服务真正就绪后
+  才写 PID 文件**;父进程 `_wait_ready` 只认"PID 文件出现且 pid 匹配"。
+  ② `Popen` 无 `check` 参数——单元测试桩吞掉了该参数错误,真机验收抓住
+  (AGENTS.md 门禁节"测试绿 ≠ 正确"再次应验)。
 
 ## 1. 定位与边界
 
@@ -51,8 +58,8 @@
 
 | 命令 | 行为 |
 |------|------|
-| `serve --daemon` | 已有实例存活(且 cmdline 匹配)→ `ConfigError` 退出码 1,提示先 `ui stop`,**不静默复用**;否则 `spawn` → 轮询最多 5s 确认子进程存活 → 打印 PID 与日志路径后正常退出 |
-| `serve --daemon-child`(hidden) | 启动即 `write_pid(os.getpid())` → 复用 SPEC-09 的 `--open` 延迟打开逻辑 → `uvicorn.run(...)`;退出时清理 PID 文件 |
+| `serve --daemon` | 已有实例存活(且 cmdline 匹配)→ `ConfigError` 退出码 2,提示先 `ui stop`,**不静默复用**;否则 `spawn` → `_wait_ready` 等"PID 文件出现且 pid 匹配"(就绪信号,不做端口探测)→ 打印 PID 与日志路径后正常退出 |
+| `serve --daemon-child`(hidden) | `uvicorn.Server`(线程)起服务 → `started` 置位(**服务真正就绪**)才写自己的 PID → `--open` 打开浏览器 → `join` 阻塞;退出时清理 PID 文件。PID 由子进程写且在就绪后写,消"父写完子秒挂"与"端口被别人占"两类竞态 |
 | `stop` | 见 §4 错误处理表;SIGTERM(Windows `TerminateProcess`)后轮询最多 10s,未退 SIGKILL 强杀;结束清 PID 文件 |
 | `status` | 运行中(PID/host/port/started_at/日志路径)或已停止(含原因: 无文件/陈旧/损坏) |
 
@@ -65,12 +72,12 @@
 
 | 场景 | 行为 |
 |------|------|
-| `--daemon` 时已有实例在跑 | `ConfigError` 退出码 1,提示 `ui stop` |
+| `--daemon` 时已有实例在跑 | `ConfigError` 退出码 2,提示 `ui stop` |
 | `spawn` 本身失败(OSError) | 显式报错,不写 PID 文件(本来也是子进程写) |
-| 子进程 5s 内退出(典型: 端口被占) | 父进程报错并指向日志文件路径 |
+| 子进程就绪前退出(典型: 端口被占) | 父进程报错并指向日志文件路径 |
 | PID 文件损坏/非法 JSON | `stop`/`status` 视为已停止,提示可手动删文件;`stop` 退出码 0 |
 | 陈旧 PID(进程已死) | 清理 PID 文件,提示"上次未正常退出";`stop` 退出码 0 |
-| PID 复用(cmdline 不匹配) | 不杀,按陈旧处理并提示 |
+| PID 复用(cmdline 不匹配) | 不杀;`stop`/`status` 按陈旧处理并提示(`stop` 清记录) |
 | `stop` 无 PID 文件 | 提示未在运行,退出码 0(幂等) |
 | Windows 停止失败(权限等) | 显式报错,**保留** PID 文件(下次可再试) |
 
@@ -93,4 +100,4 @@
 
 ## 7. 实现顺序
 
-见 [PLAN-10](../plans/PLAN-10-ui后台运行与停止.md)(一个 SPEC 一个 PLAN,编号对齐)。
+实现过程见 [PLAN-10](../plans/PLAN-10-ui后台运行与停止.md)(一个 SPEC 一个 PLAN,编号对齐)。
