@@ -14,6 +14,8 @@ dependencies = [
   # trae 域 SS_AES 信封解密依赖(win_dpapi.decrypt_cbc 优先走它,
   # 缺了会退回 Windows CNG 并在非 Windows 平台崩溃)
   "cryptography>=42.0",
+  # doubao 域 CDP 兜底: 客户端带调试端口运行时取实时 Cookie(仅该路径 import)
+  "websocket-client>=1.6",
   # 项目自己的业务依赖(渲染库/客户端 SDK 等)加在这里
 ]
 
@@ -31,6 +33,7 @@ qoder = "auto_signin_kit.domains.qoder:app"
 trae = "auto_signin_kit.domains.trae:app"
 schedule = "auto_signin_kit.domains.schedule:app"
 history = "auto_signin_kit.domains.history:app"
+doubao = "auto_signin_kit.domains.doubao:app"
 
 [build-system]
 requires = ["hatchling"]
@@ -89,6 +92,7 @@ modules = [
     "auto_signin_kit.domains.trae",
     "auto_signin_kit.domains.schedule",
     "auto_signin_kit.domains.history",
+    "auto_signin_kit.domains.doubao",
 ]
 ignore_imports = [
     # history 域的"服务端历史回填"需要读各域的接口层取服务端历史(见 SPEC-07 §4),

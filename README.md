@@ -13,6 +13,7 @@
 | **WorkBuddy / CodeBuddy 系** | 每日签到领积分;成长中心活跃保底(没对话就自动补一条,活跃天数不断);Buddy 旅行礼物、派 Buddy、开盲盒、领任务、连登兑换、断登补签等活动全覆盖 |
 | **Qoder CN** | 活动窗口内自动领取 Credits(幂等,重复跑不多领) |
 | **Trae CN** | 每日签到领 Credits(1024 活动限流期自动多轮重试) |
+| **豆包电脑版 / 豆包工作** | 签到领额度(每日 200、周一翻倍、30 天累计 8800);直接解密客户端本地会话,幂等可重跑(仅 Windows) |
 
 - **一次配置,每天自动跑** — 内置 `schedule` 域把签到命令注册成系统级定时任务
   (Windows 任务计划程序 / macOS launchd / Linux crontab),`schedule install` 之后无需再管

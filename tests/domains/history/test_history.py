@@ -67,14 +67,18 @@ class TestRecordAndQuery:
         assert service.events(limit=10) == []
 
     def test_view_folds_multiple_runs_per_day(self):
+        # 用"今天"构造时间戳: 视图按 now()-7 天过滤,硬编码日期会随时间推移
+        # 掉出窗口(2026-11-02 实际发生过)。
+        from datetime import datetime
+        today = datetime.now().astimezone().date().isoformat()
         for hour, result in (("08:29:14", "NO_ACTIVITY"), ("12:05:03", "ACTIVE")):
             store.record_payload(json.dumps(_record(
                 domain="workbuddy", result=result, action="active",
-                ts="2026-10-22T%s+08:00" % hour), ensure_ascii=False))
+                ts="%sT%s+08:00" % (today, hour)), ensure_ascii=False))
         rows = service.daily_status(days=7, domain="workbuddy")
         assert len(rows) == 1
         assert rows[0]["result"] == "ACTIVE"  # 当天最后一次运行
-        assert rows[0]["day"] == "2026-10-22"
+        assert rows[0]["day"] == today
 
 
 def _write_log(log_dir: Path, domain: str, lines: list[str]) -> None:
