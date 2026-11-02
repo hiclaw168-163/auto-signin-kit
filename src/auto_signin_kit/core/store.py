@@ -85,8 +85,10 @@ CREATE INDEX IF NOT EXISTS idx_ask_signin_runs_source ON ask_signin_runs(source)
 -- 视图是纯派生物,每次连接重建(CREATE VIEW 无 IF NOT EXISTS 的改列能力,
 -- 直接 DROP+CREATE 保证老库也能拿到新列)
 DROP VIEW IF EXISTS ask_daily_checkins;
+-- 日期一律 date(..., 'localtime'): executed_at 带时区后缀,裸 date() 会转成
+-- UTC 日期——本地 0~8 点的运行会被记到"昨天",台账看起来就像调度没跑
 CREATE VIEW ask_daily_checkins AS
-SELECT date(r.executed_at)   AS day,
+SELECT date(r.executed_at, 'localtime') AS day,
        r.domain              AS domain,
        r.result              AS result,
        r.source              AS source,
@@ -96,7 +98,8 @@ SELECT date(r.executed_at)   AS day,
 FROM ask_signin_runs AS r
 WHERE r.id = (
     SELECT r2.id FROM ask_signin_runs AS r2
-    WHERE date(r2.executed_at) = date(r.executed_at) AND r2.domain = r.domain
+    WHERE date(r2.executed_at, 'localtime') = date(r.executed_at, 'localtime')
+      AND r2.domain = r.domain
     ORDER BY r2.executed_at DESC, r2.id DESC
     LIMIT 1
 );
@@ -167,7 +170,7 @@ def daily_status(days: int = 7, *, domain: str | None = None,
     try:
         sql = (
             "SELECT day, domain, result, source, needs_attention, report, executed_at"
-            " FROM ask_daily_checkins WHERE day >= date('now', ?)"
+            " FROM ask_daily_checkins WHERE day >= date('now', 'localtime', ?)"
         )
         params: list[Any] = ["-%d days" % max(1, days)]
         if domain:
@@ -199,7 +202,7 @@ def events(
            " FROM ask_signin_runs WHERE 1=1")
     params: list[Any] = []
     if date:
-        sql += " AND date(executed_at) = ?"
+        sql += " AND date(executed_at, 'localtime') = ?"
         params.append(date)
     if domain:
         sql += " AND domain = ?"
@@ -229,15 +232,17 @@ SIGNIN_DONE_RESULTS = ("CLAIMED", "ALREADY")
 def done_today(domain: str) -> bool:
     """该域今天(source=run)是否已有成功签到行;调度兜底触发的跳过判断用。
 
-    时间口径与 ``ask_daily_checkins`` 视图一致: ``executed_at`` 存本地 ISO
-    时间戳,``date()`` 取其日期部分;右侧用 ``date('now','localtime')``
-    得到今天本地日期。
+    时间口径与 ``ask_daily_checkins`` 视图一致: ``executed_at`` 存带时区的
+    ISO 时间戳,左侧 ``date(executed_at, 'localtime')`` 取其**本地**日期
+    (裸 date() 会转 UTC,凌晨 0~8 点的运行会被算到昨天);右侧
+    ``date('now', 'localtime')`` 得到今天本地日期。
     """
     conn = connect()
     try:
         row = conn.execute(
             "SELECT 1 FROM ask_signin_runs WHERE domain = ? AND source = 'run'"
-            " AND result IN (?, ?) AND date(executed_at) = date('now', 'localtime')"
+            " AND result IN (?, ?)"
+            " AND date(executed_at, 'localtime') = date('now', 'localtime')"
             " LIMIT 1", (domain, *SIGNIN_DONE_RESULTS)).fetchone()
     finally:
         conn.close()
@@ -258,9 +263,9 @@ def compact_history() -> dict[str, Any]:
             " WHERE source = 'run' AND result IN ('CLAIMED', 'ALREADY')"
             "   AND id NOT IN (SELECT MIN(id) FROM ask_signin_runs"
             "                  WHERE source = 'run' AND result IN ('CLAIMED', 'ALREADY')"
-            "                  GROUP BY date(executed_at), domain)"
+            "                  GROUP BY date(executed_at, 'localtime'), domain)"
             "   AND id NOT IN (SELECT MAX(id) FROM ask_signin_runs"
-            "                  GROUP BY date(executed_at), domain)"
+            "                  GROUP BY date(executed_at, 'localtime'), domain)"
         ).fetchall()
         per_domain: dict[str, int] = {}
         ids = []

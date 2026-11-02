@@ -64,6 +64,26 @@ class TestRecordAndQuery:
         assert len(store.daily_status(days=30, result="OK")) == 1
         assert store.daily_status(days=30, result="CLAIMED") == []
 
+    def test_daily_view_files_early_morning_runs_on_local_day(self):
+        # 回归: executed_at 带时区后缀,裸 date() 转 UTC 后凌晨 0~8 点的运行
+        # 会被记到"昨天",台账看起来就像调度没跑(2026-11-03 真实踩坑)
+        ts = "2026-11-03T00:05:00+08:00"
+        store.record_payload(json.dumps(_record(ts=ts, result="CLAIMED"),
+                                        ensure_ascii=False))
+        expected_day = datetime.fromisoformat(ts).astimezone().date().isoformat()
+        rows = store.daily_status(days=3650)
+        row = next(r for r in rows if r["executed_at"] == ts)
+        assert row["day"] == expected_day
+
+    def test_done_today_counts_today_runs(self):
+        ts = datetime.now().astimezone().isoformat(timespec="seconds")
+        store.record_payload(json.dumps(_record(ts=ts, result="CLAIMED"),
+                                        ensure_ascii=False))
+        assert store.done_today("trae") is True
+        store.record_payload(json.dumps(_record(ts=ts, result="NO_AUTH"),
+                                        ensure_ascii=False))
+        assert store.done_today("qoder") is False  # 失败行不算"已签"
+
     def test_schedule_domain_routes_to_audit_table(self):
         payload = json.dumps({"ts": "2026-10-22T10:00:00+08:00", "domain": "schedule",
                               "action": "install", "platform": "windows",
