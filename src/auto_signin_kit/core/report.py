@@ -27,6 +27,40 @@ ATTENTION_RESULTS = frozenset({
     "AUTH_ERROR", "AUTH_REJECTED", "FORBIDDEN", "PENDING", "INACTIVE_ERROR",
 })
 
+#: **结果取值标准词表**(唯一事实源): 域上报什么、台账存什么、UI 显示什么,
+#: 都以这里为准——界面上"有的显示已签到、有的显示 OK"就是因为取值没有
+#: 标准答案,各层各翻各的。新增 result 取值必须在这里登记中文标签。
+#: 两类语义:
+#: - 签到语义(auto/claim/active 的业务结果): CLAIMED/ALREADY/ACTIVE/...
+#: - 操作语义(doctor/status 等命令的执行结果): OK/...
+RESULT_LABELS = {
+    # 签到语义
+    "CLAIMED": "领取成功",
+    "ALREADY": "今日已签",
+    "ACTIVE": "活跃达标",
+    "NO_ACTIVITY": "今日未活跃",
+    "INACTIVE": "未激活",
+    "PENDING": "待生效",
+    # 操作语义
+    "OK": "执行成功",
+    "PARTIAL": "部分成功",
+    "FAILED": "执行失败",
+    # 失败/需关注语义
+    "NO_AUTH": "登录过期",
+    "NO_SESSION": "会话缺失",
+    "AUTH_ERROR": "认证失败",
+    "AUTH_REJECTED": "认证被拒",
+    "FORBIDDEN": "无权限",
+    "ERROR": "执行失败",
+    "NETWORK": "网络异常",
+    "TIMEOUT": "超时",
+    "RATE_LIMITED": "限流",
+    "UNKNOWN": "未知",
+}
+
+#: 算"成功"的取值(签到成功/活跃达标/操作成功);聚合统计用,与词表同源。
+RESULT_OK = frozenset({"CLAIMED", "ALREADY", "ACTIVE", "OK"})
+
 
 def make_result(result: str, report: str, **extra: Any) -> dict[str, Any]:
     """构造成一行 JSON 的结果 dict;``needs_attention`` 自动按 result 分类。"""

@@ -24,6 +24,9 @@
   「配置」页(YAML 动态编辑,保存必过各域 schema,原子写回)与看板汇总
   统计卡 + 近 7 天条形 + 最近运行时间线;index.html 强制 no-cache(防旧
   html 引用已删 JS 的白屏);启动脚本统一英文名 start-ui.bat。
+- 2026-11-02: 结果标准词表——`core.report.RESULT_LABELS`(取值→中文标签,
+  唯一事实源)与 `RESULT_OK`(成功语义集合);经 `GET /api/meta/results`
+  下发,前端 StatusTag/时间线不自造文案;新增 result 取值必须在词表登记。
 
 ## 1. 定位与边界
 

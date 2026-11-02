@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import { darkTheme, type GlobalThemeOverrides } from 'naive-ui'
+import { loadResultLabels } from './api/meta'
+
+// 词表加载失败不挡界面: StatusTag 会退回显示原始值(如 OK),可自愈重试。
+loadResultLabels().catch(() => undefined)
 
 // 全局主题: 暗色 + 语义绿主色。token 见 styles/index.css(唯一事实源)。
 const overrides: GlobalThemeOverrides = {

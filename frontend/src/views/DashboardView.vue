@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useMessage } from 'naive-ui'
 import { dashboardApi, scheduleApi } from '../api'
+import { resultLabel } from '../api/meta'
 import { useJob } from '../composables/useJob'
 import DomainCard from '../components/dashboard/DomainCard.vue'
 import StatCard from '../components/dashboard/StatCard.vue'
@@ -93,7 +94,7 @@ onMounted(load)
         <n-timeline v-else>
           <n-timeline-item v-for="(e, i) in events" :key="i"
             :type="e.needs_attention ? 'error' : 'success'"
-            :title="`${e.domain} · ${e.result}`"
+            :title="`${e.domain} · ${resultLabel(e.result)}`"
             :content="`${e.executed_at} — ${e.report}`" />
         </n-timeline>
       </n-card>

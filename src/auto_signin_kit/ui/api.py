@@ -18,6 +18,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from auto_signin_kit.core.adapters.scheduler import get_scheduler
 from auto_signin_kit.core.config import load_domain_config_model
+from auto_signin_kit.core.report import RESULT_LABELS, RESULT_OK
 from auto_signin_kit.domains.history import service as history_service
 from auto_signin_kit.domains.schedule import service as schedule_service
 from auto_signin_kit.domains.schedule.schema import ScheduleDomainConfig
@@ -25,9 +26,6 @@ from auto_signin_kit.ui import runner
 from auto_signin_kit.ui.schema import ScheduleOp
 
 router = APIRouter()
-
-#: 台账 result 里算"成功"的取值(签到语义: 领到或本来就领过;活跃: 记分成功)。
-_OK_RESULTS = frozenset({"CLAIMED", "ALREADY", "ACTIVE"})
 
 #: 看板里不出现的"域"(它们是命令域,不是签到域,台账里永远没有它们的行)。
 _NON_SIGNIN_DOMAINS = frozenset({"schedule", "history"})
@@ -46,6 +44,12 @@ def _now() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
+@router.get("/meta/results")
+def meta_results() -> dict[str, str]:
+    """结果标准词表(core.report.RESULT_LABELS);UI 的标签渲染以这里为准。"""
+    return dict(RESULT_LABELS)
+
+
 @router.get("/overview")
 def overview() -> dict[str, Any]:
     """看板首页数据: 每个签到域一张卡(今日状态 + 近 7 天成功占比)。"""
@@ -62,7 +66,7 @@ def overview() -> dict[str, Any]:
         cards.append({
             "domain": domain,
             "today": today_row,
-            "week_ok": sum(1 for r in rows if r["result"] in _OK_RESULTS),
+            "week_ok": sum(1 for r in rows if r["result"] in RESULT_OK),
             "week_total": len(rows),
         })
     return {"cards": cards, "generated_at": _now()}
