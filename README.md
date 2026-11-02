@@ -305,6 +305,15 @@ uv run ruff check && uv run lint-imports && uv run pytest -q
 
 ---
 
+## 免责声明
+
+**本工具仅供个人学习与研究参考，严禁用于任何商业途径。** 使用者须遵守目标平台
+的服务条款与当地法律法规；因使用本工具产生的一切后果（包括账号限制/封禁等）
+由使用者自行承担。本项目与文中提及的各产品及其运营方无任何关联。完整声明见
+[DISCLAIMER.md](DISCLAIMER.md)。
+
+---
+
 ## 许可
 
 [MIT](LICENSE)。
