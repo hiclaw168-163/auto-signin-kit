@@ -56,3 +56,33 @@
 - 换季预案: 服务端换 scene 时 `doubao status` 会报 campaign not found,
   更新 `config/domains/doubao.yaml` 的 `campaign_code` 即可(前端 chunk 里
   的 `4264.*.js` 是接口定义所在,新 scene 从活动面板 webview 请求里抓)。
+
+## 4. macOS 排查结论(2026-11-02 实测)
+
+- 数据目录布局与 Windows 不同: 目录就是
+  `~/Library/Application Support/Doubao` 本身(无 "User Data" 层);
+  Cookie 库在 `Default/Cookies` / `Profile N/Cookies`(**无 `Network/` 子层**;
+  实测 "Profile 1/Cookies" 的 sqlite URI 直连会失败,先拷贝再开)。
+- Keychain 密钥可读: `security find-generic-password -s "Doubao Browser Safe Storage" -w`
+  (acct "Doubao Browser",base64 解码后 16B);另有 `Doubao Safe Storage`
+  (acct "Doubao")。framework 二进制(147.0.7727.149)含 `saltysalt`/
+  `Safe Storage` 字符串,确为 Chromium os_crypt 魔改。
+- **但文件解密未破解,如实报 UNSUPPORTED**: cookie blob 为 `v10` 前缀 +
+  密文,三条 cookie **首块密文完全相同**(存在固定 16B+ 应用层头);黑盒
+  穷尽约 300 组合(AES-128/256-CBC/GCM × PBKDF2 盐/迭代 × 直接哈希)无一命中
+  ——不做假支持,mac 链路只走 CDP。
+- **CDP 探测防误报**: 9222 端口可能被其他 Chromium 应用占用(实测 Qoder IDE),
+  `cdp.probe()` 会校验 `/json/version` 的 `Browser` 字段包含 "doubao"。
+
+### 4.1 macOS CDP 使用指引
+
+1. **完全退出豆包客户端**(否则调试端口起不来/被正常实例占用);
+2. 带调试端口启动内置 helper:
+
+   ```bash
+   DOUBAO_CDP_PORT=9223 "/Applications/Doubao.app/Contents/Helpers/Doubao Browser.app/Contents/MacOS/Doubao Browser" --remote-debugging-port=9223
+   ```
+
+3. 另开终端跑 `auto-signin-kit doubao auto`(CDP 实时 Cookie 优先级最高,
+   doctor 的 `cdp_available` 应为 true);
+4. 用完退出 helper,正常启动豆包即可。

@@ -14,7 +14,13 @@
   a) 客户端正常退出后 Cookie 会落盘,关闭客户端再跑一次即可;
   b) 客户端带 ``--remote-debugging-port`` 启动时,直接走 CDP 拿实时 Cookie
   (见 ``cdp.cookies_via_cdp``),实时值优先级最高;
-- 仅 Windows 可解(DPAPI);其他平台如实报 UNSUPPORTED,不做静默兜底。
+- macOS 目录布局与 Windows 不同: 数据目录就是
+  ``~/Library/Application Support/Doubao`` 本身(无 "User Data" 层),
+  Cookie 库在 ``Default/Cookies`` / ``Profile N/Cookies``(无 ``Network/`` 子层);
+- macOS 的 Keychain 密钥(``Doubao Browser Safe Storage``)可读,但 cookie
+  值的加密是魔改 os_crypt(密文带应用层头,黑盒穷尽约 300 组合无一命中)——
+  文件解密如实报 UNSUPPORTED,mac 链路只走 CDP;
+- 仅 Windows 可文件解密(DPAPI);其他平台不做静默兜底。
 """
 
 from __future__ import annotations
@@ -27,18 +33,22 @@ import json
 import os
 import sqlite3
 import tempfile
-import urllib.request
 from pathlib import Path
 from typing import Any
 
 from auto_signin_kit.core.adapters.platform_info import IS_WINDOWS
 from auto_signin_kit.core.adapters.win_dpapi import DecryptError, decrypt_gcm, unprotect
 from auto_signin_kit.core.errors import AutoSignInKitError
+from auto_signin_kit.domains.doubao import cdp
 from auto_signin_kit.domains.doubao.cdp import cookies_via_cdp
 
-#: 默认 Chromium 数据目录(%LOCALAPPDATA%/Doubao/User Data)。
-DEFAULT_USER_DATA_DIR = Path(os.environ.get("LOCALAPPDATA", "")) / "Doubao" / "User Data"
-COOKIES_REL = Path("Default") / "Network" / "Cookies"
+if IS_WINDOWS:  # 平台布局分支,import 时定死(测试可 monkeypatch 常量)
+    COOKIES_REL = Path("Default") / "Network" / "Cookies"
+    _PROFILES_GLOB = "Profile */Network/Cookies"
+else:
+    # macOS: 目录就是 Doubao 本身(无 "User Data" 层),Cookie 库无 Network/ 子层
+    COOKIES_REL = Path("Default") / "Cookies"
+    _PROFILES_GLOB = "Profile */Cookies"
 LOCAL_STATE_REL = Path("Local State")
 #: 鉴权必需的 cookie 名;缺任何一个都视为登录态不可用。
 REQUIRED_COOKIES = ("sessionid", "sid_tt", "uid_tt")
@@ -46,6 +56,13 @@ REQUIRED_COOKIES = ("sessionid", "sid_tt", "uid_tt")
 APP_LAYER_VALUE_PREFIX = 32
 #: CDP 调试端口兜底(DOUBAO_CDP_PORT 优先);客户端须带 --remote-debugging-port 启动。
 DEFAULT_CDP_PORT = 9222
+#: 非 Windows 平台的如实结论 + CDP 指引(不做假支持)。
+MAC_DECRYPT_UNSUPPORTED = (
+    "macOS 豆包客户端的 Cookie 加密为魔改 Chromium os_crypt(密文带应用层头,"
+    "黑盒穷尽失败),暂不支持文件库解密;可走 CDP 兜底: 完全退出豆包后执行 "
+    'DOUBAO_CDP_PORT=9223 "/Applications/Doubao.app/Contents/Helpers/'
+    'Doubao Browser.app/Contents/MacOS/Doubao Browser" --remote-debugging-port=9223'
+)
 
 
 class DoubaoCookieError(AutoSignInKitError):
@@ -55,9 +72,17 @@ class DoubaoCookieError(AutoSignInKitError):
 
 
 def default_user_data_dir() -> Path:
-    """豆包客户端数据目录;环境变量 DOUBAO_USER_DATA_DIR 优先。"""
+    """豆包客户端数据目录;环境变量 DOUBAO_USER_DATA_DIR 优先。
+
+    Windows: %LOCALAPPDATA%/Doubao/User Data;macOS: 数据目录就是
+    ``~/Library/Application Support/Doubao`` 本身(无 "User Data" 层)。
+    """
     env = os.environ.get("DOUBAO_USER_DATA_DIR")
-    return Path(env) if env else DEFAULT_USER_DATA_DIR
+    if env:
+        return Path(env)
+    if IS_WINDOWS:
+        return Path(os.environ.get("LOCALAPPDATA", "")) / "Doubao" / "User Data"
+    return Path.home() / "Library" / "Application Support" / "Doubao"
 
 
 def _copy_locked_file(src: Path, dst: Path) -> None:
@@ -131,7 +156,7 @@ def _decrypt_cookie_value(aes_key: bytes, encrypted: bytes) -> str | None:
 def _candidate_dbs(user_data_dir: Path) -> list[Path]:
     """全部候选 Cookie 库,按修改时间新者优先(新会话赢旧会话)。"""
     candidates = [user_data_dir / COOKIES_REL]
-    candidates += sorted(user_data_dir.glob("Profile */Network/Cookies"),
+    candidates += sorted(user_data_dir.glob(_PROFILES_GLOB),
                          key=lambda p: p.stat().st_mtime, reverse=True)
     return [p for p in candidates if p.exists()]
 
@@ -185,17 +210,19 @@ def load_cookie_header(user_data_dir: Path | None = None) -> str:
     if not candidates:
         raise DoubaoCookieError(
             "Cookie 库不存在(豆包客户端未安装或未登录过?): %s" % root)
-    key = _aes_key(root / LOCAL_STATE_REL)
     merged: dict[str, str] = {}
     errors: list[str] = []
-    for db_path in candidates:
-        try:
-            pairs = _read_db(db_path, key)
-        except DoubaoCookieError as exc:
-            errors.append("%s: %s" % (db_path.parent.parent.name, exc))
-            continue
-        for name, value in pairs.items():
-            merged.setdefault(name, value)
+    if IS_WINDOWS:
+        # 文件解密只有 Windows 支持(DPAPI);其他平台不假装能解,只走 CDP。
+        key = _aes_key(root / LOCAL_STATE_REL)
+        for db_path in candidates:
+            try:
+                pairs = _read_db(db_path, key)
+            except DoubaoCookieError as exc:
+                errors.append("%s: %s" % (db_path.parent.parent.name, exc))
+                continue
+            for name, value in pairs.items():
+                merged.setdefault(name, value)
     # 总是尝试 CDP: 文件库可能持有"格式有效但已被服务端判过期"的旧会话
     # (实测: 更新客户端重登后 Default 仍是旧 sessionid,服务端回"登录已过期"),
     # CDP 可达时实时值一定是最权威的;客户端未带调试端口时 1 秒即返回 None。
@@ -204,6 +231,10 @@ def load_cookie_header(user_data_dir: Path | None = None) -> str:
         merged.update(live)  # CDP 实时值优先级最高
     missing = [n for n in REQUIRED_COOKIES if n not in merged]
     if missing:
+        if not IS_WINDOWS:
+            raise DoubaoCookieError(
+                "%s (CDP 不可达或缺 %s)" % (MAC_DECRYPT_UNSUPPORTED,
+                                            ",".join(missing)))
         raise DoubaoCookieError(
             "登录态不完整: 缺 %s。常见原因: %s。可关闭豆包客户端让 Cookie 落盘后"
             "重试(退出时自动落盘),或以 --remote-debugging-port 启动客户端走 CDP 兜底"
@@ -212,14 +243,11 @@ def load_cookie_header(user_data_dir: Path | None = None) -> str:
 
 
 def cdp_available() -> bool:
-    """CDP 调试端口是否可达(客户端带 --remote-debugging-port 运行)。"""
-    try:
-        port = int(os.environ.get("DOUBAO_CDP_PORT", DEFAULT_CDP_PORT))
-        with urllib.request.urlopen(
-                "http://127.0.0.1:%s/json/version" % port, timeout=1) as resp:
-            return resp.status == 200
-    except (OSError, ValueError):
-        return False
+    """调试端口可达 **且** 确为豆包客户端(校验 /json/version 的 Browser 字段)。
+
+    只探端口会误报: 9222 也可能被其他 Chromium 应用占用(实测 Qoder IDE)。
+    """
+    return cdp.probe()
 
 
 def doctor_report(user_data_dir: Path | None = None) -> dict[str, Any]:
@@ -228,11 +256,12 @@ def doctor_report(user_data_dir: Path | None = None) -> dict[str, Any]:
     root = user_data_dir or default_user_data_dir()
     checks: dict[str, Any] = {
         "user_data_dir": str(root),
+        "file_decrypt_supported": IS_WINDOWS,
         "local_state_exists": (root / LOCAL_STATE_REL).exists(),
         "cookie_dbs": [str(p.relative_to(root)) for p in _candidate_dbs(root)],
         "cdp_available": cdp_available(),
     }
-    if checks["cookie_dbs"] and checks["local_state_exists"]:
+    if checks["cookie_dbs"] and (checks["local_state_exists"] or not IS_WINDOWS):
         try:
             load_cookie_header(root)
             checks["session_ok"] = True

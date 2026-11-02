@@ -5,11 +5,13 @@ from __future__ import annotations
 import base64
 import json
 import sqlite3
+from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
 from auto_signin_kit.core.errors import AutoSignInKitError
+from auto_signin_kit.domains.doubao import cdp as cdp_mod
 from auto_signin_kit.domains.doubao import cookies as cookies_mod
 from auto_signin_kit.domains.doubao import service
 from auto_signin_kit.domains.doubao.api import COMMON_QUERY, DoubaoApi
@@ -19,11 +21,20 @@ from auto_signin_kit.domains.doubao.schema import DoubaoDomainConfig
 PREFIX = b"P" * cookies_mod.APP_LAYER_VALUE_PREFIX
 FAKE_KEY = b"K" * 32
 
+WIN_COOKIES_REL = Path("Default") / "Network" / "Cookies"
+WIN_PROFILES_GLOB = "Profile */Network/Cookies"
+
 
 @pytest.fixture
 def fake_crypto(monkeypatch):
+    """固定 Windows 文件解密分支 + 替换 DPAPI/GCM:
+    unprotect 返回固定密钥,decrypt_gcm 返回 前缀+明文;CDP 兜底关闭。"""
+    monkeypatch.setattr(cookies_mod, "IS_WINDOWS", True)
+    monkeypatch.setattr(cookies_mod, "COOKIES_REL", WIN_COOKIES_REL)
+    monkeypatch.setattr(cookies_mod, "_PROFILES_GLOB", WIN_PROFILES_GLOB)
+    monkeypatch.setattr(cookies_mod, "_copy_locked_file",
+                        lambda src, dst: dst.write_bytes(src.read_bytes()))
     monkeypatch.setattr(cookies_mod, 'cookies_via_cdp', lambda port=None: None)
-    """替换 DPAPI/GCM: unprotect 返回固定密钥,decrypt_gcm 返回 前缀+明文。"""
     monkeypatch.setattr(cookies_mod, "unprotect", lambda data: FAKE_KEY)
     monkeypatch.setattr(cookies_mod, "decrypt_gcm", lambda key, nonce, blob: PREFIX + blob)
 
@@ -35,7 +46,7 @@ def _make_user_data(tmp_path, rows):
     (root / "Local State").write_text(json.dumps(
         {"os_crypt": {"encrypted_key": base64.b64encode(b"DPAPI" + b"x" * 32).decode()}}),
         encoding="utf-8")
-    db = root / "Default" / "Network" / "Cookies"
+    db = root / WIN_COOKIES_REL
     db.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(str(db))
     con.execute("create table cookies (host_key text, name text, encrypted_value blob)")
@@ -76,6 +87,11 @@ class TestCookieDecrypt:
         assert "sessionid=from-dot" in cookies_mod.load_cookie_header(root)
 
     def test_undecryptable_rows_are_skipped(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(cookies_mod, "IS_WINDOWS", True)
+        monkeypatch.setattr(cookies_mod, "COOKIES_REL", WIN_COOKIES_REL)
+        monkeypatch.setattr(cookies_mod, "_PROFILES_GLOB", WIN_PROFILES_GLOB)
+        monkeypatch.setattr(cookies_mod, "_copy_locked_file",
+                            lambda src, dst: dst.write_bytes(src.read_bytes()))
         monkeypatch.setattr(cookies_mod, "unprotect", lambda data: FAKE_KEY)
         monkeypatch.setattr(cookies_mod, "cookies_via_cdp", lambda port=None: None)
 
@@ -93,6 +109,111 @@ class TestCookieDecrypt:
         with pytest.raises(cookies_mod.DoubaoCookieError) as exc:
             cookies_mod.load_cookie_header(root)
         assert "Cookie 库不存在" in str(exc.value)
+
+
+def _make_mac_user_data(tmp_path):
+    """mac 布局: 目录即 Doubao 本身,Default/Cookies(无 Network/ 子层)。"""
+    root = tmp_path / "Doubao"
+    (root / "Default").mkdir(parents=True)
+    (root / "Local State").write_text("{}", encoding="utf-8")
+    db = root / "Default" / "Cookies"
+    con = sqlite3.connect(str(db))
+    con.execute("create table cookies (host_key text, name text, encrypted_value blob)")
+    con.execute("insert into cookies values (?,?,?)",
+                (".doubao.com", "sessionid", b"v10" + b"N" * 12 + b"stale"))
+    con.commit()
+    con.close()
+    return root
+
+
+class TestMacPlatformBranch:
+    """mac: 文件解密如实报 UNSUPPORTED,链路只走 CDP(见 NOTE-04)。"""
+
+    def test_decrypt_unsupported_mentions_cdp_guidance(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(cookies_mod, "IS_WINDOWS", False)
+        monkeypatch.setattr(cookies_mod, "cookies_via_cdp", lambda port=None: None)
+        root = _make_mac_user_data(tmp_path)
+        with pytest.raises(cookies_mod.DoubaoCookieError) as exc:
+            cookies_mod.load_cookie_header(root)
+        msg = str(exc.value)
+        assert "macOS" in msg and "CDP" in msg
+        assert "remote-debugging-port" in msg  # 指引可执行
+
+    def test_cdp_live_cookies_supply_session(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(cookies_mod, "IS_WINDOWS", False)
+        live = {"sessionid": "live-sid", "sid_tt": "live-tt", "uid_tt": "live-uid"}
+        monkeypatch.setattr(cookies_mod, "cookies_via_cdp", lambda port=None: live)
+        root = _make_mac_user_data(tmp_path)
+        header = cookies_mod.load_cookie_header(root)
+        assert "sessionid=live-sid" in header
+        assert "stale" not in header  # 文件库的旧值不参与
+
+    def test_doctor_reports_unsupported_honestly(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(cookies_mod, "IS_WINDOWS", False)
+        monkeypatch.setattr(cookies_mod, "cookies_via_cdp", lambda port=None: None)
+        root = _make_mac_user_data(tmp_path)
+        report = cookies_mod.doctor_report(root)
+        assert report["file_decrypt_supported"] is False
+        assert report["cookie_dbs"] == ["Default/Cookies"]  # mac 布局被正确探测
+        assert report["session_ok"] is False
+        assert "CDP" in report["session_error"]
+
+    def test_default_dir_on_mac_has_no_user_data_layer(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(cookies_mod, "IS_WINDOWS", False)
+        monkeypatch.delenv("DOUBAO_USER_DATA_DIR", raising=False)
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        assert cookies_mod.default_user_data_dir() == \
+            tmp_path / "Library" / "Application Support" / "Doubao"
+
+
+class _FakeCdpResp:
+    """urlopen 假响应: /json/version 的 payload 可控。"""
+
+    def __init__(self, payload):
+        self._payload = payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    status = 200
+
+    def read(self):
+        return json.dumps(self._payload).encode()
+
+
+class TestCdpIdentity:
+    """9222 可能被其他 Chromium 应用占用(实测 Qoder),须校验 Browser 身份。"""
+
+    def _patch_version(self, monkeypatch, browser):
+        monkeypatch.setattr(
+            cdp_mod.urllib.request, "urlopen",
+            lambda url, timeout: _FakeCdpResp({"Browser": browser}))
+
+    def test_probe_rejects_foreign_chromium(self, monkeypatch):
+        self._patch_version(monkeypatch, "Chrome/120.0.6099.109")
+        assert cdp_mod.probe(9222) is False
+
+    def test_probe_accepts_doubao_case_insensitive(self, monkeypatch):
+        self._patch_version(monkeypatch, "Doubao/147.0.7727.149")
+        assert cdp_mod.probe(9222) is True
+
+    def test_probe_connection_refused_is_false(self, monkeypatch):
+        def refuse(url, timeout):
+            raise OSError("connection refused")
+
+        monkeypatch.setattr(cdp_mod.urllib.request, "urlopen", refuse)
+        assert cdp_mod.probe(9222) is False
+
+    def test_cookies_via_cdp_returns_none_for_foreign_browser(self, monkeypatch):
+        self._patch_version(monkeypatch, "Chrome/120.0.6099.109")
+        assert cdp_mod.cookies_via_cdp(port=9222) is None
+
+    def test_invalid_port_env_is_not_available(self, monkeypatch):
+        monkeypatch.setenv("DOUBAO_CDP_PORT", "not-a-number")
+        assert cookies_mod.cdp_available() is False
 
 
 class TestDoubaoApi:

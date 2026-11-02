@@ -13,17 +13,34 @@ import urllib.request
 _DOUBAO_URL = "https://www.doubao.com"
 #: 兜底端口与 cookies.DEFAULT_CDP_PORT 同值;本地定义避免循环导入。
 _DEFAULT_PORT = 9222
+#: /json/version 的 Browser 字段必须包含该标识;9222 可能被其他 Chromium
+#: 应用占用(实测 Qoder IDE 监听 9222 导致误报可用),故须校验身份。
+_BROWSER_TAG = "doubao"
+
+
+def resolve_port() -> int:
+    """DOUBAO_CDP_PORT 优先,缺省回落 9222;非法值如实抛 ValueError。"""
+    return int(os.environ.get("DOUBAO_CDP_PORT", _DEFAULT_PORT))
+
+
+def probe(port: int | None = None) -> bool:
+    """调试端口可达 **且** /json/version 的 Browser 字段确为豆包客户端。"""
+    try:
+        port = resolve_port() if port is None else port
+        with urllib.request.urlopen(
+                "http://127.0.0.1:%s/json/version" % port, timeout=1) as resp:
+            if resp.status != 200:
+                return False
+            browser = (json.loads(resp.read()) or {}).get("Browser") or ""
+    except (OSError, ValueError):
+        return False
+    return _BROWSER_TAG in browser.lower()
 
 
 def cookies_via_cdp(port: int | None = None) -> dict[str, str] | None:
     """经 CDP ``Network.getCookies`` 取 doubao.com 的实时 Cookie;不可达返回 None。"""
-    port = int(os.environ.get("DOUBAO_CDP_PORT", port or _DEFAULT_PORT))
-    try:
-        with urllib.request.urlopen(
-                "http://127.0.0.1:%s/json/version" % port, timeout=1) as resp:
-            if resp.status != 200:
-                return None
-    except OSError:
+    port = resolve_port() if port is None else port
+    if not probe(port):
         return None
     try:
         import websocket  # websocket-client,pyproject 声明的域依赖
