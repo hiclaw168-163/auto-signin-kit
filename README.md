@@ -122,9 +122,11 @@ auto-signin-kit history import-server      # 把服务端的历史记录(活跃�
 
 - workbuddy 域: 桌面端登录后自动写出的凭据文件,`WORKBUDDY_AUTH_FILE`
   可覆盖;新版加密凭据(`sym-v1` 信封)自动调客户端运行时在隐藏子进程里解密。
-- qoder 域: 桌面端数据目录(`%APPDATA%\com.qodercn.app*`,`DPAPI+GCM` 双层
-  解密;**自动读取仅 Windows**,macOS/Linux 需设置 `QODER_TOKEN`),`QODER_TOKEN`
-  可覆盖。
+- qoder 域: 桌面端数据目录(Windows `%APPDATA%\com.qodercn.app*` DPAPI+GCM,
+  macOS `~/Library/Application Support/com.qoder.app*` Keychain+CBC,均需
+  客户端已登录;Linux 需设置 `QODER_TOKEN`),`QODER_TOKEN` 可覆盖。API 端点
+  按登录态自动匹配(CN 版→`openapi.qoder.com.cn`,国际版→`openapi.qoder.sh`,
+  两者协议同构),`QODER_BASE_URL` 可覆盖。
 - trae 域: 桌面端 storage.json(`%APPDATA%\Trae CN\User\globalStorage`,
   `SS_AES` 信封解密,无需 DPAPI 全平台可用),`TRAE_TOKEN` 可覆盖。
 - 敏感值(令牌)在一切输出前统一替换为 `[REDACTED]`。

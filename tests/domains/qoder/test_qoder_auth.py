@@ -9,6 +9,7 @@ import pytest
 from auto_signin_kit.core.adapters.platform_info import IS_WINDOWS
 from auto_signin_kit.domains.qoder import auth
 from auto_signin_kit.domains.qoder.auth import (
+    AuthFormatError,
     NoAuthError,
     QoderAuthError,
     _parse_iso,
@@ -71,10 +72,15 @@ class TestFindAuthDirs:
         monkeypatch.setenv("QODER_AUTH_DIR", str(target))
         assert auth.find_auth_dirs() == [target]
 
+    def _force_windows(self, monkeypatch, root):
+        """把平台分支钉到 Windows 形状(本测试文件要在任何平台都可跑)。"""
+        monkeypatch.setattr(auth, "IS_MACOS", False)
+        monkeypatch.setattr(auth, "_default_roots", lambda: [root])
+
     def test_sorted_by_mtime_descending(self, monkeypatch, tmp_path):
         """多个目录按修改时间新→旧排序,客户端最近写的优先。"""
         monkeypatch.delenv("QODER_AUTH_DIR")
-        monkeypatch.setenv("APPDATA", str(tmp_path))
+        self._force_windows(monkeypatch, tmp_path)
         old = tmp_path / "com.qodercn.appA"
         new = tmp_path / "com.qodercn.appB"
         old.mkdir()
@@ -84,10 +90,80 @@ class TestFindAuthDirs:
         assert auth.find_auth_dirs() == [new, old]
 
     def test_missing_appdata_returns_empty(self, monkeypatch, tmp_path):
-        """APPDATA 指向不存在路径时空列表,不抛异常。"""
+        """根指向不存在路径时空列表,不抛异常。"""
         monkeypatch.delenv("QODER_AUTH_DIR")
-        monkeypatch.setenv("APPDATA", str(tmp_path / "nope"))
+        self._force_windows(monkeypatch, tmp_path / "nope")
         assert auth.find_auth_dirs() == []
+
+    def test_mac_scans_both_bundle_ids(self, monkeypatch, tmp_path):
+        """mac 双模式: 国际版 com.qoder.app* 与 CN 版 com.qodercn.app* 都命中。"""
+        monkeypatch.delenv("QODER_AUTH_DIR")
+        monkeypatch.setattr(auth, "IS_MACOS", True)
+        monkeypatch.setattr(auth, "_default_roots", lambda: [tmp_path])
+        intl = tmp_path / "com.qoder.app.stable"
+        cn = tmp_path / "com.qodercn.app0"
+        unrelated = tmp_path / "com.other.app"
+        for d in (intl, cn, unrelated):
+            d.mkdir()
+        os.utime(intl, (1000, 1000))
+        os.utime(cn, (2000, 2000))
+        os.utime(unrelated, (3000, 3000))
+        assert auth.find_auth_dirs() == [cn, intl]
+
+
+class TestMacDecrypt:
+    """mac 解锁链(纯 cryptography,任何平台可跑): Keychain 密码→PBKDF2→CBC。"""
+
+    def test_roundtrip_recovers_session_json(self):
+        from auto_signin_kit.core.adapters import mac_keychain
+
+        blob = mac_keychain.encrypt_chrome_mac_v10(b'{"token":"t1"}', "pw-123")
+        assert mac_keychain.decrypt_chrome_mac_v10(blob, "pw-123") == b'{"token":"t1"}'
+
+    def test_bad_prefix_and_wrong_password_raise(self):
+        from auto_signin_kit.core.adapters import mac_keychain
+        from auto_signin_kit.core.errors import AdapterError
+
+        blob = mac_keychain.encrypt_chrome_mac_v10(b'{"token":"t1"}', "right")
+        with pytest.raises(AdapterError, match="v10"):
+            mac_keychain.decrypt_chrome_mac_v10(b"v99" + blob[3:], "right")
+        with pytest.raises(AdapterError, match="填充"):
+            mac_keychain.decrypt_chrome_mac_v10(blob, "wrong")
+
+    def test_load_session_mac_full_chain(self, monkeypatch, tmp_path):
+        """mac 全链路(离线): 目录发现→读凭据→Keychain 取密码→解出 token。"""
+        from auto_signin_kit.core.adapters import mac_keychain
+
+        monkeypatch.delenv("QODER_AUTH_DIR")
+        monkeypatch.setattr(auth, "IS_MACOS", True)
+        monkeypatch.setattr(auth, "_default_roots", lambda: [tmp_path])
+        root = tmp_path / "com.qoder.app.stable"
+        root.mkdir()
+        (root / auth.AUTH_FILE).write_bytes(
+            mac_keychain.encrypt_chrome_mac_v10(
+                b'{"token":" mac-tok ","expiresAt":"2099-01-01T00:00:00Z"}', "kw"))
+        monkeypatch.setattr(mac_keychain, "read_password", lambda s, a: "kw")
+        sess = auth.load_session()
+        assert sess["token"] == " mac-tok "
+        assert sess["_auth_dir"] == str(root)
+
+    def test_load_session_mac_without_keychain_reports_format_error(
+            self, monkeypatch, tmp_path):
+        """Keychain 条目缺失要报 AuthFormatError(登录态在但读不出),不是静默。"""
+        from auto_signin_kit.core.adapters import mac_keychain
+
+        monkeypatch.delenv("QODER_AUTH_DIR")
+        monkeypatch.setattr(auth, "IS_MACOS", True)
+        monkeypatch.setattr(auth, "_default_roots", lambda: [tmp_path])
+        root = tmp_path / "com.qoder.app.stable"
+        root.mkdir()
+        (root / auth.AUTH_FILE).write_bytes(b"v10" + bytes(64))
+        monkeypatch.setattr(
+            mac_keychain, "read_password",
+            lambda s, a: (_ for _ in ()).throw(
+                mac_keychain.KeychainError("条目不存在")))
+        with pytest.raises(AuthFormatError):
+            auth.load_session()
 
 
 class TestResolveToken:
@@ -111,3 +187,37 @@ def test_auth_error_carries_looked_in_snapshot():
     source.append(Path("/b"))
     assert err.looked_in == [Path("/a")]
     assert NoAuthError("x").looked_in == []
+
+
+class TestDetectApiBase:
+    def test_intl_session_prefers_openapi_domain_in_context(self):
+        """国际版实测 context: 直取其中的 openapi.* 域。"""
+        sess = {"authenticationContext": [
+            "https://qoder.com", "https://openapi.qoder.sh",
+            "732aef47-9cf2-46a2-95fe-4cebb5d0d1fa", "prod"]}
+        assert auth.detect_api_base(sess) == "https://openapi.qoder.sh"
+
+    def test_context_stored_as_json_string_is_unpacked(self):
+        """真机会话里 context 存的是 JSON 字符串(2026-11-02 实测),先反序列化。"""
+        import json as _json
+        sess = {"authenticationContext": _json.dumps([
+            "https://qoder.com", "https://openapi.qoder.sh", "prod"])}
+        assert auth.detect_api_base(sess) == "https://openapi.qoder.sh"
+
+    def test_cn_session_maps_issuer_domain(self):
+        """CN 版 context 按主域映射到 openapi.qoder.com.cn。"""
+        sess = {"authenticationContext": [
+            "https://qoder.com.cn", "01a19c7a-337b-79f5-9b74-f014cef4ab6a", "prod"]}
+        assert auth.detect_api_base(sess) == "https://openapi.qoder.com.cn"
+
+    def test_unknown_or_malformed_context_returns_none(self):
+        """context 缺失/非列表/无 http 域时给 None,由调用方回落配置。"""
+        assert auth.detect_api_base(None) is None
+        assert auth.detect_api_base({}) is None
+        assert auth.detect_api_base({"authenticationContext": "qoder.com"}) is None
+        assert auth.detect_api_base({"authenticationContext": ["prod", "732a"]}) is None
+
+    def test_trailing_slash_stripped_and_bare_host_skipped(self):
+        """域尾斜杠被去掉;无协议头的裸域跳过,主域映射兜底生效。"""
+        sess = {"authenticationContext": ["openapi.qoder.sh", "https://qoder.com/"]}
+        assert auth.detect_api_base(sess) == "https://openapi.qoder.sh"

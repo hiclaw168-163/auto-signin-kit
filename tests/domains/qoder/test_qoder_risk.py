@@ -17,6 +17,8 @@ def _isolate(monkeypatch, tmp_path):
     monkeypatch.delenv("QODER_UMID_EXE", raising=False)
     monkeypatch.delenv("QODER_AUTH_DIR", raising=False)
     monkeypatch.setattr(risk_mod, "_cache", {"at": 0.0, "root": None, "headers": {}})
+    # machine-id 兜底扫描钉到空列表,登录后的真实数据目录不得混入测试头。
+    monkeypatch.setattr(risk_mod, "find_auth_dirs_safe", lambda: [])
     return tmp_path
 
 

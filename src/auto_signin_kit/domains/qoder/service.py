@@ -166,7 +166,9 @@ def _claim_picked(api: Api, picked: list[dict], budget: Budget, dry_run: bool) -
 def _auth_dto(code: int) -> dict:
     if code == 401:
         return {"result": "AUTH_REJECTED", "needs_attention": True, "http": code,
-                "report": "登录态被服务端拒绝（HTTP 401），请打开 Qoder CN 桌面端重新登录"}
+                "report": "登录态被服务端拒绝（HTTP 401）。常见原因：令牌已过期，"
+                          "打开 Qoder 桌面端重新登录；或端点与客户端版本不匹配"
+                          "（CN 版/国际版），可用 QODER_BASE_URL 覆盖后重试"}
     return {"result": "FORBIDDEN", "needs_attention": True, "http": code,
             "report": "被服务端拒绝（HTTP 403），请确认账号资格后重试"}
 

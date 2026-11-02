@@ -113,11 +113,18 @@ def load_session_state() -> dict:
 
 
 def build_api(config: Any) -> tuple[Api, dict | None, str | None]:
-    """组 Api: 令牌(环境变量优先) + 风控头;令牌过期返回 (api, sess, "EXPIRED")。"""
+    """组 Api: 令牌(环境变量优先) + 风控头;令牌过期返回 (api, sess, "EXPIRED")。
+
+    API 域优先级: QODER_BASE_URL > 登录态 authenticationContext 推导 >
+    配置 base_url——令牌只对签发它的端点有效,登录态推导放配置前面。
+    """
     token, sess = resolve_token()
     if isinstance(token, str):
         SENSITIVE.add(token)
-    base_url = os.environ.get("QODER_BASE_URL") or config.base_url
+    from auto_signin_kit.domains.qoder.auth import detect_api_base
+
+    base_url = (os.environ.get("QODER_BASE_URL") or detect_api_base(sess)
+                or config.base_url)
     if sess is not None and token_expired(sess):
         return Api(token, base_url), sess, "EXPIRED"
     from auto_signin_kit.domains.qoder.risk import risk_headers

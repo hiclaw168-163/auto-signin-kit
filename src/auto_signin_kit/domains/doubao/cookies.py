@@ -31,6 +31,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from auto_signin_kit.core.adapters.platform_info import IS_WINDOWS
 from auto_signin_kit.core.adapters.win_dpapi import DecryptError, decrypt_gcm, unprotect
 from auto_signin_kit.core.errors import AutoSignInKitError
 from auto_signin_kit.domains.doubao.cdp import cookies_via_cdp
@@ -60,11 +61,16 @@ def default_user_data_dir() -> Path:
 
 
 def _copy_locked_file(src: Path, dst: Path) -> None:
-    """共享读模式拷贝被独占锁打开的文件(客户端运行时 Cookies 库被锁)。
+    """拷贝可能被客户端独占锁打开的 Cookies 库(按平台分派)。
 
-    用 CreateFileW 带 FILE_SHARE_READ|WRITE|DELETE 打开;打不开(锁更严/权限
-    不足)抛 ``DoubaoCookieError``,由上层如实报告——不静默跳过。
+    Windows 用 CreateFileW 带 FILE_SHARE_READ|WRITE|DELETE 打开;打不开
+    (锁更严/权限不足)抛 ``DoubaoCookieError``,由上层如实报告——不静默跳过。
+    POSIX 没有强制文件锁,普通读即可;真机非 Windows 会在 DPAPI 解密处显式报错。
     """
+    if not IS_WINDOWS:
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_bytes(src.read_bytes())
+        return
     generic_read = 0x80000000
     share_all = 0x1 | 0x2 | 0x4
     open_existing = 3
