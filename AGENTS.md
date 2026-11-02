@@ -8,8 +8,10 @@
 
 1. **域注册用 entry_points**,在 `pyproject.toml` 的
    `[project.entry-points."auto_signin_kit.domains"]` 加一行,`cli.py` 永远不手工
-   `add_typer`。加完要 `uv sync && uv tool install --editable . --force`
+   `add_typer`。加完要 `uv sync && uv tool install --editable '.[web]' --force`
    才会生效(entry_points 写在 dist-info,改 pyproject.toml 不自动刷新)。
+   **必须带 `.[web]`**: 不带会把 fastapi/uvicorn 从 tool 环境里挤掉,
+   `ui serve` 直接起不来。
 
 2. **每个域内部固定三件套**: `schema.py`(域配置,继承
    `core.config.schema.DomainConfig`)+ `service.py`(纯业务逻辑,**禁止
@@ -54,7 +56,7 @@ uv run ruff check && uv run lint-imports && uv run pytest -q
 2. `pyproject.toml` 的 entry-points 加一行
 3. `config/domains/<域名>.yaml` + `config/examples/<域名>.yaml.example`
 4. `tests/domains/<域名>/` 补测试
-5. `uv sync && uv tool install --editable . --force`
+5. `uv sync && uv tool install --editable '.[web]' --force`
 6. 跑一遍门禁 + 手动执行一次命令,不要只看测试绿——涉及渲染/视觉输出的功能,
    测试绿不代表"看起来是对的",这个坑真实存在。
 7. 引入了新的配置/文档形态时,同步 `docs/standards/README.md` 索引
