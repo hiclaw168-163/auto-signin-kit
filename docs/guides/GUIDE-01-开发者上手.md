@@ -77,16 +77,22 @@ auto-signin-kit --help
 
 ### Web 管理台(可选,见 SPEC-09)
 
-不想碰命令行的话,可以装上可选的 web 依赖、构建前端,然后用浏览器管理:
+不想碰命令行的话,可以装上可选的 web 依赖,然后用浏览器管理。
+
+**一键启动**(推荐): 装好 web 依赖后,双击 `scripts/启动管理台.bat`(Windows)或
+运行 `scripts/start-ui.sh`(macOS/Linux)——前端没构建会先自动构建(需要
+Node.js 18+),然后起服务并自动打开浏览器。
+
+手动方式:
 
 ```bash
 # ① web 依赖(uv 版本较老不支持 --extra 时,用 --with fastapi --with uvicorn 等效)
 uv tool install --editable . --force --extra web
 
-# ② 构建前端(需要 Node.js 18+;产物在 frontend/dist,由 ③ 自动托管)
-cd frontend && npm install && npm run build && cd ..
+# ② 构建前端(或交给一键启动自动补建;产物在 frontend/dist)
+auto-signin-kit ui build
 
-# ③ 启动(默认 http://127.0.0.1:8688,只绑本机)
+# ③ 启动(默认 http://127.0.0.1:8688,只绑本机;--no-open 不弹浏览器)
 auto-signin-kit ui serve
 ```
 

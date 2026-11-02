@@ -33,12 +33,14 @@ def _run(fn, *args, **kwargs):
 def serve(
     host: str = typer.Option("127.0.0.1", help="监听地址;默认只绑本机,不对外"),
     port: int = typer.Option(8688, help="监听端口"),
+    open_browser: bool = typer.Option(True, "--open/--no-open",
+                                      help="服务就绪后自动打开浏览器"),
 ) -> None:
     """启动本地 Web 管理台(需要 [web] extra: uv tool install 'auto-signin-kit[web]')。"""
-    _run(_serve, host, port)
+    _run(_serve, host, port, open_browser)
 
 
-def _serve(host: str, port: int) -> None:
+def _serve(host: str, port: int, open_browser: bool) -> None:
     try:
         import uvicorn
     except ImportError as exc:
@@ -48,4 +50,30 @@ def _serve(host: str, port: int) -> None:
         ) from exc
     from auto_signin_kit.ui.app import create_app
 
+    if open_browser:
+        import threading
+        import webbrowser
+
+        url = "http://%s:%d" % (host, port)
+        # 延迟打开: 等 uvicorn 进入事件循环,否则浏览器抢跑拿到连接拒绝。
+        threading.Timer(1.5, webbrowser.open, args=(url,)).start()
     uvicorn.run(create_app(), host=host, port=port, log_level="info")
+
+
+@app.command()
+def build(
+    if_missing: bool = typer.Option(
+        False, "--if-missing",
+        help="已构建则跳过(一键启动脚本用;不带它则已构建也重建)"),
+) -> None:
+    """构建前端产物(npm install + build;需要 Node.js 18+)。"""
+    _run(_build, if_missing)
+
+
+def _build(if_missing: bool) -> None:
+    from auto_signin_kit.ui import build as build_mod
+
+    if build_mod.ensure_built(if_missing):
+        typer.echo("已构建 frontend/dist")
+    else:
+        typer.echo("frontend/dist 已存在,跳过(要强制重建先删掉 dist 目录)")

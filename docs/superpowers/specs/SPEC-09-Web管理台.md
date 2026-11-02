@@ -13,6 +13,12 @@
 - 前端 naive-ui 全量引入(bundle ~1.4MB,gzip ~410KB)——本机 localhost
   工具,不为此上按需引入/分包,复杂度不值。
 
+变更记录:
+
+- 2026-11-02: 一键启动——`ui build --if-missing` / `serve --open` 收进 CLI
+  (构建判断逻辑必须进门禁,STD-06 红线),`scripts/` 只放无分支的纯入口
+  (bat + sh);白屏修复: `useMessage` 必须有 `n-message-provider` 祖先。
+
 ## 1. 定位与边界
 
 本地 Web 管理台,给"配置一次后不想碰命令行"的场景一个可视化入口:
