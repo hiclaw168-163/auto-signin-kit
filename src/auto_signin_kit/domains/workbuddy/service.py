@@ -8,10 +8,10 @@ from pathlib import Path
 from typing import Any
 
 from auto_signin_kit.core.httpclient import Budget
+from auto_signin_kit.core.kit.actions import skip_done_today, unknown_action_report
 from auto_signin_kit.core.kit.budget import parse_budget as core_parse_budget
-from auto_signin_kit.core.logging import log_debug, result_log_path
+from auto_signin_kit.core.logging import result_log_path
 from auto_signin_kit.core.report import emit_result, make_result
-from auto_signin_kit.core.store import done_today
 from auto_signin_kit.domains.workbuddy import checkin, daily, rewards
 from auto_signin_kit.domains.workbuddy.credentials import find_auth_file, load_session_retry
 from auto_signin_kit.domains.workbuddy.extras import run_growth
@@ -120,14 +120,13 @@ def run_action(action: str, config: WorkbuddyDomainConfig, *, silent: bool = Fal
     """命令分发;结果一律按一行 JSON 契约输出,本函数保证不抛业务异常。"""
     if action not in KNOWN_ACTIONS:
         emit_result(
-            make_result("ERROR", "未知命令：%s（可用：%s）" % (action, " / ".join(KNOWN_ACTIONS)),
+            make_result("ERROR", unknown_action_report(action, KNOWN_ACTIONS),
                         domain="workbuddy"),
             action=action, silent=silent, log_path=log_path(),
         )
         return 2
     # 调度兜底触发(高密度时间点): 当天已成功签到就不再执行,也不重复落库
-    if silent and action in SKIP_WHEN_DONE and done_today("workbuddy"):
-        log_debug("workbuddy: 今日已成功签到,调度触发跳过(不执行、不落库)")
+    if skip_done_today("workbuddy", action, silent=silent, skip_when_done=SKIP_WHEN_DONE):
         return 0
     poll = action in POLL_ACTIONS
     budget_value, warning = parse_budget(config, poll=poll)

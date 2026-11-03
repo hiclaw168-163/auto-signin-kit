@@ -375,7 +375,7 @@ class TestScheduleSkip:
     """静默调度时当天已成功签到 → 不执行、不 emit、不落库。"""
 
     def test_silent_claim_skips_when_done_today(self, monkeypatch, tmp_path):
-        monkeypatch.setattr("auto_signin_kit.core.store.done_today", lambda domain: True)
+        monkeypatch.setattr("auto_signin_kit.core.kit.actions.done_today", lambda domain: True)
         emitted: list = []
         monkeypatch.setattr("auto_signin_kit.core.report.emit_result",
                             lambda out, **kw: emitted.append(out))

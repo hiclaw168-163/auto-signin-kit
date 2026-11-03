@@ -18,6 +18,7 @@ from typing import Any
 
 from auto_signin_kit.core.adapters.scheduler import get_scheduler
 from auto_signin_kit.core.errors import AdapterError
+from auto_signin_kit.core.kit.actions import unknown_action_report
 from auto_signin_kit.core.ports.scheduler import Scheduler, ScheduleSpec
 from auto_signin_kit.core.report import emit_result
 from auto_signin_kit.domains.schedule.data import (
@@ -205,7 +206,7 @@ def run_action(
         emit_result({"domain": "schedule",
             "result": "ERROR",
             "needs_attention": True,
-            "report": "未知命令：%s（可用：%s）" % (action, " / ".join(ACTIONS)),
+            "report": unknown_action_report(action, ACTIONS),
         })
         return 2
     tasks = select_tasks(config, domain)

@@ -15,6 +15,7 @@ import time
 from typing import Any
 
 from auto_signin_kit.core.httpclient import Budget
+from auto_signin_kit.core.kit.actions import skip_done_today, unknown_action_report
 from auto_signin_kit.core.kit.transport import transport_error_dto
 from auto_signin_kit.domains.trae.api import (
     SENSITIVE,
@@ -182,7 +183,7 @@ def run_action(
     del once  # 查询+领取共两次请求,预算内完成;once 保留参数位与 qoder 对齐
     if action not in ("claim", "status", "doctor"):
         emit_result({"domain": "trae", "result": "ERROR", "needs_attention": True,
-                     "report": "未知命令：%s（可用：claim / status / doctor）" % action},
+                     "report": unknown_action_report(action, ("claim", "status", "doctor"))},
                     action=label, log_path=log_path(), log_errors_without_silent=False)
         return 2
     if action == "doctor":
@@ -192,11 +193,7 @@ def run_action(
         return code
 
     # 调度兜底触发(高密度时间点): 当天已成功签到就不再执行,也不重复落库
-    from auto_signin_kit.core.logging import log_debug
-    from auto_signin_kit.core.store import done_today
-
-    if silent and action == "claim" and done_today("trae"):
-        log_debug("trae: 今日已成功签到,调度触发跳过(不执行、不落库)")
+    if skip_done_today("trae", action, silent=silent):
         return 0
 
     budget_value, warning = parse_budget(config)

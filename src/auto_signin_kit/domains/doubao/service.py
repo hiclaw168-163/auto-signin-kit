@@ -11,9 +11,9 @@ from typing import Any
 
 from auto_signin_kit.core.errors import AutoSignInKitError
 from auto_signin_kit.core.httpclient import NO_NETWORK, Budget
-from auto_signin_kit.core.logging import log_debug, result_log_path
+from auto_signin_kit.core.kit.actions import skip_done_today, unknown_action_report
+from auto_signin_kit.core.logging import result_log_path
 from auto_signin_kit.core.report import emit_result, make_result
-from auto_signin_kit.core.store import done_today
 from auto_signin_kit.domains.doubao import cookies
 from auto_signin_kit.domains.doubao.api import DoubaoApi
 from auto_signin_kit.domains.doubao.schema import DoubaoDomainConfig
@@ -193,7 +193,7 @@ def run_action(
     label = command or action
     if action not in KNOWN_ACTIONS:
         emit_result(
-            make_result("ERROR", "未知命令：%s（可用：%s）" % (action, " / ".join(KNOWN_ACTIONS)),
+            make_result("ERROR", unknown_action_report(action, KNOWN_ACTIONS),
                         domain="doubao"),
             action=label, silent=silent, log_path=_log_path(),
             log_errors_without_silent=False)
@@ -201,8 +201,7 @@ def run_action(
     if action == "doctor":
         return _doctor(config, action=label, silent=silent)
     # 调度兜底触发(高密度时间点): 当天已成功签到就不再执行,也不重复落库
-    if silent and action == "claim" and done_today("doubao"):
-        log_debug("doubao: 今日已成功签到,调度触发跳过(不执行、不落库)")
+    if skip_done_today("doubao", action, silent=silent):
         return 0
     try:
         api = _build_api(config, once=once)
