@@ -24,7 +24,8 @@ CREATE TABLE IF NOT EXISTS ask_signin_runs (
     report          TEXT,              -- 一句人话摘要
     request         TEXT,              -- 请求参数 JSON(动作入参;与 response 一一对应)
     response        TEXT,              -- 响应结果 JSON(http 码/body/积分等业务返回)
-    detail          TEXT    NOT NULL   -- 完整事件 JSON(兼容保留,新读方用 request/response)
+    detail          TEXT    NOT NULL,  -- 完整事件 JSON(兼容保留,新读方用 request/response)
+    account         TEXT    DEFAULT 'default'  -- 本次运行用的账户(积分业务主体维度)
 );
 
 CREATE TABLE IF NOT EXISTS ask_schedule_changes (
@@ -34,6 +35,17 @@ CREATE TABLE IF NOT EXISTS ask_schedule_changes (
     platform TEXT,
     tasks    TEXT,           -- 本次变更涉及的任务与时间(JSON 数组)
     report   TEXT
+);
+
+-- 账户维表(积分业务的主体维度): 哪个域的哪个账户、每日可获取上限。
+-- 当前每域一户(名 default,ingest 首次落库自动建档);结构上支持一域多户。
+CREATE TABLE IF NOT EXISTS ask_accounts (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    domain          TEXT    NOT NULL,  -- 所属域(workbuddy/qoder/trae/doubao)
+    name            TEXT    NOT NULL,  -- 账户标识(脱敏后入库;用户名/邮箱/尾号)
+    daily_potential INTEGER,           -- 每日可获取积分上限(NULL = 未设定)
+    enabled         INTEGER NOT NULL DEFAULT 1,
+    UNIQUE(domain, name)
 );
 """
 
@@ -71,6 +83,21 @@ WHERE r.id = (
     ORDER BY r2.executed_at DESC, r2.id DESC
     LIMIT 1
 );
+
+-- 每日积分(纯派生视图,不落库——派生数据落库会引入两份真相):
+-- 一行 = (日期, 域, 账户) 当天积分所得合计,从成功行 response JSON 提取。
+-- 结果词集合须与 core.report.RESULT_OK 同步(4 词,改动时两边一起改)。
+DROP VIEW IF EXISTS ask_daily_credits;
+CREATE VIEW ask_daily_credits AS
+SELECT date(executed_at) AS day,
+       domain            AS domain,
+       account           AS account,
+       SUM(CAST(json_extract(response, '$.credits') AS INTEGER)) AS credits
+FROM ask_signin_runs
+WHERE source = 'run'
+  AND result IN ('CLAIMED', 'ALREADY', 'ACTIVE', 'OK')
+  AND json_extract(response, '$.credits') IS NOT NULL
+GROUP BY day, domain, account;
 """
 
 #: 老库迁移: ALTER 加列后,把历史上靠 action 标记的回填行规整到 source 列;
@@ -82,6 +109,10 @@ _MIGRATIONS = (
      None),
     ("response", "ALTER TABLE ask_signin_runs ADD COLUMN response TEXT",
      None),
+    # account: 本次运行用的账户(当前每域一户 'default',一域多户时由域回传);
+    # 存量行统一回填 default(视图按 account 分组,不能留 NULL)
+    ("account", "ALTER TABLE ask_signin_runs ADD COLUMN account TEXT",
+     "UPDATE ask_signin_runs SET account = 'default' WHERE account IS NULL"),
 )
 
 #: 存量行规整(幂等,每次 connect 跑): 旧版 executed_at 带 +08:00 时区后缀,
@@ -108,7 +139,7 @@ _ROW_NORMALIZE_SQL = (
 #: 事件信封字段——进独立列或表结构语义,不进 request/response。
 ENVELOPE_FIELDS = frozenset({
     "ts", "level", "domain", "action", "source", "result",
-    "needs_attention", "report", "request", "detail",
+    "needs_attention", "report", "request", "detail", "account",
 })
 
 

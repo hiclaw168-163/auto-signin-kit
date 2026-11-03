@@ -195,3 +195,143 @@ class TestDoneTodayAndCompact:
             ts="2026-01-01T10:05:03+08:00"), ensure_ascii=False))
         assert store.compact_history()["deleted"] == 0
         assert len(store.events(limit=10)) == 2
+
+
+class TestResequenceIds:
+    """清理删行造成 id 空洞后,自增 id 从 1 连续重排;后续插入接着 max+1。"""
+
+    def _ids(self) -> list[int]:
+        conn = store.connect()
+        try:
+            return [r["id"] for r in conn.execute(
+                "SELECT id FROM ask_signin_runs ORDER BY id")]
+        finally:
+            conn.close()
+
+    def _sequence(self) -> int | None:
+        conn = store.connect()
+        try:
+            row = conn.execute(
+                "SELECT seq FROM sqlite_sequence WHERE name = 'ask_signin_runs'"
+            ).fetchone()
+            return row["seq"] if row else None
+        finally:
+            conn.close()
+
+    def test_resequence_removes_gaps_and_keeps_content(self):
+        for hour in ("08:00", "09:00", "10:00"):
+            store.record_payload(json.dumps(_record(ts=_today_ts(hour)),
+                                            ensure_ascii=False))
+        conn = store.connect()
+        try:
+            with conn:
+                conn.execute("DELETE FROM ask_signin_runs WHERE id = 2")  # 造空洞
+        finally:
+            conn.close()
+        assert self._ids() == [1, 3]  # 梳理前有洞
+        result = store.resequence_ids()
+        assert result["ask_signin_runs"] == 2
+        assert self._ids() == [1, 2]  # 从 1 连续
+        assert self._sequence() == 2  # sequence 指向重排后的最大 id
+        rows = store.events(limit=10)
+        assert [r["executed_at"][-8:] for r in rows] == ["10:00:00", "08:00:00"]
+
+    def test_sequence_pointer_follows_max_id(self):
+        store.record_payload(json.dumps(_record(ts=_today_ts("08:00")),
+                                        ensure_ascii=False))
+        conn = store.connect()
+        try:
+            with conn:
+                conn.execute("DELETE FROM ask_signin_runs")  # 全删,sequence 停在旧值
+        finally:
+            conn.close()
+        store.resequence_ids()
+        assert self._sequence() is None  # 空表: sequence 计数一并清掉
+        # 梳理后再插入: 从 1 开始
+        store.record_payload(json.dumps(_record(ts=_today_ts("09:00")),
+                                        ensure_ascii=False))
+        assert self._ids() == [1]
+
+    def test_empty_tables_report_zero(self):
+        assert store.resequence_ids() == {"ask_signin_runs": 0,
+                                          "ask_schedule_changes": 0,
+                                          "ask_accounts": 0}
+
+
+class TestCreditsAndAccounts:
+    """积分三问: 每应用每日所得 / 账户活跃 / 可获取 vs 实际(asks credits.py)。"""
+
+    def _rows(self, sql: str) -> list:
+        conn = store.connect()
+        try:
+            return conn.execute(sql).fetchall()
+        finally:
+            conn.close()
+
+    def test_run_auto_registers_default_account(self):
+        store.record_payload(json.dumps(_record(
+            ts=_today_ts("09:00"), credits=100), ensure_ascii=False))
+        rows = self._rows("SELECT domain, name, daily_potential FROM ask_accounts")
+        assert len(rows) == 1
+        assert rows[0]["domain"] == "trae" and rows[0]["name"] == "default"
+        assert rows[0]["daily_potential"] is None  # 上限是登记项,不猜
+        # 重复落库不重复建档
+        store.record_payload(json.dumps(_record(
+            ts=_today_ts("10:00"), credits=50), ensure_ascii=False))
+        assert len(self._rows("SELECT * FROM ask_accounts")) == 1
+
+    def test_account_field_lands_in_column_and_registry(self):
+        store.record_payload(json.dumps(_record(
+            ts=_today_ts("09:00"), account="alice@x.com"), ensure_ascii=False))
+        row = self._rows("SELECT account FROM ask_signin_runs")[0]
+        assert row["account"] == "alice@x.com"
+        assert len(self._rows(
+            "SELECT * FROM ask_accounts WHERE name='alice@x.com'")) == 1
+        # account 是信封字段,不重复进 response(该行除信封外无业务字段 → response 为空)
+        resp = store.events(limit=1)[0]["response"]
+        assert resp is None or "account" not in json.loads(resp)
+
+    def test_backfill_rows_get_default_account(self):
+        _insert_backfill("2026-01-01T09:05:03+08:00")
+        row = self._rows("SELECT account FROM ask_signin_runs")[0]
+        assert row["account"] == "default"  # 老行回填,视图分组不留 NULL
+
+    def test_credits_daily_aggregates_per_domain_day(self):
+        store.record_payload(json.dumps(_record(
+            ts=_today_ts("09:00"), credits=100), ensure_ascii=False))
+        store.record_payload(json.dumps(_record(
+            domain="qoder", ts=_today_ts("09:10"), credits=80),
+            ensure_ascii=False))
+        store.record_payload(json.dumps(_record(  # 同域同日第二行 → 累加
+            ts=_today_ts("12:00"), credits=30), ensure_ascii=False))
+        store.record_payload(json.dumps(_record(  # 失败行不计积分
+            domain="qoder", result="NO_AUTH", ts=_today_ts("13:00")),
+            ensure_ascii=False))
+        daily = {r["domain"]: r["credits"] for r in store.credits_daily(14)}
+        assert daily == {"trae": 130, "qoder": 80}
+
+    def test_accounts_summary_counts_active(self):
+        store.record_payload(json.dumps(_record(
+            ts=_today_ts("09:00"), credits=100), ensure_ascii=False))  # trae 活跃
+        out = store.accounts_summary(7)
+        assert out["total"] == 1 and out["active"] == 1
+        assert out["accounts"][0]["last_earned_day"] is not None
+
+    def test_capacity_earned_vs_potential(self):
+        store.ensure_account("trae", "default", daily_potential=200)
+        store.ensure_account("qoder", "default", daily_potential=150)
+        store.set_account_potential("trae", "default", 200)  # 幂等改值
+        store.record_payload(json.dumps(_record(
+            ts=_today_ts("09:00"), credits=130), ensure_ascii=False))
+        cap = store.capacity_summary(7)
+        assert len(cap) == 1
+        assert cap[0]["earned"] == 130 and cap[0]["potential"] == 350
+        assert cap[0]["rate"] == round(130 / 350, 4)
+
+    def test_set_potential_unknown_account_raises(self):
+        import pytest
+
+        from auto_signin_kit.core.errors import AutoSignInKitError
+
+        with pytest.raises(AutoSignInKitError):
+            store.set_account_potential("nope", "default", 100)
