@@ -23,7 +23,7 @@ class _Ok(_Capture):
     def build(self, config, *, once=False, dry_run=False):
         return "api"
 
-    def claim(self, api, config, *, dry_run=False):
+    def claim(self, api, config, *, dry_run=False, once=False):
         return {"result": "CLAIMED", "report": "ok"}, 0
 
     def status(self, api, config):

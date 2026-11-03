@@ -329,7 +329,8 @@ CLAIM_OK = ("/reward/claim", (200, {"code": 0, "data": {}}, None))
 def emitted(monkeypatch):
     """捕获 emit_result 记录,供断言 result/字段。"""
     records = []
-    monkeypatch.setattr("auto_signin_kit.domains.doubao.service.emit_result",
+    # emit 收口在基类(K8): patch 基类模块符号,所有域实例生效
+    monkeypatch.setattr("auto_signin_kit.core.kit.domain.emit_result",
                         lambda out, **kw: records.append(out))
     return records
 
