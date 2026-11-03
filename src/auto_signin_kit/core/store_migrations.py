@@ -10,6 +10,30 @@ import json
 import sqlite3
 from datetime import datetime
 
+#: ask_accounts 建表 DDL 单独成常量: 建表(_SCHEMA)与列序重建(_migrate)共用,
+#: 避免 DDL 双份漂移。
+_ASK_ACCOUNTS_DDL = """
+CREATE TABLE IF NOT EXISTS ask_accounts (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    domain          TEXT    NOT NULL,  -- 所属域(workbuddy/qoder/trae/doubao)
+    name            TEXT    NOT NULL,  -- 账户标识(脱敏后入库;用户名/邮箱/尾号)
+    device_id       TEXT,              -- 设备标识(多账户轮询的关键维度)
+    client_version  TEXT,              -- 客户端版本(注册表/客户端数据文件)
+    uid             TEXT,              -- 账户侧唯一标识(如 workbuddy uid)
+    daily_potential INTEGER,           -- 每日可获取积分上限(NULL = 未设定)
+    enabled         INTEGER NOT NULL DEFAULT 1,
+    install_path    TEXT,              -- 安装路径/数据目录(两种域方言统一)
+    client_info     TEXT,              -- 档案溢出 JSON(机器信息/域特有字段)
+    info_synced_at  TEXT,              -- 档案同步时间(本地无时区)
+    UNIQUE(domain, name)
+);
+"""
+
+#: ask_accounts 的目标列序(重要字段在前,打开表先见重点)。
+_ACCOUNT_COLUMN_ORDER = ("id", "domain", "name", "device_id", "client_version",
+                         "uid", "daily_potential", "enabled", "install_path",
+                         "client_info", "info_synced_at")
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS ask_signin_runs (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -36,26 +60,7 @@ CREATE TABLE IF NOT EXISTS ask_schedule_changes (
     tasks    TEXT,           -- 本次变更涉及的任务与时间(JSON 数组)
     report   TEXT
 );
-
--- 账户维表(积分业务的主体维度): 哪个域的哪个账户、每日可获取上限。
--- 当前每域一户(名 default,ingest 首次落库自动建档);结构上支持一域多户。
--- 高频查询/业务关键列(client_version/device_id/install_path/uid)提为独立列,
--- 其余档案(机器级信息/域特有字段)才压缩进 client_info JSON。
-CREATE TABLE IF NOT EXISTS ask_accounts (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    domain          TEXT    NOT NULL,  -- 所属域(workbuddy/qoder/trae/doubao)
-    name            TEXT    NOT NULL,  -- 账户标识(脱敏后入库;用户名/邮箱/尾号)
-    daily_potential INTEGER,           -- 每日可获取积分上限(NULL = 未设定)
-    enabled         INTEGER NOT NULL DEFAULT 1,
-    client_version  TEXT,              -- 客户端版本(注册表/客户端数据文件)
-    device_id       TEXT,              -- 设备标识(多账户轮询的关键维度)
-    install_path    TEXT,              -- 安装路径/数据目录(两种域方言统一)
-    uid             TEXT,              -- 账户侧唯一标识(如 workbuddy uid)
-    client_info     TEXT,              -- 档案溢出 JSON(机器信息/域特有字段)
-    info_synced_at  TEXT,              -- 档案同步时间(本地无时区)
-    UNIQUE(domain, name)
-);
-"""
+""" + _ASK_ACCOUNTS_DDL
 
 #: 依赖新列/新列名的索引与视图,必须在 _migrate 补列改名**之后**执行,
 #: 不能进上面的建表脚本。历史沿革产生的三种旧索引名都在这里清掉
@@ -187,6 +192,29 @@ def _split_record(record: dict) -> tuple[str | None, str | None]:
     )
 
 
+def _reorder_ask_accounts(conn: sqlite3.Connection) -> None:
+    """ask_accounts 实际列序与目标不一致(历史 ALTER 追加导致重点列靠后)
+    时整表重建搬数据;一致则跳过(幂等)。
+
+    SQLite 不支持调整列序,只能改名→按目标 DDL 重建→按名列拷贝→删旧。
+    AUTOINCREMENT 的 sqlite_sequence 随显式 id 插入与 RENAME 自动跟随,
+    重建不丢自增计数;UNIQUE(domain,name) 由目标 DDL 原样带上。
+    """
+    actual = tuple(
+        row["name"] for row in conn.execute("PRAGMA table_info(ask_accounts)"))
+    if actual == _ACCOUNT_COLUMN_ORDER:
+        return
+    column_list = ", ".join(_ACCOUNT_COLUMN_ORDER)
+    with conn:  # 整表重建单事务: 中断则旧表还在,下次连接重来
+        conn.execute("ALTER TABLE ask_accounts RENAME TO ask_accounts_old")
+        conn.execute(_ASK_ACCOUNTS_DDL)  # 旧表已改名,IF NOT EXISTS 直接建新
+        # S608 豁免: 列名来自模块级目标序常量,无外部输入(列清单不可参数化)
+        conn.execute(
+            "INSERT INTO ask_accounts (%s) SELECT %s FROM ask_accounts_old"  # noqa: S608
+            % (column_list, column_list))
+        conn.execute("DROP TABLE ask_accounts_old")
+
+
 def _migrate(conn: sqlite3.Connection) -> None:
     """老库补列/改名 + 存量行规整(全部幂等): CREATE TABLE IF NOT EXISTS 不会动已有表。"""
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(ask_signin_runs)")}
@@ -209,6 +237,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
         if col not in acct_columns:
             with conn:
                 conn.execute("ALTER TABLE ask_accounts ADD COLUMN %s TEXT" % col)
+    _reorder_ask_accounts(conn)
     for name, add_sql, backfill_sql in _MIGRATIONS:
         if name not in columns:
             with conn:

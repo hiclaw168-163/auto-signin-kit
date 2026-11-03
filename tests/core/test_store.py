@@ -383,3 +383,34 @@ class TestCreditsAndAccounts:
 
         with pytest.raises(AutoSignInKitError):
             store.set_account_client_info("nope", "default", {"version": "1"})
+
+    def test_accounts_column_order_rebuild_preserves_data(self):
+        """老库(历史 ALTER 追加的旧列序)连接后整表重建: 列序修正、
+        数据/自增计数原样保留。"""
+        conn = store.connect()
+        try:
+            with conn:  # 模拟旧序表: 建成目标序以外的形态并插一行
+                conn.execute("DROP TABLE ask_accounts")
+                conn.execute(
+                    "CREATE TABLE ask_accounts (id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                    " domain TEXT NOT NULL, name TEXT NOT NULL, daily_potential INTEGER,"
+                    " enabled INTEGER NOT NULL DEFAULT 1, device_id TEXT,"
+                    " client_version TEXT, install_path TEXT, uid TEXT,"
+                    " client_info TEXT, info_synced_at TEXT, UNIQUE(domain, name))")
+                conn.execute(
+                    "INSERT INTO ask_accounts (domain, name, device_id,"
+                    " client_version, daily_potential)"
+                    " VALUES ('trae', 'default', 'dev-9', '2.3.9', 200)")
+        finally:
+            conn.close()
+        conn = store.connect()  # 触发列序重建迁移
+        try:
+            order = [r["name"] for r in conn.execute("PRAGMA table_info(ask_accounts)")]
+            assert order[0:4] == ["id", "domain", "name", "device_id"]  # 重点在前
+            row = conn.execute("SELECT * FROM ask_accounts").fetchone()
+            assert row["device_id"] == "dev-9" and row["daily_potential"] == 200
+            seq = conn.execute(
+                "SELECT seq FROM sqlite_sequence WHERE name='ask_accounts'").fetchone()
+            assert seq["seq"] == 1  # 自增计数没丢
+        finally:
+            conn.close()
