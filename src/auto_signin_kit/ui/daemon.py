@@ -21,6 +21,7 @@ import sys
 import tempfile
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -31,6 +32,9 @@ from auto_signin_kit.core.errors import ConfigError
 
 PID_FILE_NAME = "ui-serve.pid"
 LOG_FILE_NAME = "ui-serve.log"
+
+#: 运行中的 serve 实例注册的优雅关停钩子(应用重建时由 API 层触发)。
+_shutdown_hook: Callable[[], None] | None = None
 
 #: ``--daemon`` 拉起后等服务就绪的超时秒数(就绪判定 = 子进程写出 PID 文件)。
 #: Windows 冷启动(python 解释器 + fastapi/pydantic 全量 import)实测可超 5s,
@@ -226,6 +230,19 @@ def stop_service() -> str:
     return "已停止(记录 pid=%d 已被其他进程占用,已清理)" % info.pid
 
 
+def request_shutdown() -> bool:
+    """请求运行中的 serve 优雅退出(uvicorn 跑完当前请求再停)。
+
+    供应用重建流程调用(SPEC-11): 新域生效需要重装 tool,serve 必须
+    先让位。无运行实例(如非 daemon 模式)返回 False。
+    """
+    hook = _shutdown_hook
+    if hook is None:
+        return False
+    hook()
+    return True
+
+
 def run_child(host: str, port: int, open_browser: bool) -> None:
     """``--daemon-child`` 的主体: 起服务 → **就绪后**写 PID → 开浏览器 → 阻塞。
 
@@ -256,6 +273,13 @@ def run_child(host: str, port: int, open_browser: bool) -> None:
     if not server.started:
         raise ConfigError("服务 %ds 内未就绪,日志: %s"
                           % (int(SPAWN_READY_SECONDS), log_file()))
+
+    global _shutdown_hook
+
+    def _hook() -> None:
+        server.should_exit = True
+
+    _shutdown_hook = _hook
     write_pid(PidInfo(pid=os.getpid(), host=host, port=port, started_at=_now()))
     try:
         if open_browser:
@@ -264,6 +288,7 @@ def run_child(host: str, port: int, open_browser: bool) -> None:
             webbrowser.open("http://%s:%d" % (host, port))
         thread.join()  # 服务线程退出(含 SIGTERM 触发的优雅关闭)即结束
     finally:
+        _shutdown_hook = None
         current = read_pid()
         if current is not None and current.pid == os.getpid():
             clear_pid()

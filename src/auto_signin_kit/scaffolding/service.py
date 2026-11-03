@@ -161,3 +161,39 @@ def _manifest_path() -> Path:
     from auto_signin_kit.core.adapters.log_dir import default_data_dir
 
     return default_data_dir() / MANIFEST_NAME
+
+
+def remove_domain(name: str) -> list[str]:
+    """物理删除一个已注册域: 目录 + 配置 + 测试 + entry-points 注册行。
+
+    只做文件层的删除与注册摘除,环境重装与定时任务注销由调用方编排
+    (重建进程 / schedule 域)。返回被删除的路径(相对项目根,供 UI 展示)。
+    """
+    import shutil
+
+    root = project_root()
+    if root is None:
+        raise ConfigError("需要 editable 安装才能删除域")
+    if name not in _known_domains():
+        raise ConfigError("未知域: %s" % name)
+    removed: list[str] = []
+    targets = (
+        root / "src/auto_signin_kit/domains" / name,
+        root / "tests/domains" / name,
+        root / "config/domains" / ("%s.yaml" % name),
+        root / "config/domains" / ("%s.local.yaml" % name),
+        root / "config/examples" / ("%s.yaml.example" % name),
+    )
+    for target in targets:
+        if target.is_dir():
+            shutil.rmtree(target)
+            removed.append(str(target.relative_to(root)))
+        elif target.is_file():
+            target.unlink()
+            removed.append(str(target.relative_to(root)))
+    pyproject = root / "pyproject.toml"
+    lines = pyproject.read_text(encoding="utf-8").splitlines(keepends=True)
+    kept = [ln for ln in lines
+            if not ln.startswith('%s = "auto_signin_kit.domains.%s' % (name, name))]
+    pyproject.write_text("".join(kept), encoding="utf-8")
+    return removed

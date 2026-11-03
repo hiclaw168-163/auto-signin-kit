@@ -69,3 +69,9 @@ export async function put<T>(url: string, body: unknown): Promise<T> {
   if (!res.ok) throw await parseError(res)
   return res.json() as Promise<T>
 }
+
+export async function del<T>(url: string): Promise<T> {
+  const res = await fetch(url, { method: 'DELETE' })
+  if (!res.ok) throw await parseError(res)
+  return res.json() as Promise<T>
+}

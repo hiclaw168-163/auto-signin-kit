@@ -3,6 +3,7 @@ import { computed, h, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NIcon, type MenuOption } from 'naive-ui'
 import {
+  AppsOutline,
   CalendarClearOutline,
   MedkitOutline,
   SettingsOutline,
@@ -21,6 +22,7 @@ function icon(render: () => typeof NIcon) {
 
 const menus: MenuOption[] = [
   { label: '签到总览', key: 'dashboard', icon: icon(() => h(StatsChartOutline)) },
+  { label: '应用管理', key: 'apps', icon: icon(() => h(AppsOutline)) },
   { label: '签到台账', key: 'history', icon: icon(() => h(TimeOutline)) },
   { label: '定时任务', key: 'schedule', icon: icon(() => h(CalendarClearOutline)) },
   { label: '域配置', key: 'config', icon: icon(() => h(SettingsOutline)) },

@@ -1,4 +1,7 @@
 import type {
+  AppCreateResult,
+  AppInfo,
+  AppsInfo,
   ConfigItem,
   DailyRow,
   EventRow,
@@ -33,6 +36,15 @@ export const jobApi = {
       `/api/run/${encodeURIComponent(domain)}?action=${encodeURIComponent(action)}`,
     ),
   get: (id: string) => get<{ job: JobInfo }>(`/api/jobs/${encodeURIComponent(id)}`),
+}
+
+// SPEC-11 应用管理;create/delete 会让服务短暂离线重建,调用方负责轮询恢复。
+export const appsApi = {
+  list: () => get<AppsInfo>('/api/apps'),
+  create: (body: { name: string; kind: string; display?: string; base_url: string; daily_time: string }) =>
+    post<AppCreateResult>('/api/apps', body),
+  remove: (name: string) =>
+    del<AppCreateResult>(`/api/apps/${encodeURIComponent(name)}`),
 }
 
 export const configApi = {

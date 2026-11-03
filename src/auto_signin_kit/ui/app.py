@@ -12,7 +12,7 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from auto_signin_kit.ui import api, config_api
+from auto_signin_kit.ui import api, apps_api, config_api
 
 #: editable 安装时 src/auto_signin_kit/ui/app.py 的上三级就是仓库根。
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -32,6 +32,7 @@ def create_app() -> FastAPI:
         redoc_url=None,
     )
     app.include_router(api.router, prefix="/api")
+    app.include_router(apps_api.router, prefix="/api")
     app.include_router(config_api.router, prefix="/api")
 
     @app.middleware("http")
