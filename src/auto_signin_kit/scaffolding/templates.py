@@ -79,8 +79,9 @@ from auto_signin_kit.core.httpclient import Budget
 class Api:
     """{v.display} 签到 API;端点契约与凭证获取在此填写。"""
 
-    def __init__(self, base_url: str, budget: Budget) -> None:
+    def __init__(self, base_url: str, token: str | None, budget: Budget) -> None:
         self.base_url = base_url.rstrip("/")
+        self.token = token  # client 类域通常不用 token,凭证走本地解密
         self.budget = budget
 
     def claim(self) -> tuple[int, object, str | None]:
@@ -123,10 +124,12 @@ class Api:
 
 
 def _service_py(v: Vars) -> str:
-    return f'''"""{v.name} 域业务编排。(scaffold 生成桩;签到逻辑在此填写)
+    return f'''"""{v.name} 域业务编排。(scaffold 生成桩;在四个钩子里填签到逻辑)
 
-桩行为: 所有动作输出"未实现"结论(退出码 2),CLI/UI/调度链路全部可跑;
-实现 ``run_claim``/``run_status`` 后本域即接入台账与调度。
+流程外壳(命令分发/异常映射/台账输出/退出码)由 ``SigninDomain`` 基类锁定,
+本文件只剩四个填空题: build(凭证→API) / claim(签到) / status(查询) /
+doctor(离线体检)。桩阶段全部动作输出"未实现"(退出码 2),CLI/UI/调度
+链路即可运行;填完钩子后本域即接入台账与调度。
 """
 
 from __future__ import annotations
@@ -134,72 +137,52 @@ from __future__ import annotations
 from typing import Any
 
 from auto_signin_kit.core.httpclient import Budget
-from auto_signin_kit.core.kit.actions import skip_done_today, unknown_action_report
-from auto_signin_kit.core.logging import result_log_path
-from auto_signin_kit.core.report import emit_result, make_result
+from auto_signin_kit.core.kit.domain import DomainError, SigninDomain
+from auto_signin_kit.core.report import make_result
+from auto_signin_kit.domains.{v.name}.api import Api
 from auto_signin_kit.domains.{v.name}.schema import {v.cls}DomainConfig
 
-#: 本域支持的内部动作;``auto`` 是 CLI 主入口的别名。
-KNOWN_ACTIONS = ("claim", "status", "doctor")
-
 _STUB_REPORT = (
-    "脚手架桩未实现: 编辑 domains/{v.name}/service.py 填写签到逻辑,"
-    "完成后删除 tests/domains/{v.name}/test_contract.py 的 xfail 标记"
+    "脚手架桩未实现: 编辑 domains/{v.name}/service.py 填写四个钩子,"
+    "完成后处理 tests/domains/{v.name}/test_contract.py 的 xfail 标记"
 )
 
 
-def log_path():
-    """silent 模式日志路径;{v.name.upper()}_SIGNIN_LOG 覆盖。"""
-    return result_log_path("{v.name}", env_var="{v.name.upper()}_SIGNIN_LOG")
-
-
-def run_claim(config: {v.cls}DomainConfig, budget: Budget, *,
-              dry_run: bool = False) -> tuple[dict, int]:
-    """执行一轮签到;TODO(开发者): 实现真实签到流(参考 trae/qoder 域)。"""
-    return make_result("ERROR", _STUB_REPORT, needs_attention=True,
+def _stub(result: str = "ERROR") -> tuple[dict, int]:
+    return make_result(result, _STUB_REPORT, needs_attention=True,
                        domain="{v.name}"), 2
 
 
-def run_status(config: {v.cls}DomainConfig, budget: Budget) -> tuple[dict, int]:
-    """只查签到状态,不领取;TODO(开发者): 实现真实查询。"""
-    return make_result("ERROR", _STUB_REPORT, needs_attention=True,
-                       domain="{v.name}"), 2
+class {v.cls}Domain(SigninDomain):
+    """{v.display} 签到域;四钩子之外的一切由基类保证。"""
+
+    name = "{v.name}"
+    display = "{v.display}"
+
+    def build(self, config: {v.cls}DomainConfig, *, once: bool = False,
+              dry_run: bool = False) -> Api:
+        """凭证 → API 客户端;TODO(开发者): 取凭证(配置/环境变量/客户端解密),
+        失败时 ``raise DomainError("NO_AUTH", 提示, exit_code=2)``。"""
+        return Api(config.base_url, None, Budget(config.budget_seconds or 240.0))
+
+    def claim(self, api: Api, config: {v.cls}DomainConfig, *, dry_run: bool = False,
+              once: bool = False) -> tuple[dict, int]:
+        """执行一轮签到;TODO(开发者): 调 api.claim(),按响应判定
+        CLAIMED/ALREADY/失败(参考 trae/qoder 的传输与业务码映射)。"""
+        return _stub()
+
+    def status(self, api: Api, config: {v.cls}DomainConfig) -> tuple[dict, int]:
+        """只查签到状态,不修改;TODO(开发者): 调 api.status()。"""
+        return _stub()
+
+    def doctor(self, config: {v.cls}DomainConfig) -> tuple[dict, int]:
+        """离线体检(不联网);TODO(开发者): 校验凭证可读性/有效期。"""
+        return _stub()
 
 
-def run_doctor(config: {v.cls}DomainConfig) -> tuple[dict, int]:
-    """离线体检;桩阶段报未实现。"""
-    return make_result("ERROR", _STUB_REPORT, needs_attention=True,
-                       domain="{v.name}"), 2
-
-
-def run_action(
-    action: str, config: Any, *, silent: bool = False, dry_run: bool = False,
-    once: bool = False, command: str | None = None,
-) -> int:
-    """命令分发;结果按一行 JSON 契约输出,退出码 0/1/2,本函数保证不抛业务异常。"""
-    label = command or action
-    del once  # 参数位与同构域对齐;签到流实现后按需消费
-    if action not in KNOWN_ACTIONS:
-        emit_result({{"domain": "{v.name}", "result": "ERROR", "needs_attention": True,
-                     "report": unknown_action_report(action, KNOWN_ACTIONS)}},
-                    action=label, log_path=log_path(), log_errors_without_silent=False)
-        return 2
-    if action == "doctor":
-        out, code = run_doctor(config)
-        emit_result(out, domain="{v.name}", action=label, silent=silent,
-                    log_path=log_path(), log_errors_without_silent=False)
-        return code
-    # 调度兜底触发(高密度时间点): 当天已成功签到就不再执行,也不重复落库
-    if skip_done_today("{v.name}", action, silent=silent):
-        return 0
-    budget = Budget(config.budget_seconds or 240.0)
-    if action == "status":
-        out, code = run_status(config, budget)
-    else:
-        out, code = run_claim(config, budget, dry_run=dry_run)
-    emit_result(out, domain="{v.name}", action=label, silent=silent,
-                log_path=log_path(), log_errors_without_silent=False)
-    return code
+domain = {v.cls}Domain()
+#: 模块级入口(CLI 工厂与调度引用): 即模板方法绑定。
+run_action = domain.run_action
 '''
 
 
