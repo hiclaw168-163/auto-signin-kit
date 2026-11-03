@@ -50,9 +50,10 @@ qoder = "auto_signin_kit.domains.qoder.schedule_meta"
 trae = "auto_signin_kit.domains.trae.schedule_meta"
 workbuddy = "auto_signin_kit.domains.workbuddy.schedule_meta"
 
-# Web 管理台(非业务域,独立 entry-point 组,SPEC-09);cli.py 同样只遍历挂载。
+# 扩展组(非业务域,独立 entry-point 组,SPEC-09/11);cli.py 同样只遍历挂载。
 [project.entry-points."auto_signin_kit.ui"]
 ui = "auto_signin_kit.ui.cli:app"
+scaffold = "auto_signin_kit.scaffolding.cli:app"
 
 [build-system]
 requires = ["hatchling"]
