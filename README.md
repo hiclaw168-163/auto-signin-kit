@@ -138,6 +138,18 @@ auto-signin-kit ui serve                   # Web 管理台: 总览/台账/调度
 `schedule` 域把各域的每日命令注册成**系统级定时任务**。注册完就不用再手动跑了,
 机器开着、用户登录着,到点它自己执行。
 
+### 新环境推荐: 一键初始化
+
+```bash
+auto-signin-kit init        # 环境自检 → 选域 → 客户端就绪检查 → 注册调度 → 拉起管理台
+```
+
+逐域询问是否启用(回车默认全启用;`--yes` 跳过交互),客户端未就绪的会列进
+"待办"清单并给出补救命令;可重复执行(注册幂等,已就绪步骤自动跳过)。
+`--no-ui` 跳过管理台,`-y` 全自动。
+
+### 手动注册
+
 ```bash
 auto-signin-kit schedule install              # 注册全部任务(幂等,已存在则更新)
 auto-signin-kit schedule install --domain qoder   # 只注册某一个域

@@ -27,7 +27,7 @@ def build_app() -> typer.Typer:
         )
     for ep in eps:
         root.add_typer(ep.load(), name=ep.name)
-    # 扩展组(如 Web 管理台): 不是业务域,同样零手工注册。
+    # 扩展组(Web 管理台、脚手架、init 一键初始化): 不是业务域,同样零手工注册。
     for ep in sorted(entry_points(group="auto_signin_kit.ui"), key=lambda e: e.name):
         root.add_typer(ep.load(), name=ep.name)
     return root

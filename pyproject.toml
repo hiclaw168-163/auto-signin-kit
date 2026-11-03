@@ -54,6 +54,7 @@ workbuddy = "auto_signin_kit.domains.workbuddy.schedule_meta"
 [project.entry-points."auto_signin_kit.ui"]
 ui = "auto_signin_kit.ui.cli:app"
 scaffold = "auto_signin_kit.scaffolding.cli:app"
+init = "auto_signin_kit.init:app"
 
 [build-system]
 requires = ["hatchling"]
@@ -86,6 +87,7 @@ root_package = "auto_signin_kit"
 name = "总体分层"
 type = "layers"
 layers = [
+    "auto_signin_kit.init",
     "auto_signin_kit.ui",
     "auto_signin_kit.cli",
     "auto_signin_kit.domains",
