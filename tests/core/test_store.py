@@ -363,11 +363,17 @@ class TestCreditsAndAccounts:
             store.set_account_potential("nope", "default", 100)
 
     def test_client_info_snapshot_roundtrip(self):
+        """关键维度提为独立列,JSON 只留机器级/域特有溢出字段。"""
         store.ensure_account("trae", "default")
-        store.set_account_client_info(
-            "trae", "default", {"hostname": "PC", "version": "2.3.9"})
+        store.set_account_client_info("trae", "default", {
+            "version": "2.3.9", "device_id": "dev-1",
+            "data_dir": "C:/Trae", "hostname": "PC", "os": "win"})
         row = store.accounts_summary()["accounts"][0]
-        assert row["client_info"]["version"] == "2.3.9"
+        assert row["client_version"] == "2.3.9"  # version 方言 → 独立列
+        assert row["device_id"] == "dev-1"
+        assert row["install_path"] == "C:/Trae"  # data_dir 方言 → install_path
+        assert row["client_info"] == {"hostname": "PC", "os": "win"}  # 溢出
+        assert "device_id" not in row["client_info"]  # 提取后不重复进 JSON
         assert row["info_synced_at"] is not None
 
     def test_client_info_unknown_account_raises(self):

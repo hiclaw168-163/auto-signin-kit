@@ -39,13 +39,19 @@ CREATE TABLE IF NOT EXISTS ask_schedule_changes (
 
 -- 账户维表(积分业务的主体维度): 哪个域的哪个账户、每日可获取上限。
 -- 当前每域一户(名 default,ingest 首次落库自动建档);结构上支持一域多户。
+-- 高频查询/业务关键列(client_version/device_id/install_path/uid)提为独立列,
+-- 其余档案(机器级信息/域特有字段)才压缩进 client_info JSON。
 CREATE TABLE IF NOT EXISTS ask_accounts (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     domain          TEXT    NOT NULL,  -- 所属域(workbuddy/qoder/trae/doubao)
     name            TEXT    NOT NULL,  -- 账户标识(脱敏后入库;用户名/邮箱/尾号)
     daily_potential INTEGER,           -- 每日可获取积分上限(NULL = 未设定)
     enabled         INTEGER NOT NULL DEFAULT 1,
-    client_info     TEXT,              -- 客户端档案快照 JSON(版本/设备标识/路径)
+    client_version  TEXT,              -- 客户端版本(注册表/客户端数据文件)
+    device_id       TEXT,              -- 设备标识(多账户轮询的关键维度)
+    install_path    TEXT,              -- 安装路径/数据目录(两种域方言统一)
+    uid             TEXT,              -- 账户侧唯一标识(如 workbuddy uid)
+    client_info     TEXT,              -- 档案溢出 JSON(机器信息/域特有字段)
     info_synced_at  TEXT,              -- 档案同步时间(本地无时区)
     UNIQUE(domain, name)
 );
@@ -195,10 +201,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "ts" in sched_columns and "executed_at" not in sched_columns:
         with conn:
             conn.execute("ALTER TABLE ask_schedule_changes RENAME COLUMN ts TO executed_at")
-    # ask_accounts 档案列: 早期建表(2026-11-03 前)没有这两列,补上(幂等);
+    # ask_accounts 档案列: 早期建表(2026-11-03 前)没有这些列,逐列补上(幂等);
     # _SCHEMA 先行执行,表到这里必然已存在
     acct_columns = {row["name"] for row in conn.execute("PRAGMA table_info(ask_accounts)")}
-    for col in ("client_info", "info_synced_at"):
+    for col in ("client_info", "info_synced_at", "client_version", "device_id",
+                "install_path", "uid"):
         if col not in acct_columns:
             with conn:
                 conn.execute("ALTER TABLE ask_accounts ADD COLUMN %s TEXT" % col)

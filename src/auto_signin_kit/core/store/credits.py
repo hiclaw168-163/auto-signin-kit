@@ -47,18 +47,40 @@ def set_account_potential(domain: str, name: str, daily_potential: int) -> None:
     _update_account(domain, name, daily_potential=daily_potential)
 
 
-def set_account_client_info(domain: str, name: str, info: dict[str, Any]) -> None:
-    """写入账户的客户端档案快照(JSON);账户不存在则显式报错。
+#: 档案里要提取为**独立列**的字段(高频查询/业务关键维度,JSON 查询麻烦):
+#: client_version ← 域方言 "version";install_path ← "install_path"/"data_dir"。
+#: 提取后这些键不再进 client_info JSON;其余(机器级信息/域特有)留在 JSON。
+_EXTRACTED_FIELDS = {
+    "client_version": ("version", "client_version"),
+    "device_id": ("device_id",),
+    "install_path": ("install_path", "data_dir"),
+    "uid": ("uid",),
+}
 
-    档案由 UI 的"同步客户端信息"动作采集(各域 client_info 声明 +
-    machine_info),这里只管落库与同步时间戳,不做采集。
+
+def set_account_client_info(domain: str, name: str, info: dict[str, Any]) -> None:
+    """写入账户的客户端档案;账户不存在则显式报错。
+
+    关键字段(client_version/device_id/install_path/uid)提取为独立列,
+    其余压缩进 client_info JSON;同键优先取靠前的方言形态。
     """
-    _update_account(domain, name, client_info=json.dumps(info, ensure_ascii=False),
-                    info_synced_at=local_naive_now())
+    info = dict(info)
+    columns: dict[str, Any] = {}
+    for column, keys in _EXTRACTED_FIELDS.items():
+        for key in keys:
+            if info.get(key) is not None:
+                columns[column] = str(info[key])
+                break
+    for key in (k for keys in _EXTRACTED_FIELDS.values() for k in keys):
+        info.pop(key, None)
+    _update_account(domain, name,
+                    client_info=json.dumps(info, ensure_ascii=False),
+                    info_synced_at=local_naive_now(), **columns)
 
 
 #: 允许更新的账户列(白名单,防止任意标识符进 SQL)。
-_ACCOUNT_FIELDS = ("daily_potential", "client_info", "info_synced_at")
+_ACCOUNT_FIELDS = ("daily_potential", "client_info", "info_synced_at",
+                   "client_version", "device_id", "install_path", "uid")
 
 
 def _update_account(domain: str, name: str, **fields: Any) -> None:
@@ -106,8 +128,9 @@ def accounts_summary(days: int = 7) -> dict[str, Any]:
     conn = connect()
     try:
         registered = conn.execute(
-            "SELECT domain, name, enabled, daily_potential, client_info,"
-            " info_synced_at FROM ask_accounts ORDER BY domain, name").fetchall()
+            "SELECT domain, name, enabled, daily_potential, client_version,"
+            " device_id, install_path, uid, client_info, info_synced_at"
+            " FROM ask_accounts ORDER BY domain, name").fetchall()
         active_rows = conn.execute(
             "SELECT domain, account, MAX(day) AS last_day, SUM(credits) AS total"
             " FROM ask_daily_credits"
@@ -132,6 +155,10 @@ def accounts_summary(days: int = 7) -> dict[str, Any]:
             "active": stat is not None,
             "last_earned_day": stat["last_day"] if stat else None,
             "credits_recent": stat["total"] if stat else 0,
+            "client_version": r["client_version"],
+            "device_id": r["device_id"],
+            "install_path": r["install_path"],
+            "uid": r["uid"],
             "client_info": client_info,
             "info_synced_at": r["info_synced_at"],
         })

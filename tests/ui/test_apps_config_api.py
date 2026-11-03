@@ -154,10 +154,11 @@ class TestSyncClientInfo:
         assert out["done"][0]["info"]["version"] == "0.4.8"
         assert "探测失败" in out["failed"][0]["error"]
 
-        # 档案已落库并合并 machine_info,同步时间已盖戳
+        # 档案已落库: 关键维度为独立列,machine_info 合并进溢出 JSON
         summary = got.get("/api/credits/summary").json()["accounts"]
         row = next(a for a in summary["accounts"] if a["domain"] == "qoder")
-        assert row["client_info"]["device_id"] == "dev-123"
+        assert row["device_id"] == "dev-123"
+        assert row["client_version"] == "0.4.8"
         assert "hostname" in row["client_info"]  # 机器级信息已合并
         assert row["info_synced_at"] is not None
 

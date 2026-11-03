@@ -44,6 +44,9 @@ def client_info() -> dict[str, Any] | None:
             data = {}
         account = data.get("account") or {}
         if isinstance(account, dict):
+            # uid 是账户侧唯一标识: 提到档案顶层(落独立列,多账户轮询的关键维度)
+            if account.get("uid") and not _is_encrypted(account["uid"]):
+                info["uid"] = account["uid"]
             identity = {k: account[k] for k in _IDENTITY_KEYS
                         if account.get(k) is not None
                         and not _is_encrypted(account[k])}

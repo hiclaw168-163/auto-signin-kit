@@ -55,9 +55,11 @@ def accounts_sync() -> None:
         state = "活跃" if a["active"] else "未活跃"
         potential = ("上限 %s" % a["daily_potential"]
                      if a["daily_potential"] is not None else "上限未设定")
-        version = (a["client_info"] or {}).get("version") or "未知版本"
-        typer.echo("  %-10s %-10s %-6s %-8s 近7天 %s 分"
+        version = a["client_version"] or "未知版本"
+        device = a["device_id"] or "-"
+        typer.echo("  %-10s %-10s %-6s %-8s 设备 %s 近7天 %s 分"
                    % (a["domain"], version, state, potential,
+                      device[:8] + "..." if len(device) > 8 else device,
                       a["credits_recent"]))
     if out["result"] == "PARTIAL":
         raise typer.Exit(1)  # 部分失败: 退出码如实反映,方便脚本判断
