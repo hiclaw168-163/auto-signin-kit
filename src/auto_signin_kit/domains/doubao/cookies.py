@@ -103,9 +103,11 @@ def _copy_locked_file(src: Path, dst: Path) -> None:
     handle = kernel32.CreateFileW(str(src), generic_read, share_all, None,
                                   open_existing, 0, None)
     if handle in (-1, 0xFFFFFFFFFFFFFFFF):
+        # WinError 32(共享冲突) = 客户端正在运行并独占持有该库,这是确定性事实,
+        # 措辞不写"可能": 登录态此刻只在客户端内存里,文件通道就是读不到。
         raise DoubaoCookieError(
-            "无法读取 Cookie 库(可能被客户端独占锁定): %s (WinError %s)"
-            % (src, ctypes.get_last_error()))
+            "Cookie 库被运行中的客户端独占锁定(WinError %s): %s"
+            % (ctypes.get_last_error(), src))
     try:
         size = kernel32.SetFilePointer(handle, 0, None, 2)  # FILE_END
         kernel32.SetFilePointer(handle, 0, None, 0)  # FILE_BEGIN
@@ -117,6 +119,25 @@ def _copy_locked_file(src: Path, dst: Path) -> None:
         dst.write_bytes(buffer.raw[: read.value])
     finally:
         kernel32.CloseHandle(handle)
+
+
+def _db_locked(db_path: Path) -> bool:
+    """库文件是否被独占锁定(WinError 32 = 客户端正在运行的可靠信号)。
+
+    doctor 用它把"客户端在跑"作为独立检查项呈报,而不是藏在错误文案里。
+    """
+    if not IS_WINDOWS:
+        return False
+    generic_read = 0x80000000
+    share_none = 0
+    open_existing = 3
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    handle = kernel32.CreateFileW(str(db_path), generic_read, share_none, None,
+                                  open_existing, 0, None)
+    if handle in (-1, 0xFFFFFFFFFFFFFFFF):
+        return ctypes.get_last_error() == 32  # ERROR_SHARING_VIOLATION
+    kernel32.CloseHandle(handle)
+    return False
 
 
 def _aes_key(local_state_path: Path) -> bytes:
@@ -204,6 +225,10 @@ def load_cookie_header(user_data_dir: Path | None = None) -> str:
     合并顺序: 文件库按修改时间新者优先;若客户端带调试端口运行,CDP 实时值
     最后覆盖(它才是浏览器当前真正在用的会话——文件库可能是未刷新的旧会话,
     实测表现为服务端回"登录已过期")。值本身不进任何日志/输出。
+
+    **不做兜底式包装**: 两个读取通道(文件解密/CDP)各自的失败原因按原样抛出,
+    缺 cookie 时按"CDP 可达但没取到 / 双通道均失败 / 文件读到了但登录态不完整"
+    三种确定情形分别报错,绝不合并成一句模糊的"登录态不完整"。
     """
     root = user_data_dir or default_user_data_dir()
     candidates = _candidate_dbs(root)
@@ -230,16 +255,31 @@ def load_cookie_header(user_data_dir: Path | None = None) -> str:
     if live:
         merged.update(live)  # CDP 实时值优先级最高
     missing = [n for n in REQUIRED_COOKIES if n not in merged]
-    if missing:
-        if not IS_WINDOWS:
-            raise DoubaoCookieError(
-                "%s (CDP 不可达或缺 %s)" % (MAC_DECRYPT_UNSUPPORTED,
-                                            ",".join(missing)))
+    if not missing:
+        return "; ".join("%s=%s" % (n, v) for n, v in sorted(merged.items()))
+    missing_str = ",".join(missing)
+    if cdp.probe():
+        # 端口通但拿不到会话: 多半是没有打开的 doubao 页面(target 过滤后为空)
         raise DoubaoCookieError(
-            "登录态不完整: 缺 %s。常见原因: %s。可关闭豆包客户端让 Cookie 落盘后"
-            "重试(退出时自动落盘),或以 --remote-debugging-port 启动客户端走 CDP 兜底"
-            % (",".join(missing), "; ".join(errors) if errors else "解密失败"))
-    return "; ".join("%s=%s" % (n, v) for n, v in sorted(merged.items()))
+            "CDP 已连通(端口 %s)但未取到完整登录态(缺 %s): 调试端口上没有打开的"
+            " doubao 页面(请在豆包客户端内保持在已登录界面),或 CDP 会话查询失败"
+            % (cdp.resolve_port(), missing_str))
+    if not IS_WINDOWS:
+        raise DoubaoCookieError(
+            "%s (CDP 端口 %s 不可达,缺 %s)"
+            % (MAC_DECRYPT_UNSUPPORTED, cdp.resolve_port(), missing_str))
+    if errors:
+        # 双通道均失败: 把两边的真实错误原样抛出,不做兜底包装。
+        raise DoubaoCookieError(
+            "登录态两个读取通道均失败——①文件库: %s;②CDP: 调试端口 %s 不可达"
+            "(豆包未带 --remote-debugging-port 启动)。客户端运行期间登录态只在内存:"
+            "用桌面快捷方式 Doubao-signin.lnk 重启豆包(自带调试端口),或托盘右键"
+            "完全退出豆包让 Cookie 落盘后重试" % ("; ".join(errors),
+                                                  cdp.resolve_port()))
+    # 文件解密成功但缺字段: 磁盘上的登录态确实不完整(过期/未登录)。
+    raise DoubaoCookieError(
+        "登录态不完整: 缺 %s(文件库解密成功但没有这些字段,磁盘登录态已过期:"
+        "重新登录豆包客户端后重试)" % missing_str)
 
 
 def cdp_available() -> bool:
@@ -254,11 +294,13 @@ def doctor_report(user_data_dir: Path | None = None) -> dict[str, Any]:
     """离线体检: 各环节逐一检查并给出结论,供 doctor 命令输出。"""
 
     root = user_data_dir or default_user_data_dir()
+    dbs = _candidate_dbs(root)
     checks: dict[str, Any] = {
         "user_data_dir": str(root),
         "file_decrypt_supported": IS_WINDOWS,
         "local_state_exists": (root / LOCAL_STATE_REL).exists(),
-        "cookie_dbs": [str(p.relative_to(root)) for p in _candidate_dbs(root)],
+        "cookie_dbs": [str(p.relative_to(root)) for p in dbs],
+        "cookie_db_locked": [str(p.relative_to(root)) for p in dbs if _db_locked(p)],
         "cdp_available": cdp_available(),
     }
     if checks["cookie_dbs"] and (checks["local_state_exists"] or not IS_WINDOWS):

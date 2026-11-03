@@ -41,11 +41,15 @@ class DoubaoApi:
     """豆包签到接口客户端;cookie 头由 cookies 模块解出后注入。"""
 
     def __init__(self, cookie_header: str, *, base_url: str = "https://www.doubao.com",
-                 budget: Budget | None = None, retry: bool = True) -> None:
-        """注入会话 Cookie 头与预算;``retry=False`` 供计划任务的 ``--once`` 语义。"""
+                 budget: Budget | float | None = None, retry: bool = True) -> None:
+        """注入会话 Cookie 头与预算;``retry=False`` 供计划任务的 ``--once`` 语义。
+
+        ``budget`` 接受秒数或 Budget 对象,边界处统一归一化——调用方
+        (service.build) 传的是配置里的裸秒数,不能透传给 httpclient.call。
+        """
         self.cookie_header = cookie_header
         self.base_url = base_url.rstrip("/")
-        self.budget = budget or Budget(240.0)
+        self.budget = budget if isinstance(budget, Budget) else Budget(budget or 240.0)
         self.retry = retry
 
     def _headers(self) -> dict[str, str]:

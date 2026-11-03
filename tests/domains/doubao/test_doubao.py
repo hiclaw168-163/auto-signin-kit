@@ -11,6 +11,7 @@ import pytest
 from typer.testing import CliRunner
 
 from auto_signin_kit.core.errors import AutoSignInKitError
+from auto_signin_kit.core.httpclient import Budget
 from auto_signin_kit.domains.doubao import cdp as cdp_mod
 from auto_signin_kit.domains.doubao import cookies as cookies_mod
 from auto_signin_kit.domains.doubao import service
@@ -35,6 +36,7 @@ def fake_crypto(monkeypatch):
     monkeypatch.setattr(cookies_mod, "_copy_locked_file",
                         lambda src, dst: dst.write_bytes(src.read_bytes()))
     monkeypatch.setattr(cookies_mod, 'cookies_via_cdp', lambda port=None: None)
+    monkeypatch.setattr(cookies_mod.cdp, "probe", lambda port=None: False)
     monkeypatch.setattr(cookies_mod, "unprotect", lambda data: FAKE_KEY)
     monkeypatch.setattr(cookies_mod, "decrypt_gcm", lambda key, nonce, blob: PREFIX + blob)
 
@@ -93,6 +95,7 @@ class TestCookieDecrypt:
         monkeypatch.setattr(cookies_mod, "_copy_locked_file",
                             lambda src, dst: dst.write_bytes(src.read_bytes()))
         monkeypatch.setattr(cookies_mod, "unprotect", lambda data: FAKE_KEY)
+        monkeypatch.setattr(cookies_mod.cdp, "probe", lambda port=None: False)
         monkeypatch.setattr(cookies_mod, "cookies_via_cdp", lambda port=None: None)
 
         def boom(key, nonce, blob):
@@ -109,6 +112,41 @@ class TestCookieDecrypt:
         with pytest.raises(cookies_mod.DoubaoCookieError) as exc:
             cookies_mod.load_cookie_header(root)
         assert "Cookie 库不存在" in str(exc.value)
+
+    def test_locked_db_and_no_cdp_report_both_channels(self, tmp_path, fake_crypto,
+                                                        monkeypatch):
+        """文件库被锁 + CDP 不可达: 两个通道的真实失败原因都要出现在报错里,
+        不允许包装成模糊的"登录态不完整"。"""
+        monkeypatch.delenv("DOUBAO_CDP_PORT", raising=False)
+        root = _make_user_data(tmp_path, [(".doubao.com", "sessionid", "x")])
+        monkeypatch.setattr(cookies_mod, "_copy_locked_file",
+                            lambda src, dst: (_ for _ in ()).throw(
+                                cookies_mod.DoubaoCookieError(
+                                    "Cookie 库被运行中的客户端独占锁定(WinError 32)")))
+        with pytest.raises(cookies_mod.DoubaoCookieError) as exc:
+            cookies_mod.load_cookie_header(root)
+        msg = str(exc.value)
+        assert "两个读取通道均失败" in msg
+        assert "独占锁定" in msg  # 文件通道的真实原因
+        assert "9222" in msg  # CDP 通道的真实原因(端口不可达)
+
+    def test_missing_cookie_with_readable_db_is_real_incomplete(self, tmp_path, fake_crypto):
+        """文件解密成功但缺字段: 磁盘登录态确实不完整,如实报"登录态不完整"。"""
+        root = _make_user_data(tmp_path, [(".doubao.com", "sid_tt", "abc")])
+        with pytest.raises(cookies_mod.DoubaoCookieError) as exc:
+            cookies_mod.load_cookie_header(root)
+        assert "登录态不完整" in str(exc.value)
+        assert "已过期" in str(exc.value)
+
+    def test_doctor_reports_locked_db_as_explicit_check(self, tmp_path, fake_crypto,
+                                                        monkeypatch):
+        monkeypatch.delenv("DOUBAO_CDP_PORT", raising=False)
+        root = _make_user_data(tmp_path, [(".doubao.com", "sessionid", "x")])
+        monkeypatch.setattr(cookies_mod, "_db_locked", lambda p: True)
+        report = cookies_mod.doctor_report(root)
+        assert [Path(s).as_posix() for s in report["cookie_db_locked"]] == \
+            ["Default/Network/Cookies"]
+        assert report["cdp_available"] is False
 
 
 def _make_mac_user_data(tmp_path):
@@ -147,6 +185,7 @@ class TestMacPlatformBranch:
                             Path("Default") / "Cookies")
         monkeypatch.setattr(cookies_mod, "_PROFILES_GLOB", "Profile */Cookies")
         monkeypatch.setattr(cookies_mod, "cookies_via_cdp", lambda port=None: None)
+        monkeypatch.setattr(cookies_mod.cdp, "probe", lambda port=None: False)
 
     def test_cdp_live_cookies_supply_session(self, tmp_path, monkeypatch):
         self._patch_mac(monkeypatch)
@@ -280,6 +319,15 @@ class TestDoubaoApi:
         monkeypatch.setattr("auto_signin_kit.domains.doubao.api.call", fake_call)
         DoubaoApi("sessionid=x", retry=False).checkin("s")
         assert captured["retry"] is False
+
+    def test_budget_seconds_are_normalized_to_budget_object(self):
+        """回归: service.build 传裸秒数,必须归一化成 Budget(否则
+        httpclient.call 调 budget.remaining() 直接 AttributeError)。"""
+        assert isinstance(DoubaoApi("sessionid=x", budget=60.0).budget, Budget)
+        assert DoubaoApi("sessionid=x", budget=60.0).budget.remaining() > 0
+        assert DoubaoApi("sessionid=x").budget.remaining() > 239  # 缺省 240
+        shared = Budget(30.0)
+        assert DoubaoApi("sessionid=x", budget=shared).budget is shared  # 不重复包
 
 
 def _config(tmp_path):
