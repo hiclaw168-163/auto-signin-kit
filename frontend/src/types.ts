@@ -37,6 +37,14 @@ export interface OverviewCard {
   today: DailyRow | null
   week_ok: number
   week_total: number
+  /** 截至今天的连续成功天数(今天未签则从昨天起算) */
+  streak?: number
+  /** 今天往前 14 天逐日成败,供色块条 */
+  days14?: { day: string; ok: boolean }[]
+  /** 台账累计积分(成功行 response.credits 求和;域不回传则 0) */
+  credits?: number
+  today_credits?: number
+  last_run?: string | null
 }
 
 export interface Overview {

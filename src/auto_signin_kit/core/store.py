@@ -34,10 +34,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import date, timedelta
 from typing import Any
 
 from auto_signin_kit.core.adapters.log_dir import default_data_dir
-from auto_signin_kit.core.report import normalize_result
+from auto_signin_kit.core.report import RESULT_OK, normalize_result
 from auto_signin_kit.core.store_migrations import (
     _SCHEMA,
     _SCHEMA_AFTER_MIGRATE,
@@ -82,6 +83,63 @@ def daily_status(days: int = 7, *, domain: str | None = None,
     finally:
         conn.close()
     return [dict(row) for row in rows]
+
+
+def overview_stats() -> dict[str, dict[str, Any]]:
+    """每域汇总统计(读台账,现算不落库): 14 天逐日成败/连续签到天数/积分/最近运行。
+
+    - ``days14``: 今天往前 14 天的逐日布尔(当天有任一成功行即 OK),供色块条;
+    - ``streak``: 截至今天的连续成功天数(今天还没签则从昨天起算,不把"还没到"
+      当成断签);
+    - ``credits`` / ``today_credits``: 成功行 ``response`` JSON 里 ``credits``
+      字段的累计/今日累计(域不回传该字段时按 0 计,如 doubao)。
+    """
+    conn = connect()
+    try:
+        rows = conn.execute(
+            "SELECT date(executed_at) AS day, domain, result, executed_at, response"
+            " FROM ask_signin_runs WHERE source = 'run' ORDER BY executed_at"
+        ).fetchall()
+    finally:
+        conn.close()
+    today = date.today().isoformat()
+    per: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        d = per.setdefault(row["domain"], {
+            "ok_days": set(), "last": None, "credits": 0, "today_credits": 0})
+        if row["result"] in RESULT_OK:
+            d["ok_days"].add(row["day"])
+            earned = _extract_credits(row["response"])
+            d["credits"] += earned
+            if row["day"] == today:
+                d["today_credits"] += earned
+        d["last"] = row["executed_at"]
+    out: dict[str, dict[str, Any]] = {}
+    today_date = date.fromisoformat(today)
+    for domain, d in per.items():
+        # 今天没签从昨天起算: "还没到"不算断签
+        cursor = today_date if today in d["ok_days"] else today_date - timedelta(days=1)
+        streak = 0
+        while cursor.isoformat() in d["ok_days"]:
+            streak += 1
+            cursor -= timedelta(days=1)
+        days14 = [{"day": (today_date - timedelta(days=13 - i)).isoformat(),
+                   "ok": (today_date - timedelta(days=13 - i)).isoformat() in d["ok_days"]}
+                  for i in range(14)]
+        out[domain] = {"streak": streak, "days14": days14, "credits": d["credits"],
+                       "today_credits": d["today_credits"], "last_run": d["last"]}
+    return out
+
+
+def _extract_credits(response: str | None) -> int:
+    """成功行 response JSON 里的 ``credits`` 整数;缺字段/解析失败按 0。"""
+    if not response:
+        return 0
+    try:
+        value = json.loads(response).get("credits")
+    except (TypeError, ValueError):
+        return 0
+    return value if isinstance(value, (int, float)) else 0
 
 
 def events(

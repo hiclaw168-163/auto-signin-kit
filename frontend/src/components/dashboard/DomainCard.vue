@@ -1,27 +1,37 @@
 <script setup lang="ts">
-import type { DailyRow, JobInfo, OverviewCard } from '../../types'
+import type { JobInfo, OverviewCard } from '../../types'
 import StatusTag from '../common/StatusTag.vue'
 
-// 域卡片: 今日状态 + 摘要 + 近 7 天条形(绿=成功/红=失败/灰=无记录) + 一键签到。
-// 长文本自然换行不裁切(ui-ux-pro-max 文字韧性要求)。
+// 域卡片: 状态徽标 + 摘要 + chips(连签/积分) + 14 天色块条 + 一键签到。
+// 对齐参考项目的卡片信息密度;所有数字来自台账(core/store.overview_stats)。
 const props = defineProps<{
   card: OverviewCard
-  week: DailyRow[]
   job?: JobInfo
   running?: boolean
 }>()
 
 const emit = defineEmits<{ run: [] }>()
 
-function barType(row: DailyRow | undefined): 'ok' | 'fail' | 'miss' {
-  if (!row) return 'miss'
-  return ['CLAIMED', 'ALREADY', 'ACTIVE'].includes(row.result) ? 'ok' : 'fail'
+const OK = ['CLAIMED', 'ALREADY', 'ACTIVE']
+const signedToday = !!card_today_ok(props.card)
+
+function card_today_ok(c: OverviewCard): boolean {
+  return !!c.today && OK.includes(c.today.result)
 }
 
-const COLOR: Record<string, string> = {
-  ok: 'var(--ask-primary)',
-  fail: 'var(--ask-danger)',
-  miss: 'var(--ask-border)',
+function dayTitle(d: { day: string; ok: boolean }): string {
+  return `${d.day}: ${d.ok ? '成功' : '无成功记录'}`
+}
+
+function lastRunText(last: string | null | undefined): string {
+  if (!last) return '未运行'
+  const diff = Date.now() - new Date(last.replace(' ', 'T')).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return '刚刚'
+  if (mins < 60) return `${mins} 分钟前`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours} 小时前`
+  return `${Math.floor(hours / 24)} 天前`
 }
 </script>
 
@@ -37,11 +47,15 @@ const COLOR: Record<string, string> = {
       <div class="report" :class="{ attention: card.today?.needs_attention }">
         {{ card.today?.report ?? '今天还没有运行记录(调度任务触发后会出现在这里)' }}
       </div>
-      <div class="bars" aria-hidden="false">
-        <div v-for="i in 7" :key="i" class="bar"
-             :style="{ background: COLOR[barType(week[i - 1])] }"
-             :title="week[i - 1] ? `${week[i - 1].day}: ${week[i - 1].result}` : `${i} 天前: 无记录`" />
-        <span class="bars-label">近 7 天</span>
+      <div v-if="card.streak || card.credits" class="chips">
+        <span v-if="card.streak" class="chip">连续 {{ card.streak }} 天</span>
+        <span v-if="card.credits" class="chip">累计 {{ card.credits }} credits</span>
+        <span v-if="card.today_credits" class="chip accent">今日 +{{ card.today_credits }}</span>
+      </div>
+      <div class="dots" role="img" aria-label="近 14 天签到记录">
+        <span v-for="d in card.days14 ?? []" :key="d.day" class="dot"
+              :class="d.ok ? 'ok' : 'miss'" :title="dayTitle(d)" />
+        <span class="dots-label">近 14 天 · 上次 {{ lastRunText(card.last_run) }}</span>
       </div>
       <div class="meta">
         近 7 天 {{ card.week_ok }}/{{ card.week_total }} 成功
@@ -49,8 +63,9 @@ const COLOR: Record<string, string> = {
           <template v-if="job.result?.report">· {{ job.result.report }}</template>
         </template>
       </div>
-      <n-button size="small" type="primary" :loading="running" @click="emit('run')">
-        立即签到
+      <n-button size="small" type="primary" :loading="running"
+                :disabled="running" @click="emit('run')">
+        {{ signedToday ? '再跑一次(幂等)' : '立即签到' }}
       </n-button>
     </n-space>
   </n-card>
@@ -73,17 +88,41 @@ const COLOR: Record<string, string> = {
 .report.attention {
   color: var(--ask-danger);
 }
-.bars {
+.chips {
   display: flex;
-  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.chip {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--ask-primary) 12%, transparent);
+  color: var(--ask-primary);
+  font-weight: 600;
+}
+.chip.accent {
+  background: color-mix(in srgb, var(--ask-danger) 10%, transparent);
+  color: var(--ask-danger);
+}
+.dots {
+  display: flex;
+  align-items: center;
   gap: 4px;
+  flex-wrap: wrap;
 }
-.bar {
-  width: 16px;
-  height: 10px;
-  border-radius: 3px;
+.dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
 }
-.bars-label {
+.dot.ok {
+  background: var(--ask-primary);
+}
+.dot.miss {
+  background: var(--ask-border);
+}
+.dots-label {
   margin-left: 6px;
   font-size: 11px;
   color: var(--ask-muted);

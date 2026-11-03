@@ -7,35 +7,34 @@ import { useJob } from '../composables/useJob'
 import DomainCard from '../components/dashboard/DomainCard.vue'
 import StatCard from '../components/dashboard/StatCard.vue'
 import StatusTag from '../components/common/StatusTag.vue'
-import type { DailyRow, EventRow, Overview, ScheduleInfo } from '../types'
+import type { EventRow, Overview, ScheduleInfo } from '../types'
 
-// 签到总览 = 汇总统计卡 + 每域状态卡(近 7 天条形) + 最近运行时间线。
+// 签到总览 = 汇总统计卡 + 每域状态卡(14 天色块/连签/积分) + 最近运行时间线。
 // 所有数据来自 SQLite 台账(core/store),不重复实现业务。
 
 const message = useMessage()
 const overview = ref<Overview | null>(null)
-const week = ref<DailyRow[]>([])
 const schedule = ref<ScheduleInfo | null>(null)
 const events = ref<EventRow[]>([])
 const loading = ref(false)
 const { jobs, run } = useJob()
 
 const OK = ['CLAIMED', 'ALREADY', 'ACTIVE']
-const today = new Date().toISOString().slice(0, 10)
 
 const cards = computed(() => overview.value?.cards ?? [])
 const signedToday = computed(() => cards.value.filter((c) => c.today && OK.includes(c.today.result)).length)
 const attentionToday = computed(() => cards.value.filter((c) => c.today?.needs_attention).length)
-const weekRatio = computed(() => {
-  const ok = cards.value.reduce((s, c) => s + c.week_ok, 0)
-  const total = cards.value.reduce((s, c) => s + c.week_total, 0)
-  return total ? Math.round((ok / total) * 100) : 0
-})
 const installedCount = computed(() => schedule.value?.tasks.filter((t) => t.installed).length ?? 0)
-
-function weekRows(domain: string): DailyRow[] {
-  return week.value.filter((r) => r.domain === domain)
-}
+const todayCredits = computed(() => cards.value.reduce((s, c) => s + (c.today_credits ?? 0), 0))
+const bestStreak = computed(() => Math.max(0, ...cards.value.map((c) => c.streak ?? 0)))
+const nextRunTime = computed(() => {
+  const times = (schedule.value?.tasks ?? [])
+    .filter((t) => t.installed)
+    .flatMap((t) => t.times)
+    .sort()
+  const now = new Date().toTimeString().slice(0, 5)
+  return times.find((t) => t > now) ?? times[0] ?? '-'
+})
 
 async function runCard(domain: string) {
   await run(domain, 'auto', (job) => {
@@ -48,14 +47,12 @@ async function runCard(domain: string) {
 async function load() {
   loading.value = true
   try {
-    const [ov, wk, sch, ev] = await Promise.all([
+    const [ov, sch, ev] = await Promise.all([
       dashboardApi.overview(),
-      dashboardApi.history(7),
       scheduleApi.status(),
       dashboardApi.events({ limit: 8 }),
     ])
     overview.value = ov
-    week.value = wk
     schedule.value = sch
     events.value = ev
   } catch (e) {
@@ -76,15 +73,15 @@ onMounted(load)
           sub="按各域台账最新记录" tone="primary" /></n-gi>
         <n-gi span="1 m:2 l:1"><StatCard label="今日需关注" :value="String(attentionToday)"
           sub="登录过期/失败,需人工介入" :tone="attentionToday ? 'danger' : 'info'" /></n-gi>
-        <n-gi span="1 m:2 l:1"><StatCard label="近 7 天成功率" :value="`${weekRatio}%`"
-          sub="全部签到域合计" tone="info" /></n-gi>
-        <n-gi span="1 m:2 l:1"><StatCard label="定时任务" :value="`${installedCount}/${schedule?.tasks.length ?? 0}`"
-          :sub="`平台: ${schedule?.platform ?? '-'}`" tone="primary" /></n-gi>
+        <n-gi span="1 m:2 l:1"><StatCard label="今日积分" :value="`+${todayCredits}`"
+          :sub="`最长连签 ${bestStreak} 天`" tone="info" /></n-gi>
+        <n-gi span="1 m:2 l:1"><StatCard label="下次自动" :value="nextRunTime"
+          :sub="`已注册 ${installedCount}/${schedule?.tasks.length ?? 0} 个任务`" tone="primary" /></n-gi>
       </n-grid>
 
       <n-grid :cols="2" :x-gap="12" :y-gap="12" item-responsive>
         <n-gi v-for="card in cards" :key="card.domain" span="1 m:2 l:1">
-          <DomainCard :card="card" :week="weekRows(card.domain)" :job="jobs[card.domain]"
+          <DomainCard :card="card" :job="jobs[card.domain]"
                       :running="jobs[card.domain]?.status === 'running'" @run="runCard(card.domain)" />
         </n-gi>
       </n-grid>

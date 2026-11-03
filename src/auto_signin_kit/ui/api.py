@@ -48,19 +48,26 @@ def meta_results() -> dict[str, str]:
 
 @router.get("/overview")
 def overview() -> dict[str, Any]:
-    """看板首页数据: 每个签到域一张卡(今日状态 + 近 7 天成功占比)。"""
+    """看板首页数据: 每个签到域一张卡(今日状态 + 14 天色块 + 连签/积分统计)。"""
     week = store.daily_status(7)
     today = datetime.now().date().isoformat()
+    stats = store.overview_stats()
     domains = sorted({str(row["domain"]) for row in week} | set(store.SIGNIN_DOMAINS))
     cards = []
     for domain in domains:
         rows = [r for r in week if r["domain"] == domain]
         today_row = next((r for r in rows if r["day"] == today), None)
+        st = stats.get(domain, {})
         cards.append({
             "domain": domain,
             "today": today_row,
             "week_ok": sum(1 for r in rows if r["result"] in RESULT_OK),
             "week_total": len(rows),
+            "streak": st.get("streak", 0),
+            "days14": st.get("days14", []),
+            "credits": st.get("credits", 0),
+            "today_credits": st.get("today_credits", 0),
+            "last_run": st.get("last_run"),
         })
     return {"cards": cards, "generated_at": _now()}
 
