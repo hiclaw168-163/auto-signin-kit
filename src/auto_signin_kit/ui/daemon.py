@@ -32,8 +32,10 @@ from auto_signin_kit.core.errors import ConfigError
 PID_FILE_NAME = "ui-serve.pid"
 LOG_FILE_NAME = "ui-serve.log"
 
-#: ``--daemon`` 拉起后等服务就绪的超时秒数(就绪判定 = 端口可连)。
-SPAWN_READY_SECONDS = 5.0
+#: ``--daemon`` 拉起后等服务就绪的超时秒数(就绪判定 = 子进程写出 PID 文件)。
+#: Windows 冷启动(python 解释器 + fastapi/pydantic 全量 import)实测可超 5s,
+#: 给足余量——超时只是误报,子进程其实活着,但报错本身吓人且难排查。
+SPAWN_READY_SECONDS = 20.0
 #: stop 发终止信号后等待退出的秒数;POSIX 超时升级 SIGKILL。
 STOP_WAIT_SECONDS = 10.0
 
