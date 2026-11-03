@@ -144,6 +144,8 @@ def create_domain(name: str, kind: str, display: str | None, base_url: str,
 
 def rollback(manifest: Manifest) -> None:
     """按清单回滚: 删除生成文件 + 恢复 pyproject。幂等,失败不抛。"""
+    import shutil
+
     root = project_root()
     if root is None:
         return
@@ -151,8 +153,11 @@ def rollback(manifest: Manifest) -> None:
         target = root / rel
         target.unlink(missing_ok=True)
         parent = target.parent
-        if parent != root and parent.exists() and not any(parent.iterdir()):
-            parent.rmdir()
+        if parent != root and parent.exists():
+            # Python 运行过生成域会留下 __pycache__,不清掉父目录永远非空
+            shutil.rmtree(parent / "__pycache__", ignore_errors=True)
+            if not any(parent.iterdir()):
+                parent.rmdir()
     _unregister_entry_points(root / "pyproject.toml", manifest.pyproject_backup)
     _manifest_path().unlink(missing_ok=True)
 
