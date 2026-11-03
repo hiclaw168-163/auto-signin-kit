@@ -170,6 +170,11 @@ def start_daemon(host: str, port: int, open_browser: bool) -> str:
         raise ConfigError(
             "已有实例在运行(pid=%d, %s)。先执行 auto-signin-kit ui stop 再启动"
             % (info.pid, info.url()))
+    if state != _ABSENT:
+        # 清掉 stale/corrupt/foreign 的残留记录: 就绪信号是"PID 文件出现",
+        # 不先清的话旧记录会被当成新实例已就绪(与 stop 的 foreign 分支
+        # 同口径——只清状态文件,不动被复用的进程)
+        clear_pid()
     pid = _spawn(host, port, open_browser)
     _wait_ready(pid, host, port)
     return "已后台启动: pid=%d http://%s:%d\n日志: %s" % (pid, host, port, log_file())
@@ -291,24 +296,32 @@ def _spawn(host: str, port: int, open_browser: bool) -> int:
     return proc.pid
 
 
-def _wait_ready(pid: int, host: str, port: int) -> None:
-    """等子进程就绪: PID 文件出现**且**属于该子进程(它就绪后才写)。
+def _wait_ready(spawned_pid: int, host: str, port: int) -> None:
+    """等子进程就绪: PID 文件出现**且**其中记录的进程存活。
 
     不做端口探测——占端口的可能是别人,连得上不代表**本**服务就绪;
-    PID 文件是唯一可信的就绪信号。
+    PID 文件是唯一可信的就绪信号。注意**不能**要求 PID 文件里的 pid
+    等于 spawn 返回的 pid: Windows 上 uv tool 的可执行入口是 trampoline
+    (exe 垫片),``--daemon-child`` 跑在垫片拉起的 python 子进程里,
+    ``os.getpid()``(写 PID 文件的值)≠ 垫片的 pid,按相等判定会永远
+    超时(服务其实已就绪)。旧记录污染由 :func:`start_daemon` 在 spawn
+    前清理解决,本函数见到的 PID 文件只会是新子进程写的。
     """
     deadline = time.monotonic() + SPAWN_READY_SECONDS
     while time.monotonic() < deadline:
-        if not is_alive(pid):
+        info = read_pid()
+        if info is not None and is_alive(info.pid):
+            return
+        if not is_alive(spawned_pid):
             raise ConfigError(
                 "后台服务启动后立即退出(典型原因: 端口被占用),日志: %s" % log_file())
-        info = read_pid()
-        if info is not None and info.pid == pid:
-            return
         time.sleep(0.1)
+    current = read_pid()
+    detail = (";PID 文件记录 pid=%d(垫片会再拉起真正的服务子进程)"
+              % current.pid) if current is not None else ""
     raise ConfigError(
-        "等待服务就绪超时(%ds),进程 pid=%d 仍在运行,日志: %s"
-        % (int(SPAWN_READY_SECONDS), pid, log_file()))
+        "等待服务就绪超时(%ds),拉起进程 pid=%d 仍在运行%s,日志: %s"
+        % (int(SPAWN_READY_SECONDS), spawned_pid, detail, log_file()))
 
 
 def _entry_argv() -> list[str]:

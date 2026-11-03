@@ -19,12 +19,14 @@ import hashlib
 import json
 import os
 import time
-from datetime import UTC, datetime
 from pathlib import Path
 
 from auto_signin_kit.core.adapters.platform_info import IS_LINUX, IS_MACOS
 from auto_signin_kit.core.adapters.win_dpapi import DecryptError, decrypt_cbc
 from auto_signin_kit.core.errors import AutoSignInKitError
+from auto_signin_kit.core.kit.tokens import token_expired
+
+__all__ = ["token_expired"]
 
 STORAGE_REL = Path("User") / "globalStorage" / "storage.json"
 AUTH_KEY_PREFIX = "iCubeAuthInfo://"
@@ -243,25 +245,6 @@ def aha_device_id(storage: dict) -> str | None:
         if candidate.isdigit() and length_ok:
             return candidate
     return None
-
-
-def _parse_iso(value: object) -> datetime | None:
-    """解析 ISO8601 时间串;无时区视为 UTC。"""
-    if not value:
-        return None
-    try:
-        moment = datetime.fromisoformat(str(value).strip().replace("Z", "+00:00"))
-    except (TypeError, ValueError):
-        return None
-    if moment.tzinfo is None:
-        moment = moment.replace(tzinfo=UTC)
-    return moment
-
-
-def token_expired(info: dict) -> bool:
-    """``expiredAt`` 已过期返回 True;缺字段视为未过期。"""
-    expires = _parse_iso(info.get("expiredAt"))
-    return expires is not None and expires <= datetime.now(UTC)
 
 
 def resolve_token(override_dir: str | None = None) -> tuple[str, dict | None]:

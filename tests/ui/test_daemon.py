@@ -161,6 +161,20 @@ def test_start_daemon_success_message(paths, monkeypatch):
     assert "pid=12345" in msg and str(log) in msg
 
 
+def test_start_daemon_clears_stale_record_before_spawn(paths, monkeypatch):
+    # 残留记录不清的话,会被 _wait_ready 误当成新实例已就绪
+    pid_file, _ = paths
+    stale = daemon_mod.PidInfo(pid=424242, host="127.0.0.1", port=8688,
+                               started_at="t")
+    monkeypatch.setattr(daemon_mod, "inspect",
+                        lambda: ("stale", stale))
+    monkeypatch.setattr(daemon_mod, "_spawn",
+                        lambda host, port, open_browser: 12345)
+    monkeypatch.setattr(daemon_mod, "_wait_ready", lambda pid, host, port: None)
+    daemon_mod.start_daemon("127.0.0.1", 8688, open_browser=False)
+    assert not pid_file.exists()
+
+
 def test_spawn_platform_flags_and_log_redirect(paths, monkeypatch):
     _, log = paths
     monkeypatch.setattr(daemon_mod, "_entry_argv", lambda: ["/fake/auto-signin-kit"])
@@ -202,20 +216,29 @@ def test_entry_argv_error_when_nothing_found(monkeypatch):
 # ---------------------------------------------------------------- 就绪等待
 
 
-def test_wait_ready_returns_once_pid_file_matches(paths, monkeypatch):
+def test_wait_ready_returns_once_pid_file_record_alive(paths, monkeypatch):
+    # 就绪判定只信 PID 文件 + 记录进程存活,不要求等于 spawn 返回的 pid
+    # (Windows 上入口是 exe 垫片,真正服务是它拉起的 python 子进程)
     pid_file, _ = paths
     monkeypatch.setattr(daemon_mod, "is_alive", lambda pid: True)
-    _write_pid(pid_file, 1)  # 子进程就绪后自己写 → 父进程据此判定
+    _write_pid(pid_file, 999)
     daemon_mod._wait_ready(1, "127.0.0.1", 8688)  # 不超时即通过
 
 
-def test_wait_ready_ignores_foreign_pid_record(paths, monkeypatch):
+def test_wait_ready_ignores_dead_pid_record(paths, monkeypatch):
     pid_file, _ = paths
-    monkeypatch.setattr(daemon_mod, "is_alive", lambda pid: True)
+    seen: list[int] = []
+
+    def fake_alive(pid: int) -> bool:
+        seen.append(pid)
+        return pid != 999  # PID 文件记录 999 已死,拉起进程 1 活着
+
+    monkeypatch.setattr(daemon_mod, "is_alive", fake_alive)
     monkeypatch.setattr(daemon_mod, "SPAWN_READY_SECONDS", 0.3)
-    _write_pid(pid_file, 999)  # 记录不是本子进程的 → 不算就绪
+    _write_pid(pid_file, 999)  # 记录的进程已死 → 不算就绪
     with pytest.raises(ConfigError, match="超时"):
         daemon_mod._wait_ready(1, "127.0.0.1", 8688)
+    assert 999 in seen
 
 
 def test_wait_ready_errors_when_child_dies(paths, monkeypatch):

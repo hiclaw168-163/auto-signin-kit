@@ -23,13 +23,14 @@ import glob
 import json
 import os
 import time
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import timedelta, timezone
 from pathlib import Path
 
 from auto_signin_kit.core.adapters import mac_keychain
 from auto_signin_kit.core.adapters.platform_info import IS_MACOS
 from auto_signin_kit.core.adapters.win_dpapi import DecryptError, decrypt_gcm, unprotect
 from auto_signin_kit.core.errors import AdapterError
+from auto_signin_kit.core.kit.tokens import token_expired as _core_token_expired
 
 AUTH_DIR_GLOB = "com.qodercn.app*"
 AUTH_DIR_GLOB_MAC = "com.qoder.app*"
@@ -105,24 +106,9 @@ def is_installed() -> bool:
     return any(root.is_dir() for root in find_auth_dirs())
 
 
-def _parse_iso(value: object) -> datetime | None:
-    """解析 ISO8601 时间串;无时区视为 UTC。"""
-    if not value:
-        return None
-    try:
-        text = str(value).strip().replace("Z", "+00:00")
-        moment = datetime.fromisoformat(text)
-    except (TypeError, ValueError):
-        return None
-    if moment.tzinfo is None:
-        moment = moment.replace(tzinfo=UTC)
-    return moment
-
-
 def token_expired(sess: dict) -> bool:
-    """``expiresAt`` 已过期(过去)返回 True。"""
-    expires = _parse_iso(sess.get("expiresAt"))
-    return expires is not None and expires <= datetime.now(UTC)
+    """``expiresAt`` 已过期(过去)返回 True;判定逻辑在 core.kit.tokens。"""
+    return _core_token_expired(sess, "expiresAt")
 
 
 def _read_store(root: Path) -> dict:

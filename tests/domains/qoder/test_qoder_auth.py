@@ -7,12 +7,12 @@ from pathlib import Path
 import pytest
 
 from auto_signin_kit.core.adapters.platform_info import IS_WINDOWS
+from auto_signin_kit.core.kit.tokens import parse_iso as _parse_iso
 from auto_signin_kit.domains.qoder import auth
 from auto_signin_kit.domains.qoder.auth import (
     AuthFormatError,
     NoAuthError,
     QoderAuthError,
-    _parse_iso,
     resolve_token,
     token_expired,
 )

@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+from auto_signin_kit.core.kit.tokens import parse_iso
 from auto_signin_kit.domains.qoder.api import load_session_state
 from auto_signin_kit.domains.qoder.auth import (
     TZ_CN,
     NoAuthError,
     QoderAuthError,
-    _parse_iso,
     token_expired,
 )
 
@@ -59,7 +59,7 @@ def run_doctor() -> tuple[dict, int]:
         })
         return out, 1
 
-    expires = _parse_iso(sess.get("expiresAt"))
+    expires = parse_iso(sess.get("expiresAt"))
     expire_text = expires.astimezone(TZ_CN).strftime("%Y-%m-%d %H:%M") if expires else ""
     report = "登录态可读" + ("，有效期至 %s" % expire_text if expire_text else "")
     if not out["device_identity"]:
