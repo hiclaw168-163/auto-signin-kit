@@ -22,6 +22,7 @@ import os
 from typing import Any
 
 from auto_signin_kit.core.httpclient import Budget, RetryPolicy, call
+from auto_signin_kit.core.kit.budget import parse_budget as core_parse_budget
 from auto_signin_kit.core.logging import result_log_path
 from auto_signin_kit.domains.trae.auth import device_meta, resolve_token, token_expired
 
@@ -102,19 +103,8 @@ def log_path():
 def parse_budget(config: Any) -> tuple[float, str | None]:
     """预算: TRAE_BUDGET_SECONDS 优先;非法回落、越界夹到 240。"""
     default = config.budget_seconds or BUDGET_CEILING
-    raw_str = os.environ.get("TRAE_BUDGET_SECONDS")
-    if not raw_str:
-        return default, None
-    try:
-        raw = float(raw_str)
-    except ValueError:
-        return default, "TRAE_BUDGET_SECONDS=%r 不是数字，已回落 %s 秒" % (raw_str, int(default))
-    if raw <= 0:
-        return default, "TRAE_BUDGET_SECONDS=%s 必须为正数，已回落 %s 秒" % (raw_str, int(default))
-    if raw > BUDGET_CEILING:
-        return BUDGET_CEILING, ("TRAE_BUDGET_SECONDS=%s 超过 240 秒（须小于定时任务的 "
-                                "ExecutionTimeLimit），已夹到 240" % raw)
-    return raw, None
+    return core_parse_budget(
+        config.budget_seconds, default, BUDGET_CEILING, env_var="TRAE_BUDGET_SECONDS")
 
 
 def load_session_state(override_dir: str | None = None) -> dict:

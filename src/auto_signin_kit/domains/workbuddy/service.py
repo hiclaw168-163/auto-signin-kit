@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from auto_signin_kit.core.httpclient import Budget
+from auto_signin_kit.core.kit.budget import parse_budget as core_parse_budget
 from auto_signin_kit.core.logging import log_debug, result_log_path
 from auto_signin_kit.core.report import emit_result, make_result
 from auto_signin_kit.core.store import done_today
@@ -55,32 +56,8 @@ def parse_budget(
 ) -> tuple[float, str | None]:
     """解析预算: 环境变量优先、配置兜底;非法/越界夹回安全区间,绝不抛异常。"""
     default, maximum = (POLL_BUDGET, POLL_MAX_BUDGET) if poll else (DEFAULT_BUDGET, MAX_BUDGET)
-    raw_str = os.environ.get("WORKBUDDY_BUDGET_SECONDS")
-    raw = config.budget_seconds
-    warning: str | None = None
-    if raw_str:
-        try:
-            raw = float(raw_str)
-            if raw <= 0:
-                # "0" 是非空字符串,靠 not 兜不住;且 0 会让每个请求都直接放弃。
-                warning = (
-                    "WORKBUDDY_BUDGET_SECONDS=%s 必须为正数，已回落 %s 秒" % (raw_str, int(default))
-                )
-                raw = default
-        except (TypeError, ValueError):
-            return (
-                default,
-                "WORKBUDDY_BUDGET_SECONDS=%r 不是数字，已回落 %s 秒" % (raw_str, int(default)),
-            )
-    if raw is None or raw <= 0:
-        raw = default
-    if raw > maximum:
-        return (
-            maximum,
-            "WORKBUDDY_BUDGET_SECONDS=%s 超过本命令上限 %s 秒"
-            "（须小于该定时任务的 ExecutionTimeLimit）" % (raw, int(maximum)),
-        )
-    return raw, warning
+    return core_parse_budget(
+        config.budget_seconds, default, maximum, env_var="WORKBUDDY_BUDGET_SECONDS")
 
 
 def load_credentials() -> tuple[dict | None, dict | None]:
