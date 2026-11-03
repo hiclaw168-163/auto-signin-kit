@@ -141,6 +141,26 @@ service 层禁止 import typer;需要交互时调用 `prompt_str/prompt_confirm`
 `ports 不依赖 adapters` 契约强制。目前只有定时调度一个端口: 它确实存在三种
 真实实现。没有第二种实现的 OS 差异直接进 `core/adapters/`,不在这里加层。
 
+## 9.2 `core/kit/` — 签到域公共内核(SPEC-11)
+
+四域共性实证分析(2026-11-03)后抽取的域间同构层;对应 Java 语境的
+"公共抽象基类 + 模板方法"。各域只写真正的领域知识(端点/解密/业务流),
+胶水一律引用这里:
+
+| 模块 | 内容 | Java 语境 |
+|------|------|-----------|
+| `kit/domain.py` | `SigninDomain` 模板方法基类 + `DomainError`。子类实现 `build/claim/status/doctor` 四钩子,`run_action` 外壳(未知命令/done_today 跳过/异常映射/台账输出/退出码)锁死在基类 | 抽象类 + Template Method |
+| `kit/cli.py` | `create_domain_app()` 工厂(标准 auto/status/doctor 三命令) + `run_guarded` 异常→退出码 | 工厂方法 |
+| `kit/actions.py` | `unknown_action_report`(未知命令文案) + `skip_done_today`(调度幂等跳过) | — |
+| `kit/budget.py` | `parse_budget`: env 覆盖 → 非法回落 → 越界夹上限 | — |
+| `kit/transport.py` | `transport_error_dto`: NO_NETWORK/BUDGET_OUT/401/403 → 标准结果标签 | — |
+| `kit/tokens.py` | `parse_iso` + `token_expired`(参数化过期字段名) | — |
+
+约定: `core/config/schema.py` 的 `BudgetedConfig` 提供 240 秒口径预算字段;
+测试 patch 点统一(`core.kit.actions.done_today`、`core.kit.domain.emit_result`)。
+不进内核的: `is_installed` 三种实现、凭证解密链路、RetryPolicy 数值——
+各自是平台取证结论,强行统一是泄漏抽象(判据见 SPEC-11)。
+
 ## 10. 全局环境变量速查
 
 | 变量 | 作用 |

@@ -21,9 +21,7 @@
 
 ---
 
-## 阶段一: 内核抽取(纯重构,现有 5 域行为不变)
-
-新增子包 `core/kit/`(避免 core 根目录膨胀)。6 个独立小提交,风险从低到高,
+## 阶段一: 内核抽取(纯重构,现有 5 域行为不变)新增子包 `core/kit/`(避免 core 根目录膨胀)。6 个独立小提交,风险从低到高,
 每个提交迁移对应域并跑门禁(`ruff check && lint-imports && pytest -q`):
 
 | 提交 | 模块 | 内容 | 迁移对象 |
@@ -95,3 +93,24 @@ CLI `auto-signin-kit scaffold new` 与 UI API。
 | Windows 重装编排失败留下半成品 | 独立重建进程 + 失败回滚生成文件;编排自身可单测(桩化) |
 | 脚手架模板腐化(内核变了模板没跟) | 生成物契约测试里断言模板 import 的内核符号存在 |
 | UI 新建与 CLI 手工建域并存混乱 | 文档口径统一: UI 新建 = 触发同一 scaffolding service,产出与手工 STD-01 流程完全一致 |
+
+---
+
+## 追加演进: `SigninDomain` 模板方法基类(2026-11-03 实施完成)
+
+三阶段落地后复盘发现最肥的同构层还没抽: 三域 `run_action` 的整段流程
+(命令分发 → doctor → 调度兜底跳过 → 凭证异常映射 → 动作分发 → 台账输出)
+逐字同构。按模板方法模式补齐为 `core/kit/domain.py`:
+
+- **`SigninDomain` 基类**: 子类只实现 `build`(凭证→API)/`claim`(签到)/
+  `status`(查询)/`doctor`(体检,默认桩)四钩子;`run_action` 外壳锁死在基类,
+  子类无感获得台账输出、退出码语义、调度幂等跳过。
+- **`DomainError`**: 域内可控失败的统一通道,携带结果标签与 extra 字段,
+  基类统一落台账(替代三域各自手写的 except 分支)。
+- **迁移结果**: trae/qoder 各删 ~60 行流程代码,doubao 删 ~50 行并统一为
+  "(out, code) 返回制";workbuddy 不迁(多动作编排与标准三动作差异大,
+  强迁会扭曲——判据同"不进内核"清单)。
+- **脚手架联动**: 生成的 service.py 模板同步改为四钩子填空骨架,
+  新域 = 领域知识填空(参考 trae/qoder 的映射写法),流程代码零重复。
+- **测试 patch 点统一**: `core.kit.actions.done_today`、
+  `core.kit.domain.emit_result`、`SigninDomain.log_path`(基类方法级 patch)。

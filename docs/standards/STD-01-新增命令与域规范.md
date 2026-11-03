@@ -13,17 +13,24 @@
 ```
 src/auto_signin_kit/domains/<域>/
   __init__.py   # app = typer.Typer(help=...);底部 import 命令模块(# noqa: E402,F401)
-  schema.py     # 域配置,继承 DomainConfig(extra="forbid")
+  schema.py     # 域配置,继承 DomainConfig/BudgetedConfig(extra="forbid")
   service.py    # 纯业务逻辑;禁止 import typer;交互走 core.prompt
   cli.py        # 只做参数解析 → set_prompt → 调 service → finally: set_prompt(None)
 ```
 
-- 复制 `docs/standards/templates/domain/` 下的模板起步,不要凭记忆重写。
+- **标准签到域(claim/status/doctor 同构)优先用脚手架**: `auto-signin-kit scaffold new`
+  或管理台"新建应用",生成的骨架已继承 `core.kit.domain.SigninDomain`
+  模板方法基类——你只填 `build/claim/status/doctor` 四个钩子(领域知识),
+  命令分发/异常映射/台账输出/退出码由基类锁定,不要重写流程代码。
+- 手写 `service.py` 时(流程与标准三动作差异大,如 workbuddy 的多动作编排):
+  复制 `docs/standards/templates/domain/` 下的模板起步,不要凭记忆重写。
 - `cli.py` docstring 首行写 `auto-signin-kit <域> <命令> — <功能>`。
 - 每个命令必备 `--help` 与非交互 `--yes/-y`;涉及覆盖/删除/发布类动作时 `-y` 是唯一跳过确认的方式。
 - 失败抛 `core.errors` 子类,由组合根统一转退出码(`ConfigError`=2 / `CommandError`=3,
   新错误类型从 5 开始加,不复用;1/2/3/4 已分别归基类/`ConfigError`/`CommandError`
   /`AdapterError`)。干净早退在 cli 层用 `raise typer.Exit(0)`。
+- 域间同构的胶水(未知命令文案/预算解析/传输错误映射/令牌过期)一律引用
+  `core/kit/*`,不要复制(SPEC-02 §9.2 有清单)。
 
 ## 注册清单
 
@@ -45,6 +52,7 @@ src/auto_signin_kit/domains/<域>/
 
 | # | 步骤 | 说明 |
 |---|------|------|
+| 0 | 脚手架(推荐) | 标准签到域直接 `auto-signin-kit scaffold new <域> --base-url ...`(或管理台"新建应用"),生成四钩子骨架并自动注册生效,跳过 1-4 的手工步骤 |
 | 1 | (按需)core 契约 | 仅当新域需要**新的平台能力或跨域基础设施**时,才动 `core/ports/` + `core/adapters/`,见 STD-05 |
 | 2 | 域三件套 + 调度声明 | 复制 `docs/standards/templates/domain/`,替换占位业务逻辑;`schedule_meta.py` 声明本域定时任务与客户端探测(schedule 域经注册表发现,不反向 import) |
 | 3 | 配置模板 | `config/examples/<域>.yaml.example` + `config/domains/<域>.yaml`,见 STD-02 |
