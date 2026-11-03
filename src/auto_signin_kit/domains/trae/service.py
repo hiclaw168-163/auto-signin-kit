@@ -191,7 +191,8 @@ class TraeDomain(SigninDomain):
                 extra={"token_expires_at": info.get("expiredAt") if info else None})
         return api
 
-    def claim(self, api: Api, config: Any, *, dry_run: bool = False) -> tuple[dict, int]:
+    def claim(self, api: Api, config: Any, *, dry_run: bool = False,
+              once: bool = False) -> tuple[dict, int]:
         """status 先行 → 未签则 claim → 复查确认(主流程见 run_claim)。"""
         budget, warning = self._budget(config)
         out, code = run_claim(api, budget, dry_run=dry_run)

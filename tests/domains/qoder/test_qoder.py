@@ -20,7 +20,9 @@ def _isolate(tmp_path, monkeypatch):
         monkeypatch.delenv(name, raising=False)
     # 数据目录指到一个空目录: 桌面端"目录在但未登录"的 NO_AUTH 分支。
     monkeypatch.setenv("QODER_AUTH_DIR", str(tmp_path / "empty"))
-    monkeypatch.setattr(service, "log_path", lambda: Path(tmp_path) / "qoder.log")
+    # log_path 迁到 SigninDomain 方法(K8),patch 基类方法,所有子类实例生效
+    monkeypatch.setattr("auto_signin_kit.core.kit.domain.SigninDomain.log_path",
+                        lambda self: Path(tmp_path) / "qoder.log")
 
 
 def test_claim_without_auth_reports_no_auth_with_exit_2():

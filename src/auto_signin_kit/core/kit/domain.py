@@ -68,8 +68,12 @@ class SigninDomain:
         """
         raise NotImplementedError("子类必须实现 build()")
 
-    def claim(self, api: Any, config: Any, *, dry_run: bool = False) -> tuple[dict, int]:
-        """执行一轮签到;返回 (结果 DTO, 退出码)。"""
+    def claim(self, api: Any, config: Any, *, dry_run: bool = False,
+              once: bool = False) -> tuple[dict, int]:
+        """执行一轮签到;返回 (结果 DTO, 退出码)。
+
+        ``once`` 供"网络错误不重试"类域消费(如 qoder),用不上就忽略。
+        """
         raise NotImplementedError("子类必须实现 claim()")
 
     def status(self, api: Any, config: Any) -> tuple[dict, int]:
@@ -136,7 +140,7 @@ class SigninDomain:
             self._emit({"result": "ERROR", "needs_attention": True,
                         "report": "动作 %s 未实现" % action}, label, silent=silent)
             return 2
-        out, code = handler(api, config, dry_run=dry_run) if action == "claim" \
+        out, code = handler(api, config, dry_run=dry_run, once=once) if action == "claim" \
             else handler(api, config)
         self._emit(out, label, silent=silent)
         return code

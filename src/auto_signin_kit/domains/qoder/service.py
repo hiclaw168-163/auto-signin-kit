@@ -12,13 +12,12 @@ from datetime import datetime
 from typing import Any
 
 from auto_signin_kit.core.httpclient import Budget
-from auto_signin_kit.core.kit.actions import skip_done_today, unknown_action_report
+from auto_signin_kit.core.kit.domain import DomainError, SigninDomain
 from auto_signin_kit.core.kit.transport import transport_error_dto
 from auto_signin_kit.domains.qoder.api import (
     SENSITIVE,
     Api,
     build_api,
-    log_path,
     parse_budget,
 )
 from auto_signin_kit.domains.qoder.auth import TZ_CN, NoAuthError, QoderAuthError
@@ -233,69 +232,59 @@ def run_status(api: Api, budget: Budget) -> tuple[dict, int]:
     }, 0
 
 
-def run_action(
-    action: str, config: Any, *, silent: bool = False, dry_run: bool = False, once: bool = False,
-    command: str | None = None,
-) -> int:
-    """命令分发;结果按一行 JSON 契约输出,退出码 0/1/2,本函数保证不抛业务异常。
+class QoderDomain(SigninDomain):
+    """qoder 域: 只实现四钩子,流程外壳(命令分发/异常映射/台账/退出码)由基类锁定。"""
 
-    ``command`` 是用户/调度器实际敲的 CLI 命令名(如 ``auto``),用于台账
-    ``action`` 标识;缺省回落到内部 action 名。
-    """
-    from auto_signin_kit.core.report import emit_result
-    from auto_signin_kit.domains.qoder.doctor import run_doctor
+    name = "qoder"
+    display = "Qoder CN"
+    sensitive = SENSITIVE
+    ready_noun = "领取"
 
-    label = command or action  # 台账/日志里的动作标识
-    if action not in ("claim", "status", "doctor"):
-        emit_result({"domain": "qoder", "result": "ERROR", "needs_attention": True,
-                     "report": unknown_action_report(action, ("claim", "status", "doctor"))},
-                    action=label, log_path=log_path(), log_errors_without_silent=False)
-        return 2
-    if action == "doctor":
-        out, code = run_doctor()
-        emit_result(out, domain="qoder", action=label, silent=silent, log_path=log_path(),
-                    sensitive=SENSITIVE, log_errors_without_silent=False)
-        return code
+    def build(self, config: Any, *, once: bool = False, dry_run: bool = False) -> Any:
+        """登录态 → Api;三种凭证失败按语义转 DomainError。"""
+        try:
+            api, sess, staleness = build_api(config)
+        except NoAuthError as exc:
+            raise DomainError("NO_AUTH", str(exc), exit_code=2,
+                              extra={"looked_in": exc.looked_in or None}) from exc
+        except QoderAuthError as exc:
+            raise DomainError("AUTH_ERROR", str(exc), exit_code=1,
+                              extra={"looked_in": exc.looked_in or None}) from exc
+        if staleness == "EXPIRED":
+            raise DomainError(
+                "AUTH_REJECTED", "登录态已过期，请打开 Qoder CN 桌面端重新登录",
+                exit_code=1,
+                extra={"token_expires_at": sess.get("expiresAt") if sess else None})
+        return api
 
-    # 调度兜底触发(高密度时间点): 当天已成功领取就不再执行,也不重复落库
-    if skip_done_today("qoder", action, silent=silent, noun="领取"):
-        return 0
-
-    budget_value, warning = parse_budget(config)
-    budget = Budget(budget_value)
-    try:
-        api, sess, staleness = build_api(config)
-    except NoAuthError as exc:
-        emit_result({"domain": "qoder", "result": "NO_AUTH",
-                     "needs_attention": True, "report": str(exc),
-                     "looked_in": exc.looked_in or None},
-                    action=label, silent=silent, log_path=log_path(),
-                    log_errors_without_silent=False)
-        return 2
-    except QoderAuthError as exc:
-        emit_result({"domain": "qoder", "result": "AUTH_ERROR",
-                     "needs_attention": True, "report": str(exc),
-                     "looked_in": exc.looked_in or None},
-                    action=label, silent=silent, log_path=log_path(),
-                    log_errors_without_silent=False)
-        return 1
-    if staleness == "EXPIRED":
-        emit_result({"domain": "qoder", "result": "AUTH_REJECTED", "needs_attention": True,
-                     "token_expires_at": sess.get("expiresAt") if sess else None,
-                     "report": "登录态已过期，请打开 Qoder CN 桌面端重新登录"},
-                    action=label, silent=silent, log_path=log_path(),
-                    log_errors_without_silent=False)
-        return 1
-
-    if action == "status":
-        out, code = run_status(api, budget)
-    else:  # claim
+    def claim(self, api: Any, config: Any, *, dry_run: bool = False,
+              once: bool = False) -> tuple[dict, int]:
+        """领取 Credits;``once``= 网络错误也不重试(计划任务下一轮再试)。"""
+        budget, warning = self._budget(config)
         out = claim_once(api, budget, retry=not once, dry_run=dry_run)
         if api.token_expires_at:
             out.setdefault("token_expires_at", api.token_expires_at)
         code = 0 if out.get("result") in ("CLAIMED", "ALREADY", "INACTIVE", "DRY_RUN") else 1
-    if warning:
-        out.setdefault("config_warning", warning)
-    emit_result(out, domain="qoder", action=label, silent=silent, log_path=log_path(),
-                sensitive=SENSITIVE, log_errors_without_silent=False)
-    return code
+        if warning:
+            out.setdefault("config_warning", warning)
+        return out, code
+
+    def status(self, api: Any, config: Any) -> tuple[dict, int]:
+        """只查活动列表,不领取。"""
+        budget, _ = self._budget(config)
+        return run_status(api, budget)
+
+    def doctor(self, config: Any) -> tuple[dict, int]:
+        """离线检查登录态可读性与设备组件。"""
+        from auto_signin_kit.domains.qoder.doctor import run_doctor
+
+        return run_doctor()
+
+    def _budget(self, config: Any) -> tuple[Budget, str | None]:
+        value, warning = parse_budget(config)
+        return Budget(value), warning
+
+
+domain = QoderDomain()
+#: 模块级入口(CLI 工厂与既有调用方引用): 即模板方法绑定。
+run_action = domain.run_action
