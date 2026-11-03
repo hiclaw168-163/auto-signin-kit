@@ -86,3 +86,33 @@
 3. 另开终端跑 `auto-signin-kit doubao auto`(CDP 实时 Cookie 优先级最高,
    doctor 的 `cdp_available` 应为 true);
 4. 用完退出 helper,正常启动豆包即可。
+
+### 4.2 2026-11-03 排查实录: 签到 710010702 + CDP 兜底两处失效
+
+现象: 调度 00:05/09:05 两次 `710010702 系统错误`(前一晚 23:05 还正常)。
+
+**会话层(已修复)**:
+- 客户端长期开着,会话在服务端过期后只存在于内存,Cookie 库不落盘
+  (落盘时间停在会话过期前),调度读到过期会话;
+- CDP 兜底当时也失效,两处:
+  1. Chromium 111+ 拒绝带 `Origin` 头的 CDP WebSocket 握手(403),
+     `websocket-client` 默认发 Origin——握手必须 `suppress_origin=True`;
+  2. `probe()` 曾按 `/json/version` 的 Browser 字段含 "doubao" 校验身份,
+     但新版豆包(Chrome/147 内核)只报 `Chrome/147...`——真豆包被拒。
+     身份安全改由 target URL 过滤保证(异应用占口时拿不到 doubao cookie);
+- 修复后 CDP 取到内存实时会话(detail/status 全链路通),`710012001`
+  登录过期映射为 NO_AUTH(台账词表有标签,report 给重开客户端指引)。
+
+**服务层(非我方问题,2026-11-03 当日实测)**:
+- 会话有效(过了登录关)、活动在期、`checked_in_today=false` 的前提下,
+  checkin 接口仍回 `710010702`;
+- **决定性实验**: 在豆包页面上下文内用浏览器原生 fetch(同源+真实 cookie+真实头)
+  发同样请求,服务端照样报错——非请求构造/签名/风控参数问题;
+- 官方客户端界面点「签到」同样 toast「签到失败，请稍后重试」;
+- 前端请求体实为 `{scene, biz_params: undefined}`(序列化省略),与我们一致;
+  先调 `landing/report` 上报事件也不影响结果。结论: 服务端故障,等恢复,
+  调度高密度触发 + 接口幂等会自动补签。
+
+**教训**: doctor 的 `session_ok` 只验 cookie 格式(本地能力),验不了服务端
+登录态;"系统错误"类网关码会掩盖真实死因,网关码→result 的映射要前置到
+api 层,不能靠事后猜。
