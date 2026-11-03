@@ -13,11 +13,14 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from auto_signin_kit.core.config import load_domain_config_model
 from auto_signin_kit.core.errors import AutoSignInKitError
-from auto_signin_kit.domains.schedule.data import providers
+from auto_signin_kit.domains.schedule import service as schedule_service
+from auto_signin_kit.domains.schedule.data import domain_of, providers
+from auto_signin_kit.domains.schedule.schema import ScheduleDomainConfig
 from auto_signin_kit.scaffolding import service as scaffolding
 from auto_signin_kit.scaffolding.rebuild import spawn_rebuild
-from auto_signin_kit.ui import daemon
+from auto_signin_kit.ui import config_api, daemon
 
 router = APIRouter()
 
@@ -32,9 +35,30 @@ class AppCreate(BaseModel):
     daily_time: str = "09:05"
 
 
+def _app_config(name: str) -> dict[str, Any] | None:
+    """域 YAML 的字段视图;配置不存在时返回 None(真实状态,如实呈报)。"""
+    try:
+        return config_api.load_data(name)
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            return None
+        raise
+
+
+def _schedule_times_by_domain() -> dict[str, list[str]]:
+    """域名 → 该域全部任务的触发时间(已套 schedule.yaml 的任务覆盖)。"""
+    config = load_domain_config_model("schedule", ScheduleDomainConfig,
+                                      merge_local=True)
+    out: dict[str, list[str]] = {}
+    for spec in schedule_service.select_tasks(config, None):
+        out.setdefault(domain_of(spec), []).extend(spec.times)
+    return out
+
+
 @router.get("/apps")
 def list_apps() -> dict[str, Any]:
-    """注册表发现的应用清单(名称/类别/显示名/就绪探测),零硬编码。"""
+    """注册表发现的应用清单(名称/类别/显示名/就绪探测/配置字段/调度时间)。"""
+    times_by_domain = _schedule_times_by_domain()
     apps = []
     for name, meta in providers():
         ready = None
@@ -47,6 +71,8 @@ def list_apps() -> dict[str, Any]:
             "kind": getattr(meta, "KIND", None),
             "display": getattr(meta, "DISPLAY_NAME", name),
             "ready": ready,
+            "config": _app_config(name),
+            "times": times_by_domain.get(name, []),
         })
     return {"apps": apps, "generated_at": _now()}
 
@@ -101,3 +127,36 @@ def delete_app(name: str) -> dict[str, Any]:
     return {"result": "OK", "domain": name, "removed": removed,
             "message": "重建进行中: 服务将离线并自动回来。"
                        "已注册的系统定时任务请到调度页注销。"}
+
+
+class AppUpdate(BaseModel):
+    """PUT /apps/{name} 请求体: 只传要改的字段(部分更新,深合并)。"""
+
+    updates: dict[str, Any]
+
+
+@router.get("/apps/{name}/config")
+def get_app_config(name: str) -> dict[str, Any]:
+    """应用配置的字段视图(表单化编辑取数;纯读取不落盘)。"""
+    if name not in config_api.known_domains():
+        raise HTTPException(404, f"未知域: {name}")
+    return {"domain": name, "fields": config_api.load_data(name)}
+
+
+@router.put("/apps/{name}")
+def update_app(name: str, body: AppUpdate) -> dict[str, Any]:
+    """表单化编辑应用配置: 深合并 → pydantic 校验 → 原子写盘。
+
+    不触发重建: 配置在命令运行时读取,下次运行生效。注意重写会移除
+    YAML 里的注释——需要保留注释的精细编辑走「配置」页的 YAML 文本编辑。
+    """
+    if name not in config_api.known_domains():
+        raise HTTPException(404, f"未知域: {name}")
+    if not body.updates:
+        raise HTTPException(422, "没有要修改的字段")
+    data = config_api.load_data(name)
+    merged = config_api.deep_merge(data, body.updates)
+    config_api.validate_data(name, merged)
+    path = config_api.atomic_write_data(name, merged)
+    return {"ok": True, "path": str(path),
+            "message": "已保存: 下次运行 %s 命令时生效(YAML 注释已被重写移除)" % name}

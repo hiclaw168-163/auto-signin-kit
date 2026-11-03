@@ -7,9 +7,14 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+import re
+
+from pydantic import BaseModel, Field, field_validator
 
 from auto_signin_kit.core.config.schema import DomainConfig
+
+#: 合法触发时间: ``HH:MM`` 24 小时制(HH 00-23,MM 00-59)。
+_TIME_PATTERN = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
 
 class TaskOverride(BaseModel):
@@ -19,6 +24,18 @@ class TaskOverride(BaseModel):
     times: list[str] = Field(default_factory=list)
     #: 执行时限(分钟);``null`` = 沿用清单默认值。
     limit_minutes: int | None = None
+
+    @field_validator("times")
+    @classmethod
+    def _times_must_be_hhmm(cls, value: list[str]) -> list[str]:
+        """格式在配置加载时就把住: 错格式等到注册时才炸,排查成本高得多。"""
+        for item in value:
+            if not _TIME_PATTERN.match(item):
+                raise ValueError(
+                    "触发时间必须是 24 小时制 HH:MM(如 09:05),收到: %r" % item)
+        if len(set(value)) != len(value):
+            raise ValueError("触发时间有重复项")
+        return value
 
 
 class ScheduleDomainConfig(DomainConfig):

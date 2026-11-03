@@ -41,6 +41,19 @@ function kindTag(kind: string | null): { label: string; type: 'success' | 'info'
   return { label: '未分类', type: 'default' }
 }
 
+// 配置摘要: 标量字段拼成 key=value;复杂字段只报个数,完整编辑走弹窗
+function configSummary(config: Record<string, unknown> | null): string[] {
+  if (!config) return []
+  return Object.entries(config)
+    .filter(([, v]) => v !== null && typeof v !== 'object')
+    .map(([k, v]) => `${k}=${v}`)
+}
+
+function complexCount(config: Record<string, unknown> | null): number {
+  if (!config) return 0
+  return Object.values(config).filter((v) => v !== null && typeof v === 'object').length
+}
+
 async function create() {
   if (!/^[a-z][a-z0-9_]*$/.test(form.name)) {
     message.error('域名须为小写字母开头的小写字母/数字/下划线')
@@ -90,6 +103,66 @@ async function pollUntilBack() {
   message.warning('等待超时,请稍后手动刷新;重建日志见 logs/scaffold-rebuild.log')
 }
 
+// ---------------- 配置编辑(表单化部分更新,不触发重建) ----------------
+
+interface FieldRow {
+  key: string
+  value: string | number | boolean | null
+  original: unknown
+}
+
+const editing = ref(false)
+const editName = ref('')
+const editLoading = ref(false)
+const savingEdit = ref(false)
+const editFields = ref<FieldRow[]>([])
+
+function isScalar(v: unknown): boolean {
+  return v === null || ['string', 'number', 'boolean'].includes(typeof v)
+}
+
+async function openEdit(app: AppInfo) {
+  editName.value = app.name
+  editLoading.value = true
+  editing.value = true
+  try {
+    const out = await appsApi.getConfig(app.name)
+    editFields.value = Object.entries(out.fields).map(([key, value]) => ({
+      key,
+      value: (isScalar(value) ? value : null) as FieldRow['value'],
+      original: value,
+    }))
+  } catch (e) {
+    message.error(String(e))
+    editing.value = false
+  } finally {
+    editLoading.value = false
+  }
+}
+
+async function saveEdit() {
+  const updates: Record<string, unknown> = {}
+  for (const f of editFields.value) {
+    if (!isScalar(f.original) || f.value === f.original) continue
+    // 字符串字段的留空: 原值是 null 时保持 null,否则按空串提交
+    updates[f.key] = f.value === '' && f.original === null ? null : f.value
+  }
+  if (!Object.keys(updates).length) {
+    message.info('没有修改')
+    return
+  }
+  savingEdit.value = true
+  try {
+    const out = await appsApi.update(editName.value, updates)
+    message.success(out.message)
+    editing.value = false
+  } catch (e) {
+    message.error(String(e))
+  } finally {
+    savingEdit.value = false
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -113,7 +186,7 @@ onMounted(load)
 
     <n-table size="small" :single-line="false" style="background: var(--ask-surface)">
       <thead>
-        <tr><th>应用</th><th>类别</th><th>就绪探测</th><th>操作</th></tr>
+        <tr><th>应用</th><th>类别</th><th>就绪探测</th><th>每日时间</th><th>配置</th><th>操作</th></tr>
       </thead>
       <tbody>
         <tr v-for="a in apps" :key="a.name">
@@ -130,17 +203,37 @@ onMounted(load)
             </n-tag>
           </td>
           <td>
-            <n-popconfirm :show-icon="false">
-              <template #trigger>
-                <n-button size="tiny" type="error" ghost :disabled="working">删除</n-button>
-              </template>
-              删除是终局操作(物理删除代码与配置)。确认删除
-              <b>{{ a.name }}</b>?
-            </n-popconfirm>
+            <n-text v-if="a.times.length" style="font-size: 12px">{{ a.times.join(' / ') }}</n-text>
+            <n-text v-else depth="3" style="font-size: 12px">未调度</n-text>
+          </td>
+          <td style="max-width: 320px">
+            <template v-if="a.config">
+              <n-space size="small" :wrap="true">
+                <n-tag v-for="item in configSummary(a.config)" :key="item" size="small"
+                       :bordered="false" style="font-size: 11px">{{ item }}</n-tag>
+                <n-tag v-if="complexCount(a.config)" size="small" type="info"
+                       :bordered="false" style="font-size: 11px">
+                  复杂字段 ×{{ complexCount(a.config) }}
+                </n-tag>
+              </n-space>
+            </template>
+            <n-text v-else depth="3" style="font-size: 12px">配置文件不存在</n-text>
+          </td>
+          <td>
+            <n-space size="small">
+              <n-button size="tiny" type="primary" ghost @click="openEdit(a)">编辑配置</n-button>
+              <n-popconfirm :show-icon="false">
+                <template #trigger>
+                  <n-button size="tiny" type="error" ghost :disabled="working">删除</n-button>
+                </template>
+                删除是终局操作(物理删除代码与配置)。确认删除
+                <b>{{ a.name }}</b>?
+              </n-popconfirm>
+            </n-space>
           </td>
         </tr>
         <tr v-if="!apps.length && !loading">
-          <td colspan="4" style="text-align: center">
+          <td colspan="6" style="text-align: center">
             <n-text depth="3">还没有应用,点"新建应用"开始</n-text>
           </td>
         </tr>
@@ -175,6 +268,42 @@ onMounted(load)
           <n-button type="primary" :loading="working" @click="create">
             生成并重建生效
           </n-button>
+        </n-space>
+      </template>
+    </n-modal>
+
+    <n-modal v-model:show="editing" preset="card" :title="`编辑配置: ${editName}`"
+             style="max-width: 560px">
+      <n-spin :show="editLoading">
+        <n-alert type="info" :show-icon="false" style="margin-bottom: 12px">
+          保存后<b>下次运行命令时生效</b>(不需要重建)。重写会移除 YAML 注释,
+          需要保留注释的精细编辑请到
+          <n-button text type="primary" @click="router.push({ name: 'config' })">配置</n-button>
+          页用文本编辑。
+        </n-alert>
+        <n-form label-placement="left" label-width="150">
+          <n-form-item v-for="f in editFields" :key="f.key" :label="f.key">
+            <n-input-number v-if="typeof f.original === 'number'"
+                            v-model:value="f.value as number | null"
+                            style="width: 100%" />
+            <n-switch v-else-if="typeof f.original === 'boolean'"
+                      v-model:value="f.value as boolean" />
+            <n-input v-else-if="isScalar(f.original)"
+                     v-model:value="f.value as string | null"
+                     :placeholder="f.original === null ? '留空 = 未设置(null)' : ''" />
+            <n-text v-else depth="3" style="font-size: 12px">
+              复杂字段(列表/映射),请到「配置」页用 YAML 编辑
+            </n-text>
+          </n-form-item>
+          <n-form-item v-if="!editFields.length">
+            <n-text depth="3">该域还没有配置文件(可从 config/examples 复制)</n-text>
+          </n-form-item>
+        </n-form>
+      </n-spin>
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="editing = false">取消</n-button>
+          <n-button type="primary" :loading="savingEdit" @click="saveEdit">保存</n-button>
         </n-space>
       </template>
     </n-modal>

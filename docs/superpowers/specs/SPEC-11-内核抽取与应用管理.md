@@ -114,3 +114,19 @@ CLI `auto-signin-kit scaffold new` 与 UI API。
   新域 = 领域知识填空(参考 trae/qoder 的映射写法),流程代码零重复。
 - **测试 patch 点统一**: `core.kit.actions.done_today`、
   `core.kit.domain.emit_result`、`SigninDomain.log_path`(基类方法级 patch)。
+
+## 追加演进: 台账层按表拆包(2026-11-03 实施完成)
+
+UI 编辑能力铺开后 `core/store.py` 单文件逼近 410 行上限,按表拆为
+`core/store/` 包,**公共 API 与调用方零改动**(包 `__init__` 再出口):
+
+- **`connection.py`**: 库文件定位 + 连接建立(WAL/busy_timeout/建表迁移时序);
+- **`ingest.py`**: 落库分流,emit_result 事件按域进对应表(best-effort 边界在此);
+- **`runs.py`**: `ask_signin_runs` 的读查与维护(台账/总览/跳过判断/清理);
+- **`maintenance.py`**: 跨表整理(自增 id 重排 `resequence_ids` 等)。
+
+刻意**不做** Java 式"通用 DAO 基类 + 每表 Service 类": 各表形状完全不同
+(签到台账有词表归一/请求响应拆列,审计表是纯追加),泛型抽象只会逼出
+"为抽象而抽象"的代码——平铺函数模块 + 共享连接层就是这个规模的正解。
+新增一张表的固定三步: `store_migrations` 加 DDL/索引 → 按表新建读查模块 →
+包出口;跨表整理进 `maintenance.py` 并登记表清单。

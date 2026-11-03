@@ -1,12 +1,14 @@
 // 与 Python 侧 src/auto_signin_kit/ui/api.py + ui/apps_api.py 的响应形状对齐;
 // 改 API 时两边一起改。
 
-// SPEC-11 应用管理: 注册表发现的应用(名称/类别/显示名/就绪探测)。
+// SPEC-11 应用管理: 注册表发现的应用(名称/类别/显示名/就绪探测/配置/调度时间)。
 export interface AppInfo {
   name: string
   kind: string | null // web | client | null(未声明 KIND 的域)
   display: string
   ready: boolean | null
+  config: Record<string, unknown> | null // 域 YAML 字段视图;null = 配置文件不存在
+  times: string[] // 该域全部定时任务的触发时间(已套 schedule.yaml 覆盖)
 }
 
 export interface AppsInfo {
@@ -19,6 +21,18 @@ export interface AppCreateResult {
   domain: string
   files?: number
   removed?: string[]
+  message: string
+}
+
+// 应用配置编辑: 字段视图(表单化)与部分更新结果。
+export interface AppConfigInfo {
+  domain: string
+  fields: Record<string, unknown>
+}
+
+export interface AppUpdateResult {
+  ok: boolean
+  path: string
   message: string
 }
 

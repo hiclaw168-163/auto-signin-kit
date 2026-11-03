@@ -305,3 +305,23 @@ class TestSchema:
         from auto_signin_kit.domains.schedule.schema import ScheduleDomainConfig
 
         assert ScheduleDomainConfig.model_validate({}).enabled_tasks == []
+
+    def test_times_must_be_hhmm(self):
+        """格式在配置加载时就把住(错格式等到注册时才炸,排查成本高)。"""
+        from pydantic import ValidationError
+
+        from auto_signin_kit.domains.schedule.schema import TaskOverride
+
+        assert TaskOverride.model_validate({"times": ["09:05", "12:30"]}).times == \
+            ["09:05", "12:30"]
+        for bad in ("9:5", "24:00", "09:60", "0905", "09:05 ", ""):
+            with pytest.raises(ValidationError):
+                TaskOverride.model_validate({"times": [bad]})
+
+    def test_times_must_be_unique(self):
+        from pydantic import ValidationError
+
+        from auto_signin_kit.domains.schedule.schema import TaskOverride
+
+        with pytest.raises(ValidationError):
+            TaskOverride.model_validate({"times": ["09:05", "09:05"]})

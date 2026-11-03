@@ -96,6 +96,16 @@ def events(
         result=result, limit=limit)
 
 
+@router.get("/credits/summary")
+def credits_summary() -> dict[str, Any]:
+    """积分总览(三问一端点): 每应用每日所得 / 账户活跃 / 可获取 vs 实际。"""
+    return {
+        "daily": store.credits_daily(14),
+        "accounts": store.accounts_summary(7),
+        "capacity": store.capacity_summary(7),
+    }
+
+
 @router.get("/schedule")
 def schedule_status() -> dict[str, Any]:
     """各定时任务注册状态;"未注册"是正常状态,不是错误。"""
