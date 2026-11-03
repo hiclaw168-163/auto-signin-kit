@@ -15,13 +15,12 @@ import time
 from typing import Any
 
 from auto_signin_kit.core.httpclient import Budget
-from auto_signin_kit.core.kit.actions import skip_done_today, unknown_action_report
+from auto_signin_kit.core.kit.domain import DomainError, SigninDomain
 from auto_signin_kit.core.kit.transport import transport_error_dto
 from auto_signin_kit.domains.trae.api import (
     SENSITIVE,
     Api,
     build_api,
-    log_path,
     parse_budget,
 )
 from auto_signin_kit.domains.trae.auth import NoAuthError, TraeAuthError
@@ -167,68 +166,55 @@ def run_status(api: Api, budget: Budget) -> tuple[dict, int]:
     return out, code
 
 
-def run_action(
-    action: str, config: Any, *, silent: bool = False, dry_run: bool = False, once: bool = False,
-    command: str | None = None,
-) -> int:
-    """命令分发;结果按一行 JSON 契约输出,退出码 0/1/2,本函数保证不抛业务异常。
+class TraeDomain(SigninDomain):
+    """trae 域: 只实现四钩子,流程外壳(命令分发/异常映射/台账/退出码)由基类锁定。"""
 
-    ``command`` 是用户/调度器实际敲的 CLI 命令名(如 ``auto``),用于台账
-    ``action`` 标识;缺省回落到内部 action 名。
-    """
-    from auto_signin_kit.core.report import emit_result
-    from auto_signin_kit.domains.trae.doctor import run_doctor
+    name = "trae"
+    display = "Trae CN"
+    sensitive = SENSITIVE
 
-    label = command or action  # 台账/日志里的动作标识
-    del once  # 查询+领取共两次请求,预算内完成;once 保留参数位与 qoder 对齐
-    if action not in ("claim", "status", "doctor"):
-        emit_result({"domain": "trae", "result": "ERROR", "needs_attention": True,
-                     "report": unknown_action_report(action, ("claim", "status", "doctor"))},
-                    action=label, log_path=log_path(), log_errors_without_silent=False)
-        return 2
-    if action == "doctor":
-        out, code = run_doctor(config.data_dir)
-        emit_result(out, domain="trae", action=label, silent=silent, log_path=log_path(),
-                    sensitive=SENSITIVE, log_errors_without_silent=False)
-        return code
+    def build(self, config: Any, *, once: bool = False, dry_run: bool = False) -> Api:
+        """登录态 → Api;三种凭证失败按语义转 DomainError。"""
+        del once  # 查询+领取共两次请求,预算内完成;参数位与 qoder 对齐
+        try:
+            api, info, staleness = build_api(config)
+        except NoAuthError as exc:
+            raise DomainError("NO_AUTH", str(exc), exit_code=2,
+                              extra={"looked_in": exc.looked_in or None}) from exc
+        except TraeAuthError as exc:
+            raise DomainError("AUTH_ERROR", str(exc), exit_code=1,
+                              extra={"looked_in": exc.looked_in or None}) from exc
+        if staleness == "EXPIRED":
+            raise DomainError(
+                "AUTH_REJECTED", "登录态已过期，请打开 Trae CN 桌面端重新登录",
+                exit_code=1,
+                extra={"token_expires_at": info.get("expiredAt") if info else None})
+        return api
 
-    # 调度兜底触发(高密度时间点): 当天已成功签到就不再执行,也不重复落库
-    if skip_done_today("trae", action, silent=silent):
-        return 0
-
-    budget_value, warning = parse_budget(config)
-    budget = Budget(budget_value)
-    try:
-        api, info, staleness = build_api(config)
-    except NoAuthError as exc:
-        emit_result({"domain": "trae", "result": "NO_AUTH",
-                     "needs_attention": True, "report": str(exc),
-                     "looked_in": exc.looked_in or None},
-                    action=label, silent=silent, log_path=log_path(),
-                    log_errors_without_silent=False)
-        return 2
-    except TraeAuthError as exc:
-        emit_result({"domain": "trae", "result": "AUTH_ERROR",
-                     "needs_attention": True, "report": str(exc),
-                     "looked_in": exc.looked_in or None},
-                    action=label, silent=silent, log_path=log_path(),
-                    log_errors_without_silent=False)
-        return 1
-    if staleness == "EXPIRED":
-        emit_result({"domain": "trae", "result": "AUTH_REJECTED", "needs_attention": True,
-                     "token_expires_at": info.get("expiredAt") if info else None,
-                     "report": "登录态已过期，请打开 Trae CN 桌面端重新登录"},
-                    action=label, silent=silent, log_path=log_path(),
-                    log_errors_without_silent=False)
-        return 1
-    del info
-
-    if action == "status":
-        out, code = run_status(api, budget)
-    else:  # claim
+    def claim(self, api: Api, config: Any, *, dry_run: bool = False) -> tuple[dict, int]:
+        """status 先行 → 未签则 claim → 复查确认(主流程见 run_claim)。"""
+        budget, warning = self._budget(config)
         out, code = run_claim(api, budget, dry_run=dry_run)
-    if warning:
-        out.setdefault("config_warning", warning)
-    emit_result(out, domain="trae", action=label, silent=silent, log_path=log_path(),
-                sensitive=SENSITIVE, log_errors_without_silent=False)
-    return code
+        if warning:
+            out.setdefault("config_warning", warning)
+        return out, code
+
+    def status(self, api: Api, config: Any) -> tuple[dict, int]:
+        """只查今日签到状态,不领取。"""
+        budget, _ = self._budget(config)
+        return run_status(api, budget)
+
+    def doctor(self, config: Any) -> tuple[dict, int]:
+        """离线检查登录态可读性与有效期。"""
+        from auto_signin_kit.domains.trae.doctor import run_doctor
+
+        return run_doctor(config.data_dir)
+
+    def _budget(self, config: Any) -> tuple[Budget, str | None]:
+        value, warning = parse_budget(config)
+        return Budget(value), warning
+
+
+domain = TraeDomain()
+#: 模块级入口(CLI 工厂与既有调用方引用): 即模板方法绑定。
+run_action = domain.run_action
