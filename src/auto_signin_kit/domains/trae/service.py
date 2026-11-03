@@ -14,7 +14,8 @@ import json
 import time
 from typing import Any
 
-from auto_signin_kit.core.httpclient import BUDGET_OUT, NO_NETWORK, Budget
+from auto_signin_kit.core.httpclient import Budget
+from auto_signin_kit.core.kit.transport import transport_error_dto
 from auto_signin_kit.domains.trae.api import (
     SENSITIVE,
     Api,
@@ -37,19 +38,9 @@ def _body(payload: Any) -> dict:
 
 def _transport_errors(code: int, payload: Any, err: str | None) -> dict | None:
     """HTTP/伪状态层统一映射;业务 code(1001 等)不在这里处理。"""
-    if code in (401, 403):
-        return {"result": "AUTH_REJECTED" if code == 401 else "FORBIDDEN",
-                "needs_attention": True, "http": code,
-                "report": ("登录态被服务端拒绝（HTTP %d），请打开 Trae CN 桌面端重新登录" % code
-                           if code == 401 else
-                           "被服务端拒绝（HTTP 403），请确认账号资格后重试")}
-    if code == NO_NETWORK:
-        return {"result": "NETWORK", "needs_attention": True,
-                "report": "网络请求失败：%s" % _short(err)}
-    if code == BUDGET_OUT:
-        return {"result": "TIMEOUT", "needs_attention": True,
-                "report": _body(payload).get("error") or "已达本次运行时间预算"}
-    return None
+    return transport_error_dto(code, payload, err, auth_reports={
+        401: "登录态被服务端拒绝（HTTP 401），请打开 Trae CN 桌面端重新登录",
+    })
 
 
 def _business_error(code: int, payload: dict) -> dict | None:

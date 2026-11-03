@@ -11,7 +11,8 @@ import time
 from datetime import datetime
 from typing import Any
 
-from auto_signin_kit.core.httpclient import BUDGET_OUT, NO_NETWORK, Budget
+from auto_signin_kit.core.httpclient import Budget
+from auto_signin_kit.core.kit.transport import transport_error_dto
 from auto_signin_kit.domains.qoder.api import (
     SENSITIVE,
     Api,
@@ -163,27 +164,19 @@ def _claim_picked(api: Api, picked: list[dict], budget: Budget, dry_run: bool) -
     return out
 
 
-def _auth_dto(code: int) -> dict:
-    if code == 401:
-        return {"result": "AUTH_REJECTED", "needs_attention": True, "http": code,
-                "report": "登录态被服务端拒绝（HTTP 401）。常见原因：令牌已过期，"
-                          "打开 Qoder 桌面端重新登录；或端点与客户端版本不匹配"
-                          "（CN 版/国际版），可用 QODER_BASE_URL 覆盖后重试"}
-    return {"result": "FORBIDDEN", "needs_attention": True, "http": code,
-            "report": "被服务端拒绝（HTTP 403），请确认账号资格后重试"}
+def _auth_reports() -> dict[int, str]:
+    """401/403 的域专属指引(端点不匹配的排查提示是 Qoder 特有问题)。"""
+    return {401: "登录态被服务端拒绝（HTTP 401）。常见原因：令牌已过期，"
+                 "打开 Qoder 桌面端重新登录；或端点与客户端版本不匹配"
+                 "（CN 版/国际版），可用 QODER_BASE_URL 覆盖后重试"}
 
 
 def claim_once(api: Api, budget: Budget, *, retry: bool = True, dry_run: bool = False) -> dict:
     """查询 → 分类 → 领取/汇报。结果: CLAIMED/ALREADY/PENDING/INACTIVE/DRY_RUN。"""
     code, payload, err = api.campaigns(budget=budget, retry=retry)
-    if code in (401, 403):
-        return _auth_dto(code)
-    if code == NO_NETWORK:
-        return {"result": "NETWORK", "needs_attention": True,
-                "report": "网络请求失败：%s" % _short(err)}
-    if code == BUDGET_OUT:
-        return {"result": "TIMEOUT", "needs_attention": True,
-                "report": (payload or {}).get("error", "已达本次运行时间预算")}
+    transport = transport_error_dto(code, payload, err, auth_reports=_auth_reports())
+    if transport is not None:
+        return transport
     if code != 200 or not isinstance(payload, dict):
         return {"result": "ERROR", "needs_attention": True,
                 "report": "查询活动失败：HTTP %s %s" % (code, _short(payload))}
@@ -213,14 +206,9 @@ def claim_once(api: Api, budget: Budget, *, retry: bool = True, dry_run: bool = 
 def run_status(api: Api, budget: Budget) -> tuple[dict, int]:
     """只查活动列表不领取;输出每个活动的状态快照。"""
     code, payload, err = api.campaigns(budget=budget, retry=True)
-    if code in (401, 403):
-        return _auth_dto(code), 1
-    if code == NO_NETWORK:
-        return {"result": "NETWORK", "needs_attention": True,
-                "report": "网络请求失败：%s" % _short(err)}, 1
-    if code == BUDGET_OUT:
-        return {"result": "TIMEOUT", "needs_attention": True,
-                "report": (payload or {}).get("error", "已达本次运行时间预算")}, 1
+    transport = transport_error_dto(code, payload, err, auth_reports=_auth_reports())
+    if transport is not None:
+        return transport, 1
     if code != 200 or not isinstance(payload, dict):
         return {"result": "ERROR", "needs_attention": True,
                 "report": "查询活动失败：HTTP %s %s" % (code, _short(payload))}, 1
