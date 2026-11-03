@@ -26,9 +26,13 @@ def new(
 
     def _run() -> int:
         manifest = service.create_domain(name, kind, display or None, base_url, daily_time)
+        # 本进程就跑在 tool venv 里,重装前必须等它退出(os error 5 教训),
+        # 所以把自身 pid 交给重建进程等待
+        import os
+
         from auto_signin_kit.scaffolding.rebuild import spawn_rebuild
 
-        rebuilder = spawn_rebuild(wait_pid=None, reopen_serve=False)
+        rebuilder = spawn_rebuild(wait_pid=os.getpid(), reopen_serve=False)
         typer.echo(
             "已生成 %d 个文件并注册域 %s(%s)\n"
             "重建进程 pid=%d 正在后台执行 uv sync + tool 重装(约 1 分钟),\n"

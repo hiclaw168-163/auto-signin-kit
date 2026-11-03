@@ -31,9 +31,10 @@ def _is_alive(pid: int) -> bool:
 
 
 def _run(cmd: list[str], cwd: object) -> None:
+    # encoding 固定 utf-8: uv 输出是 UTF-8,Windows 默认 GBK 解码会直接崩掉读线程
     proc = subprocess.run(  # noqa: S603 — 固定 argv,无外部输入拼接
         cmd, cwd=str(cwd) if cwd else None, capture_output=True, text=True,
-        timeout=600, check=False)
+        encoding="utf-8", errors="replace", timeout=600, check=False)
     if proc.returncode != 0:
         raise RuntimeError("%s 失败(exit=%d): %s"
                            % (" ".join(cmd), proc.returncode,
@@ -81,11 +82,22 @@ def rebuild_blocking(wait_pid: int | None, reopen_serve: bool) -> None:
 
 
 def spawn_rebuild(wait_pid: int | None, reopen_serve: bool) -> int:
-    """spawn 独立 detached 重建进程,返回其 pid;stdout/stderr 进日志。"""
+    """spawn 独立 detached 重建进程,返回其 pid;stdout/stderr 进日志。
+
+    解释器选择是关键: 调用方(CLI/serve)自己就运行在 tool venv 的
+    python.exe 上,若重建进程沿用 ``sys.executable``,它自己就会锁死
+    ``uv\\tools\\...\\Scripts`` 导致重装 os error 5——必须改跑在项目
+    ``.venv``(``uv run``)里,与 tool venv 无文件交集。
+    """
     from auto_signin_kit.core.adapters.log_dir import default_log_dir
 
-    argv = [sys.executable, "-m", "auto_signin_kit.scaffolding.rebuild",
-            "--wait-pid", str(wait_pid or 0)]
+    uv = shutil.which("uv")
+    if uv:
+        launcher: list[str] = [uv, "run", "python"]
+    else:  # 无 uv 只能退回当前解释器;回滚重装可能 os error 5,但功能可用
+        launcher = [sys.executable]
+    argv = launcher + ["-m", "auto_signin_kit.scaffolding.rebuild",
+                       "--wait-pid", str(wait_pid or 0)]
     if reopen_serve:
         argv.append("--reopen-serve")
     log_path = default_log_dir() / "scaffold-rebuild.log"
