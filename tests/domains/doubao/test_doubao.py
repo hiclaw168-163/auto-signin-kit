@@ -130,8 +130,7 @@ class TestMacPlatformBranch:
     """mac: 文件解密如实报 UNSUPPORTED,链路只走 CDP(见 NOTE-04)。"""
 
     def test_decrypt_unsupported_mentions_cdp_guidance(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(cookies_mod, "IS_WINDOWS", False)
-        monkeypatch.setattr(cookies_mod, "cookies_via_cdp", lambda port=None: None)
+        self._patch_mac(monkeypatch)
         root = _make_mac_user_data(tmp_path)
         with pytest.raises(cookies_mod.DoubaoCookieError) as exc:
             cookies_mod.load_cookie_header(root)
@@ -139,8 +138,18 @@ class TestMacPlatformBranch:
         assert "macOS" in msg and "CDP" in msg
         assert "remote-debugging-port" in msg  # 指引可执行
 
-    def test_cdp_live_cookies_supply_session(self, tmp_path, monkeypatch):
+    @staticmethod
+    def _patch_mac(monkeypatch):
+        """mac 分支跨平台可跑: 布局常量在 import 时按本机平台定死,
+        测试必须连同布局一起 patch(否则 Windows 上跑 mac 用例会找 Windows 路径)。"""
         monkeypatch.setattr(cookies_mod, "IS_WINDOWS", False)
+        monkeypatch.setattr(cookies_mod, "COOKIES_REL",
+                            Path("Default") / "Cookies")
+        monkeypatch.setattr(cookies_mod, "_PROFILES_GLOB", "Profile */Cookies")
+        monkeypatch.setattr(cookies_mod, "cookies_via_cdp", lambda port=None: None)
+
+    def test_cdp_live_cookies_supply_session(self, tmp_path, monkeypatch):
+        self._patch_mac(monkeypatch)
         live = {"sessionid": "live-sid", "sid_tt": "live-tt", "uid_tt": "live-uid"}
         monkeypatch.setattr(cookies_mod, "cookies_via_cdp", lambda port=None: live)
         root = _make_mac_user_data(tmp_path)
@@ -149,12 +158,12 @@ class TestMacPlatformBranch:
         assert "stale" not in header  # 文件库的旧值不参与
 
     def test_doctor_reports_unsupported_honestly(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(cookies_mod, "IS_WINDOWS", False)
-        monkeypatch.setattr(cookies_mod, "cookies_via_cdp", lambda port=None: None)
+        self._patch_mac(monkeypatch)
         root = _make_mac_user_data(tmp_path)
         report = cookies_mod.doctor_report(root)
         assert report["file_decrypt_supported"] is False
-        assert report["cookie_dbs"] == ["Default/Cookies"]  # mac 布局被正确探测
+        # mac 布局被正确探测(分隔符按本机平台,比较时归一为 /)
+        assert [Path(s).as_posix() for s in report["cookie_dbs"]] == ["Default/Cookies"]
         assert report["session_ok"] is False
         assert "CDP" in report["session_error"]
 

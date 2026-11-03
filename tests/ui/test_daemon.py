@@ -100,6 +100,7 @@ def test_matches_cmdline_requires_daemon_child():
     assert daemon_mod.matches_cmdline(os.getpid()) is bool(IS_WINDOWS)
 
 
+@pytest.mark.skipif(IS_WINDOWS, reason="ps 探测分支仅 POSIX;Windows 直接跳过校验")
 def test_matches_cmdline_detect_failure_is_conservative(monkeypatch):
     def boom(*args, **kwargs):
         raise OSError("ps 不可用")
