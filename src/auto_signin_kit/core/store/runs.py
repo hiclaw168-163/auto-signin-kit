@@ -59,8 +59,9 @@ def overview_stats() -> dict[str, dict[str, Any]]:
     - ``days14``: 今天往前 14 天的逐日布尔(当天有任一成功行即 OK),供色块条;
     - ``streak``: 截至今天的连续成功天数(今天还没签则从昨天起算,不把"还没到"
       当成断签);
-    - ``credits`` / ``today_credits``: 成功行 ``response`` JSON 里 ``credits``
-      字段的累计/今日累计(域不回传该字段时按 0 计,如 doubao)。
+    - ``credits`` / ``today_credits``: 成功行 response 里的每日积分所得
+      (口径与 ``ask_daily_credits`` 视图一致: 字段方言 COALESCE + 按日取 MAX,
+      域不回传该字段时按 0 计,如 doubao)。
     """
     conn = connect()
     try:
@@ -72,15 +73,16 @@ def overview_stats() -> dict[str, dict[str, Any]]:
         conn.close()
     today = date.today().isoformat()
     per: dict[str, dict[str, Any]] = {}
+    day_credits: dict[tuple[str, str], int] = {}
     for row in rows:
         d = per.setdefault(row["domain"], {
-            "ok_days": set(), "last": None, "credits": 0, "today_credits": 0})
+            "ok_days": set(), "last": None})
         if row["result"] in RESULT_OK:
             d["ok_days"].add(row["day"])
             earned = _extract_credits(row["response"])
-            d["credits"] += earned
-            if row["day"] == today:
-                d["today_credits"] += earned
+            # 同域同天多行(幂等重跑)取最大快照,不累加——响应里是"当日所得"
+            key = (row["domain"], row["day"])
+            day_credits[key] = max(day_credits.get(key, 0), earned)
         d["last"] = row["executed_at"]
     out: dict[str, dict[str, Any]] = {}
     today_date = date.fromisoformat(today)
@@ -94,20 +96,35 @@ def overview_stats() -> dict[str, dict[str, Any]]:
         days14 = [{"day": (today_date - timedelta(days=13 - i)).isoformat(),
                    "ok": (today_date - timedelta(days=13 - i)).isoformat() in d["ok_days"]}
                   for i in range(14)]
-        out[domain] = {"streak": streak, "days14": days14, "credits": d["credits"],
-                       "today_credits": d["today_credits"], "last_run": d["last"]}
+        credits = sum(v for (dom, _day), v in day_credits.items() if dom == domain)
+        out[domain] = {"streak": streak, "days14": days14, "credits": credits,
+                       "today_credits": day_credits.get((domain, today), 0),
+                       "last_run": d["last"]}
     return out
 
 
+#: 积分字段方言(按优先级);须与 ask_daily_credits 视图的 COALESCE 同步。
+_CREDIT_FIELD_DIALECTS = ("credits", "credit", "today_credit")
+
+
 def _extract_credits(response: str | None) -> int:
-    """成功行 response JSON 里的 ``credits`` 整数;缺字段/解析失败按 0。"""
+    """成功行 response 里的每日积分(方言 COALESCE);缺字段/解析失败按 0。
+
+    score(活跃度分)与 total_credits(累计值)都不算——那是另外两个量纲。
+    """
     if not response:
         return 0
     try:
-        value = json.loads(response).get("credits")
+        data = json.loads(response)
     except (TypeError, ValueError):
         return 0
-    return value if isinstance(value, (int, float)) else 0
+    if not isinstance(data, dict):
+        return 0
+    for field in _CREDIT_FIELD_DIALECTS:
+        value = data.get(field)
+        if isinstance(value, (int, float)):
+            return int(value)
+    return 0
 
 
 def events(

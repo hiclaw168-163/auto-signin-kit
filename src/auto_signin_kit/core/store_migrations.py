@@ -45,6 +45,8 @@ CREATE TABLE IF NOT EXISTS ask_accounts (
     name            TEXT    NOT NULL,  -- 账户标识(脱敏后入库;用户名/邮箱/尾号)
     daily_potential INTEGER,           -- 每日可获取积分上限(NULL = 未设定)
     enabled         INTEGER NOT NULL DEFAULT 1,
+    client_info     TEXT,              -- 客户端档案快照 JSON(版本/设备标识/路径)
+    info_synced_at  TEXT,              -- 档案同步时间(本地无时区)
     UNIQUE(domain, name)
 );
 """
@@ -85,18 +87,29 @@ WHERE r.id = (
 );
 
 -- 每日积分(纯派生视图,不落库——派生数据落库会引入两份真相):
--- 一行 = (日期, 域, 账户) 当天积分所得合计,从成功行 response JSON 提取。
+-- 一行 = (日期, 域, 账户) 当天积分所得。两个口径要点:
+-- ①字段方言收敛: qoder/trae 报 credits,workbuddy 的 CLAIMED 报 credit、
+--   ALREADY 报 today_credit(当日已领快照),COALESCE 取首个非空;
+--   workbuddy 的 score 是活跃度分、total_credits 是累计值,都绝不计入;
+-- ②同域同天多行(高密度调度幂等重跑)按 MAX 取当天快照,不能 SUM 累加。
 -- 结果词集合须与 core.report.RESULT_OK 同步(4 词,改动时两边一起改)。
 DROP VIEW IF EXISTS ask_daily_credits;
 CREATE VIEW ask_daily_credits AS
-SELECT date(executed_at) AS day,
-       domain            AS domain,
-       account           AS account,
-       SUM(CAST(json_extract(response, '$.credits') AS INTEGER)) AS credits
-FROM ask_signin_runs
-WHERE source = 'run'
-  AND result IN ('CLAIMED', 'ALREADY', 'ACTIVE', 'OK')
-  AND json_extract(response, '$.credits') IS NOT NULL
+SELECT day, domain, account, MAX(credits_val) AS credits
+FROM (
+    SELECT date(executed_at) AS day,
+           domain            AS domain,
+           account           AS account,
+           COALESCE(
+               json_extract(response, '$.credits'),
+               json_extract(response, '$.credit'),
+               json_extract(response, '$.today_credit')
+           ) AS credits_val
+    FROM ask_signin_runs
+    WHERE source = 'run'
+      AND result IN ('CLAIMED', 'ALREADY', 'ACTIVE', 'OK')
+)
+WHERE credits_val IS NOT NULL
 GROUP BY day, domain, account;
 """
 
@@ -182,6 +195,13 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "ts" in sched_columns and "executed_at" not in sched_columns:
         with conn:
             conn.execute("ALTER TABLE ask_schedule_changes RENAME COLUMN ts TO executed_at")
+    # ask_accounts 档案列: 早期建表(2026-11-03 前)没有这两列,补上(幂等);
+    # _SCHEMA 先行执行,表到这里必然已存在
+    acct_columns = {row["name"] for row in conn.execute("PRAGMA table_info(ask_accounts)")}
+    for col in ("client_info", "info_synced_at"):
+        if col not in acct_columns:
+            with conn:
+                conn.execute("ALTER TABLE ask_accounts ADD COLUMN %s TEXT" % col)
     for name, add_sql, backfill_sql in _MIGRATIONS:
         if name not in columns:
             with conn:

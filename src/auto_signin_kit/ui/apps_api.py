@@ -13,6 +13,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from auto_signin_kit.core import store
+from auto_signin_kit.core.adapters.device_info import machine_info
 from auto_signin_kit.core.config import load_domain_config_model
 from auto_signin_kit.core.errors import AutoSignInKitError
 from auto_signin_kit.domains.schedule import service as schedule_service
@@ -160,3 +162,37 @@ def update_app(name: str, body: AppUpdate) -> dict[str, Any]:
     path = config_api.atomic_write_data(name, merged)
     return {"ok": True, "path": str(path),
             "message": "已保存: 下次运行 %s 命令时生效(YAML 注释已被重写移除)" % name}
+
+
+@router.post("/apps/client-info/sync")
+def sync_client_info() -> dict[str, Any]:
+    """同步各域客户端档案: 采集 → 落 ask_accounts.client_info。
+
+    采集走注册表声明(各域 schedule_meta.client_info,可选): 逐域调用,
+    单域失败如实进 failed,不中断其他域;采集结果合并本机 machine_info
+    (hostname/OS/MachineGuid 脱敏)。账户未登记的域自动补 default 户。
+    """
+    done: list[dict[str, Any]] = []
+    failed: list[dict[str, Any]] = []
+    for name, meta in providers():
+        collect = getattr(meta, "client_info", None)
+        if collect is None:
+            continue
+        try:
+            info = collect()
+        except Exception as exc:
+            failed.append({"domain": name, "error": str(exc)})
+            continue
+        if not info:
+            failed.append({"domain": name, "error": "客户端未安装/信息不可得"})
+            continue
+        try:
+            store.ensure_account(name, "default")
+            store.set_account_client_info(name, "default",
+                                          {**machine_info(), **info})
+        except AutoSignInKitError as exc:
+            failed.append({"domain": name, "error": str(exc)})
+            continue
+        done.append({"domain": name, "info": info})
+    return {"result": "OK" if not failed else "PARTIAL",
+            "done": done, "failed": failed}

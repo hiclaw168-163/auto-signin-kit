@@ -302,13 +302,13 @@ class TestCreditsAndAccounts:
         store.record_payload(json.dumps(_record(
             domain="qoder", ts=_today_ts("09:10"), credits=80),
             ensure_ascii=False))
-        store.record_payload(json.dumps(_record(  # 同域同日第二行 → 累加
+        store.record_payload(json.dumps(_record(  # 同域同日幂等重跑行 → MAX 不累加
             ts=_today_ts("12:00"), credits=30), ensure_ascii=False))
         store.record_payload(json.dumps(_record(  # 失败行不计积分
             domain="qoder", result="NO_AUTH", ts=_today_ts("13:00")),
             ensure_ascii=False))
         daily = {r["domain"]: r["credits"] for r in store.credits_daily(14)}
-        assert daily == {"trae": 130, "qoder": 80}
+        assert daily == {"trae": 100, "qoder": 80}
 
     def test_accounts_summary_counts_active(self):
         store.record_payload(json.dumps(_record(
@@ -328,6 +328,32 @@ class TestCreditsAndAccounts:
         assert cap[0]["earned"] == 130 and cap[0]["potential"] == 350
         assert cap[0]["rate"] == round(130 / 350, 4)
 
+    def test_credit_field_dialects_converge(self):
+        """方言收敛: credits/credit/today_credit 同口径;
+        score(活跃分)与 total_credits(累计)绝不计入。"""
+        store.record_payload(json.dumps(_record(
+            domain="workbuddy", ts=_today_ts("09:00"), credit=100,
+            total_credits=3400), ensure_ascii=False))
+        store.record_payload(json.dumps(_record(
+            domain="workbuddy", ts=_today_ts("12:00"), score=18,
+            today_credit=100), ensure_ascii=False))  # 同天幂等重跑行
+        store.record_payload(json.dumps(_record(
+            domain="doubao", ts=_today_ts("09:30"), reward_amount=400,
+            continuous_days=5), ensure_ascii=False))  # 无积分字段 → 不出现
+        daily = {r["domain"]: r["credits"] for r in store.credits_daily(14)}
+        assert daily == {"workbuddy": 100}  # MAX 快照,不是 200;score/doubao 不计
+
+    def test_overview_credits_match_view_semantics(self):
+        store.record_payload(json.dumps(_record(
+            domain="workbuddy", ts=_today_ts("09:00"), credit=100,
+            total_credits=3400), ensure_ascii=False))
+        store.record_payload(json.dumps(_record(
+            domain="workbuddy", ts=_today_ts("12:00"), today_credit=100,
+            streak_days=34), ensure_ascii=False))
+        stats = store.overview_stats()["workbuddy"]
+        assert stats["credits"] == 100  # 与视图同口径(按日 MAX)
+        assert stats["today_credits"] == 100
+
     def test_set_potential_unknown_account_raises(self):
         import pytest
 
@@ -335,3 +361,19 @@ class TestCreditsAndAccounts:
 
         with pytest.raises(AutoSignInKitError):
             store.set_account_potential("nope", "default", 100)
+
+    def test_client_info_snapshot_roundtrip(self):
+        store.ensure_account("trae", "default")
+        store.set_account_client_info(
+            "trae", "default", {"hostname": "PC", "version": "2.3.9"})
+        row = store.accounts_summary()["accounts"][0]
+        assert row["client_info"]["version"] == "2.3.9"
+        assert row["info_synced_at"] is not None
+
+    def test_client_info_unknown_account_raises(self):
+        import pytest
+
+        from auto_signin_kit.core.errors import AutoSignInKitError
+
+        with pytest.raises(AutoSignInKitError):
+            store.set_account_client_info("nope", "default", {"version": "1"})

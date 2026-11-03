@@ -85,6 +85,26 @@ async function remove(app: AppInfo) {
   }
 }
 
+// 客户端档案同步: 逐域采集版本/设备标识/登录身份,写入账户维表(即时,无重建)
+const syncingInfo = ref(false)
+
+async function syncClientInfo() {
+  syncingInfo.value = true
+  try {
+    const out = await appsApi.syncClientInfo()
+    if (out.result === 'OK') {
+      message.success(`${out.done.length} 个域的客户端档案已更新`)
+    } else {
+      message.warning(`部分失败: ${out.failed.map((f) => `${f.domain}(${f.error})`).join('; ')}`)
+    }
+    await load()
+  } catch (e) {
+    message.error(String(e))
+  } finally {
+    syncingInfo.value = false
+  }
+}
+
 // 重建期间服务离线: 轮询 /api/apps 直到回来,再刷新列表
 async function pollUntilBack() {
   rebuilding.value = true
@@ -170,6 +190,9 @@ onMounted(load)
   <n-space vertical size="large">
     <n-space align="center">
       <n-button type="primary" @click="creating = true">新建应用</n-button>
+      <n-button quaternary :loading="syncingInfo" @click="syncClientInfo">
+        同步客户端档案
+      </n-button>
       <n-button quaternary :loading="loading" @click="load">刷新</n-button>
       <n-text v-if="rebuilding" type="warning" depth="1">
         正在重建生效(服务短暂离线)...

@@ -29,6 +29,40 @@ def _run(fn, *args, **kwargs):
         raise typer.Exit(e.exit_code) from e
 
 
+@app.command("accounts-sync")
+def accounts_sync() -> None:
+    """同步各域账户档案(客户端版本/设备标识/登录身份)并展示账户总览。
+
+    账户初始化的唯一入口: 首次运行会自动登记各域 default 账户;日常重跑
+    刷新档案快照。与前端「应用管理 → 同步客户端档案」按钮走同一份逻辑
+    (ui.apps_api.sync_client_info),一个给人点,一个给脚本/计划任务调用。
+    """
+    from auto_signin_kit.core import store
+    from auto_signin_kit.ui import apps_api
+
+    out = _run(apps_api.sync_client_info)
+    for item in out["done"]:
+        info = item["info"]
+        version = info.get("version") or "未知版本"
+        typer.echo("已同步 %-10s %s" % (item["domain"], version))
+    for item in out["failed"]:
+        typer.echo("失败  %-10s %s" % (item["domain"], item["error"]))
+    summary = store.accounts_summary(7)
+    typer.echo("")
+    typer.echo("账户总览: 登记 %d 个,近 %d 天活跃 %d 个"
+               % (summary["total"], summary["window_days"], summary["active"]))
+    for a in summary["accounts"]:
+        state = "活跃" if a["active"] else "未活跃"
+        potential = ("上限 %s" % a["daily_potential"]
+                     if a["daily_potential"] is not None else "上限未设定")
+        version = (a["client_info"] or {}).get("version") or "未知版本"
+        typer.echo("  %-10s %-10s %-6s %-8s 近7天 %s 分"
+                   % (a["domain"], version, state, potential,
+                      a["credits_recent"]))
+    if out["result"] == "PARTIAL":
+        raise typer.Exit(1)  # 部分失败: 退出码如实反映,方便脚本判断
+
+
 @app.command()
 def serve(
     host: str = typer.Option("127.0.0.1", help="监听地址;默认只绑本机,不对外"),

@@ -126,3 +126,46 @@ class TestUpdateApp:
             "updates": {"tasks": {"DoubaoDailyCheckin": {"times": ["25:00"]}}}})
         assert resp.status_code == 422
         assert _yaml(config_dir, "schedule") == "enabled_tasks: []\n"  # 不落盘
+
+
+class TestSyncClientInfo:
+    """客户端档案采集: 声明式逐域采集,单域失败不中断,合并 machine_info。"""
+
+    def test_sync_collects_declared_domains(self, client, monkeypatch):
+        got, _config_dir = client
+
+        def make_meta(collect):
+            import types
+            return types.SimpleNamespace(client_info=collect)
+
+        def good():
+            return {"version": "0.4.8", "device_id": "dev-123"}
+
+        def boom():
+            raise RuntimeError("探测失败")
+
+        fake = {"qoder": make_meta(good), "trae": make_meta(boom),
+                "doubao": None}  # doubao 未声明 → 不采集
+        monkeypatch.setattr("auto_signin_kit.ui.apps_api.providers",
+                            lambda: iter(fake.items()))
+        out = got.post("/api/apps/client-info/sync").json()
+        assert out["result"] == "PARTIAL"
+        assert out["done"][0]["domain"] == "qoder"
+        assert out["done"][0]["info"]["version"] == "0.4.8"
+        assert "探测失败" in out["failed"][0]["error"]
+
+        # 档案已落库并合并 machine_info,同步时间已盖戳
+        summary = got.get("/api/credits/summary").json()["accounts"]
+        row = next(a for a in summary["accounts"] if a["domain"] == "qoder")
+        assert row["client_info"]["device_id"] == "dev-123"
+        assert "hostname" in row["client_info"]  # 机器级信息已合并
+        assert row["info_synced_at"] is not None
+
+    def test_sync_returns_ok_when_all_succeed(self, client, monkeypatch):
+        import types
+
+        got, _config_dir = client
+        meta = types.SimpleNamespace(client_info=lambda: {"version": "1.0"})
+        monkeypatch.setattr("auto_signin_kit.ui.apps_api.providers",
+                            lambda: iter([("trae", meta)]))
+        assert got.post("/api/apps/client-info/sync").json()["result"] == "OK"

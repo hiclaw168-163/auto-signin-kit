@@ -52,6 +52,9 @@ export const appsApi = {
     get<AppConfigInfo>(`/api/apps/${encodeURIComponent(name)}/config`),
   update: (name: string, updates: Record<string, unknown>) =>
     put<AppUpdateResult>(`/api/apps/${encodeURIComponent(name)}`, { updates }),
+  syncClientInfo: () =>
+    post<{ result: string; done: { domain: string }[]; failed: { domain: string; error: string }[] }>(
+      '/api/apps/client-info/sync', {}),
 }
 
 export const configApi = {

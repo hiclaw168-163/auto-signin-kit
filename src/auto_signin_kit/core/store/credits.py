@@ -12,10 +12,17 @@ response JSON 里的 ``credits`` 字段,同一天多行累加;失败行不计。
 
 from __future__ import annotations
 
+import json
+from datetime import datetime
 from typing import Any
 
 from auto_signin_kit.core.errors import AutoSignInKitError
 from auto_signin_kit.core.store.connection import connect
+
+
+def local_naive_now() -> str:
+    """当前本地无时区时间(与台账 executed_at 同一口径)。"""
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def ensure_account(domain: str, name: str = "default", *,
@@ -37,13 +44,38 @@ def ensure_account(domain: str, name: str = "default", *,
 
 def set_account_potential(domain: str, name: str, daily_potential: int) -> None:
     """设定账户每日可获取积分上限;账户不存在则显式报错(不静默建档)。"""
+    _update_account(domain, name, daily_potential=daily_potential)
+
+
+def set_account_client_info(domain: str, name: str, info: dict[str, Any]) -> None:
+    """写入账户的客户端档案快照(JSON);账户不存在则显式报错。
+
+    档案由 UI 的"同步客户端信息"动作采集(各域 client_info 声明 +
+    machine_info),这里只管落库与同步时间戳,不做采集。
+    """
+    _update_account(domain, name, client_info=json.dumps(info, ensure_ascii=False),
+                    info_synced_at=local_naive_now())
+
+
+#: 允许更新的账户列(白名单,防止任意标识符进 SQL)。
+_ACCOUNT_FIELDS = ("daily_potential", "client_info", "info_synced_at")
+
+
+def _update_account(domain: str, name: str, **fields: Any) -> None:
+    """按 (domain, name) 更新账户列;没有命中行就显式报错。
+
+    列名来自内部调用方的字面量 kwargs 并经白名单校验(无外部输入),
+    值全部参数绑定——S608 豁免针对的是标识符拼接本身,表名/列名不可参数化。
+    """
+    if not fields or any(k not in _ACCOUNT_FIELDS for k in fields):
+        raise AutoSignInKitError("非法的账户更新字段: %s" % sorted(fields))
+    sets = ", ".join("%s = ?" % k for k in fields)
     conn = connect()
     try:
         with conn:
             updated = conn.execute(
-                "UPDATE ask_accounts SET daily_potential = ?"
-                " WHERE domain = ? AND name = ?", (daily_potential, domain, name)
-            ).rowcount
+                "UPDATE ask_accounts SET %s WHERE domain = ? AND name = ?" % sets,  # noqa: S608
+                [*fields.values(), domain, name]).rowcount
         if not updated:
             raise AutoSignInKitError(
                 "账户未登记: %s/%s(先 ensure_account 或跑一次签到)" % (domain, name))
@@ -74,8 +106,8 @@ def accounts_summary(days: int = 7) -> dict[str, Any]:
     conn = connect()
     try:
         registered = conn.execute(
-            "SELECT domain, name, enabled, daily_potential FROM ask_accounts"
-            " ORDER BY domain, name").fetchall()
+            "SELECT domain, name, enabled, daily_potential, client_info,"
+            " info_synced_at FROM ask_accounts ORDER BY domain, name").fetchall()
         active_rows = conn.execute(
             "SELECT domain, account, MAX(day) AS last_day, SUM(credits) AS total"
             " FROM ask_daily_credits"
@@ -87,6 +119,12 @@ def accounts_summary(days: int = 7) -> dict[str, Any]:
     items = []
     for r in registered:
         stat = active.get((r["domain"], r["name"]))
+        client_info = None
+        if r["client_info"]:
+            try:
+                client_info = json.loads(r["client_info"])
+            except (TypeError, ValueError):
+                client_info = None
         items.append({
             "domain": r["domain"], "name": r["name"],
             "enabled": bool(r["enabled"]),
@@ -94,6 +132,8 @@ def accounts_summary(days: int = 7) -> dict[str, Any]:
             "active": stat is not None,
             "last_earned_day": stat["last_day"] if stat else None,
             "credits_recent": stat["total"] if stat else 0,
+            "client_info": client_info,
+            "info_synced_at": r["info_synced_at"],
         })
     return {"total": len(items), "active": sum(1 for i in items if i["active"]),
             "window_days": max(1, days), "accounts": items}

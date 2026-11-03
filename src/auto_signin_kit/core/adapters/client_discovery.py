@@ -113,6 +113,32 @@ def registry_install_paths(
     return out
 
 
+def registry_display_version(display_name_re: str) -> str | None:
+    """按 DisplayName 前缀匹配卸载条目,返回版本号;没有如实返回 None。
+
+    客户端档案的版本号来源(注册表由安装器维护,比猜配置文件可靠)。
+    实测安装器会把版本嵌进名字(如 "Qoder CN 0.4.8"),所以用 search 而非
+    fullmatch;DisplayVersion 缺失时回退从名字里提取 x.y(.z) 版本段。
+    非 Windows / 未安装返回 None,调用方如实呈报"未知版本"。
+    """
+    if not IS_WINDOWS:
+        return None
+    from auto_signin_kit.core.adapters.win_registry import uninstall_entries
+
+    for get in uninstall_entries():
+        display_name = get("DisplayName")
+        if not display_name or not re.search(
+            display_name_re, display_name.strip(), re.IGNORECASE
+        ):
+            continue
+        version = get("DisplayVersion")
+        if isinstance(version, str) and version.strip():
+            return version.strip()
+        match = re.search(r"\d+(?:\.\d+)+", display_name)
+        return match.group(0) if match else None
+    return None
+
+
 def registry_install_roots(display_name_re: str) -> list[Path]:
     """按 DisplayName 过滤卸载条目,仅用 InstallLocation 解析出已存在的安装根目录。
 

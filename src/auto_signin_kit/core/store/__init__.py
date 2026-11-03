@@ -35,6 +35,7 @@ from auto_signin_kit.core.store.credits import (
     capacity_summary,
     credits_daily,
     ensure_account,
+    set_account_client_info,
     set_account_potential,
 )
 from auto_signin_kit.core.store.ingest import SCHEDULE_DOMAIN, record_payload
@@ -67,5 +68,6 @@ __all__ = [
     "overview_stats",
     "record_payload",
     "resequence_ids",
+    "set_account_client_info",
     "set_account_potential",
 ]
