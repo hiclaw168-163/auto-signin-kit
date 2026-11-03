@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import ssl
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -29,6 +30,62 @@ BUDGET_OUT = -2
 
 #: 单请求超时上限(秒);实际超时还会被剩余预算收缩。
 REQUEST_TIMEOUT = 30.0
+
+#: URL query 里这些 key(不区分大小写)的值打码——签到接口常见凭证参数。
+_SENSITIVE_QUERY_KEYS = frozenset({
+    "token", "access_token", "refresh_token", "ticket", "sign", "signature",
+    "auth", "session", "sessionid", "code", "apikey", "api_key", "secret",
+})
+#: 请求体快照截断长度(台账只做"发过什么"的取证,不是完整抓包)。
+_BODY_SNAPSHOT_LIMIT = 500
+
+_LAST_REQUEST = threading.local()
+
+
+def last_request() -> dict[str, Any] | None:
+    """当前线程最近一次 :func:`fetch` 的请求快照(已脱敏);没发过返回 None。
+
+    快照只记 method/url/body 三样: headers 一律不记(凭证几乎都在头里,
+    记了就是泄密),url 的 query 凭证参数打码,body 截断。供 emit_result
+    落到台账 ``request`` 列,回答"这次签到到底发了什么请求"。
+    """
+    return getattr(_LAST_REQUEST, "value", None)
+
+
+def _mask_url(url: str) -> str:
+    """query 参数里的凭证值替换为 ***;其余原样。"""
+    if "?" not in url:
+        return url
+    base, _, query = url.partition("?")
+    pairs = []
+    for pair in query.split("&"):
+        key, _, value = pair.partition("=")
+        if key.lower() in _SENSITIVE_QUERY_KEYS and value:
+            pairs.append("%s=***" % key)
+        else:
+            pairs.append(pair)
+    return "%s?%s" % (base, "&".join(pairs))
+
+
+def _snapshot(method: str, url: str, payload: Any) -> None:
+    """记录本次请求快照(线程内覆盖式,emit 时取到的即最后一次真实请求)。"""
+    if isinstance(payload, (bytes, bytearray)):
+        try:
+            body = bytes(payload).decode("utf-8", "replace")
+        except Exception:  # noqa: BLE001 — 快照尽力而为
+            body = "<binary>"
+    elif payload is None:
+        body = None
+    else:
+        try:
+            body = json.dumps(payload, ensure_ascii=False)
+        except (TypeError, ValueError):
+            body = str(payload)
+    _LAST_REQUEST.value = {
+        "method": method,
+        "url": _mask_url(url)[:1000],
+        "body": body[:_BODY_SNAPSHOT_LIMIT] if body else None,
+    }
 
 
 class Budget:
@@ -82,6 +139,7 @@ def fetch(
     payload 为 bytes/bytearray(如 POST 空体 b"")时按原字节发送,
     dict/list 才走 JSON 序列化。
     """
+    _snapshot(method, url, payload)
     if payload is None:
         body = None
     elif isinstance(payload, (bytes, bytearray)):
@@ -130,6 +188,7 @@ def call(
 ) -> tuple[int, Any, str | None]:
     """一次带预算守卫与退避重试的调用;超时上限随剩余预算收缩。"""
     if budget.remaining() <= 1:
+        _LAST_REQUEST.value = None  # 没发出去: 不留快照,免得误导取证
         return BUDGET_OUT, {"error": "已达本次运行时间预算，跳过剩余请求"}, None
     status, body, err = fetch(
         url, headers=headers, method=method, payload=payload,

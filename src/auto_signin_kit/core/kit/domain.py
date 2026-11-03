@@ -93,6 +93,10 @@ class SigninDomain:
         return result_log_path(self.name, env_var="%s_SIGNIN_LOG" % self.name.upper())
 
     def _emit(self, out: dict, label: str, *, silent: bool) -> None:
+        from auto_signin_kit.core.httpclient import last_request
+
+        out = dict(out)
+        out.setdefault("request", last_request())  # 本轮最后一次真实请求(已脱敏)
         emit_result(out, domain=self.name, action=label, silent=silent,
                     log_path=self.log_path(), sensitive=self.sensitive,
                     log_errors_without_silent=False)
