@@ -194,19 +194,22 @@ class _FakeCdpResp:
 
 
 class TestCdpIdentity:
-    """9222 可能被其他 Chromium 应用占用(实测 Qoder),须校验 Browser 身份。"""
+    """9222 可能被其他 Chromium 应用占用(实测 Qoder)。
+
+    身份判定设计(2026-11-03 调整): /json/version 的 Browser 字段在新版豆包
+    只报 "Chrome/147..."(不含 doubao 标识),按标识校验会把真豆包拒掉;
+    probe 只验端口可达,**身份安全由 cookies_via_cdp 的 target URL 过滤
+    保证**——异应用占口时过滤后拿不到任何 doubao cookie,返回 None。
+    """
 
     def _patch_version(self, monkeypatch, browser):
         monkeypatch.setattr(
             cdp_mod.urllib.request, "urlopen",
             lambda url, timeout: _FakeCdpResp({"Browser": browser}))
 
-    def test_probe_rejects_foreign_chromium(self, monkeypatch):
-        self._patch_version(monkeypatch, "Chrome/120.0.6099.109")
-        assert cdp_mod.probe(9222) is False
-
-    def test_probe_accepts_doubao_case_insensitive(self, monkeypatch):
-        self._patch_version(monkeypatch, "Doubao/147.0.7727.149")
+    def test_probe_only_checks_reachability_regardless_of_browser(self, monkeypatch):
+        # 新版豆包 Browser 字段是纯 Chrome 标识,也要被判可达
+        self._patch_version(monkeypatch, "Chrome/147.0.7727.149")
         assert cdp_mod.probe(9222) is True
 
     def test_probe_connection_refused_is_false(self, monkeypatch):
@@ -216,8 +219,25 @@ class TestCdpIdentity:
         monkeypatch.setattr(cdp_mod.urllib.request, "urlopen", refuse)
         assert cdp_mod.probe(9222) is False
 
-    def test_cookies_via_cdp_returns_none_for_foreign_browser(self, monkeypatch):
+    def test_cookies_via_cdp_returns_none_for_foreign_browser(self, monkeypatch, tmp_path):
+        # 异应用占口: /json/version 可达,但 /json/list 无任何 doubao target
+        # → target URL 过滤后拿不到 cookie,返回 None(不误用别人会话)
         self._patch_version(monkeypatch, "Chrome/120.0.6099.109")
+
+        class _FakeListResp:
+            status = 200
+
+            def read(self):
+                return json.dumps([
+                    {"type": "page", "url": "https://qoder.example/ide",
+                     "webSocketDebuggerUrl": "ws://127.0.0.1:9222/x"},
+                ]).encode()
+
+        def fake_urlopen(url, timeout):
+            return _FakeCdpResp({"Browser": "Chrome/120"}) if "version" in url \
+                else _FakeListResp()
+
+        monkeypatch.setattr(cdp_mod.urllib.request, "urlopen", fake_urlopen)
         assert cdp_mod.cookies_via_cdp(port=9222) is None
 
     def test_invalid_port_env_is_not_available(self, monkeypatch):

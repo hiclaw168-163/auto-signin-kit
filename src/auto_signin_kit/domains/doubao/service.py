@@ -97,8 +97,15 @@ def _checkin(api: DoubaoApi, config: DoubaoDomainConfig, *, dry_run: bool,
     code = payload.get("code")
     data = payload.get("data") or {}
     if scode != 200 or code != 0:
+        # 网关码映射: 710012* = 登录态失效(NO_AUTH,指引重开客户端恢复会话),
+        # 其余按 ERROR。2026-11-03 排查实录: 服务端对过期会话在签到接口上
+        # 会回误导性的 710010702"系统错误",710012001 才是明确过期;
+        # 两值在台账词表(core.report.RESULT_LABELS)都有标签。
+        no_auth = str(code or "").startswith("710012")
         out = make_result(
-            "ERROR",
+            "NO_AUTH" if no_auth else "ERROR",
+            ("登录已过期(code=%s): 打开或重启豆包客户端恢复会话后重试"
+             % code) if no_auth else
             "业务失败 code=%s msg=%s(http=%s)" % (code, payload.get("msg")
                                                   or payload.get("message"), scode),
             needs_attention=True, domain="doubao", http=scode, biz_code=code)

@@ -13,9 +13,6 @@ import urllib.request
 _DOUBAO_URL = "https://www.doubao.com"
 #: 兜底端口与 cookies.DEFAULT_CDP_PORT 同值;本地定义避免循环导入。
 _DEFAULT_PORT = 9222
-#: /json/version 的 Browser 字段必须包含该标识;9222 可能被其他 Chromium
-#: 应用占用(实测 Qoder IDE 监听 9222 导致误报可用),故须校验身份。
-_BROWSER_TAG = "doubao"
 
 
 def resolve_port() -> int:
@@ -24,17 +21,21 @@ def resolve_port() -> int:
 
 
 def probe(port: int | None = None) -> bool:
-    """调试端口可达 **且** /json/version 的 Browser 字段确为豆包客户端。"""
+    """调试端口可达且返回合法 CDP JSON。
+
+    身份判定**不在**这里做: /json/version 的 Browser 字段是"Chrome/147...",
+    新版豆包已不含 doubao 标识(2026-11-03 实测,曾按标识校验导致真豆包被拒);
+    真正的身份安全靠 :func:`cookies_via_cdp` 里的 target URL 过滤——
+    9222 被其他 Chromium 应用占用时过滤后拿不到任何 doubao cookie,
+    返回 None,不会误用别人的会话。
+    """
     try:
         port = resolve_port() if port is None else port
         with urllib.request.urlopen(
                 "http://127.0.0.1:%s/json/version" % port, timeout=1) as resp:
-            if resp.status != 200:
-                return False
-            browser = (json.loads(resp.read()) or {}).get("Browser") or ""
+            return resp.status == 200 and bool(json.loads(resp.read()))
     except (OSError, ValueError):
         return False
-    return _BROWSER_TAG in browser.lower()
 
 
 def cookies_via_cdp(port: int | None = None) -> dict[str, str] | None:
@@ -55,7 +56,11 @@ def cookies_via_cdp(port: int | None = None) -> dict[str, str] | None:
                 continue
             if "doubao" not in (target.get("url") or ""):
                 continue
-            ws = websocket.create_connection(target["webSocketDebuggerUrl"], timeout=5)
+            # suppress_origin 必须带: Chromium 111+ 拒绝带 Origin 头的 CDP 握手
+            # (403 Forbidden,提示需要 --remote-allow-origins),websocket-client
+            # 默认发 Origin: http://127.0.0.1:<port>,不压掉握手必失败。
+            ws = websocket.create_connection(target["webSocketDebuggerUrl"],
+                                             timeout=5, suppress_origin=True)
             try:
                 ws.send(json.dumps({"id": 1, "method": "Network.getCookies",
                                     "params": {"urls": [_DOUBAO_URL]}}))
