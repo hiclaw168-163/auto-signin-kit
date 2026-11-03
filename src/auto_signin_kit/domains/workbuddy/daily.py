@@ -69,7 +69,7 @@ class GrowthStep:
                                      taskbot=self.taskbot)
         except AuthError as e:
             gcode, gout = 1, e.output()
-        except Exception as e:  # noqa: BLE001 — 单步异常折算成 ERROR 结果,不让一轮日常崩掉
+        except Exception as e:
             gcode, gout = 1, {"result": "ERROR", "needs_attention": True,
                               "report": "成长中心异常（%s: %s）" % (type(e).__name__, e)}
         ctx["growth_code"] = gcode

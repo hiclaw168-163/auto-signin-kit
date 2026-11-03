@@ -140,14 +140,20 @@ target-version = "py311"
 # 规约用工具固化: 规则集就是 docs/standards/STD-04 的"强制"部分。
 # 新增强制条款先改这里,让违反即失败,不要只写进文档。
 # docstring 只启用 D1(必须有 docstring);中文句号结尾是推荐项(D4 不进门禁)。
+# S(bandit 安全)/RET(return 简化)/RUF 为阿里规范对齐批次(2026-11-03)。
 [tool.ruff.lint]
-select = ["E", "W", "F", "I", "N", "D1", "UP", "B", "C4", "SIM", "T20"]
+select = ["E", "W", "F", "I", "N", "D1", "UP", "B", "C4", "SIM", "T20", "S", "RET", "RUF"]
 # UP031: `%` 格式是本项目的既定风格,不强制迁 f-string
 # SIM112: Windows 环境变量解名(ProgramFiles(x86) 等)就是 OS 的规范名,大小写不容改写
-ignore = ["UP031", "SIM112"]
+# S105: 变量名含 token 即误报(token_source/token_expires_at);真实凭证全在系统存储
+# S603: subprocess 全程固定 argv + 架构门禁禁 shell,该提示与项目纪律方向重复
+# RUF001/2/3: 全角标点/中文引号是文案内容,不是歧义字符
+# RET504: "先构造后 return"的写法在多行 dict 组装时可读性优先
+ignore = ["UP031", "SIM112", "S105", "S603", "RUF001", "RUF002", "RUF003", "RET504"]
 
 [tool.ruff.lint.per-file-ignores]
-# 测试的用例名即文档,不强制逐用例 docstring;模块级 docstring 仍要求
-"tests/**" = ["D1"]
+# 测试的用例名即文档,不强制逐用例 docstring;模块级 docstring 仍要求。
+# S101: pytest 的 assert 是测试本体;PLR2004: 断言里的字面量就是期望值。
+"tests/**" = ["D1", "S101", "INP001", "PLR2004", "RUF043"]
 # JS 是注入客户端运行时的解密助手原文(逐行对齐原项目),禁改排版
 "src/auto_signin_kit/domains/workbuddy/helper_js.py" = ["E501"]

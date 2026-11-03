@@ -84,8 +84,8 @@ def _run_umid(exe: Path) -> dict:
     )
     if code != 0:
         return {}
-    for line in reversed(stdout.decode("utf-8", "replace").splitlines()):
-        line = line.strip()
+    for raw_line in reversed(stdout.decode("utf-8", "replace").splitlines()):
+        line = raw_line.strip()
         if not line:
             continue
         try:

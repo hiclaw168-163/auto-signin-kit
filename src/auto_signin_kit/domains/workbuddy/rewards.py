@@ -132,7 +132,7 @@ def run_active(net: Net, *, auto_chat: bool = True) -> dict:
         out = today_activity(body)
     except StopRoundError:
         raise
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return {
             "result": "ERROR",
             "needs_attention": True,
@@ -153,7 +153,7 @@ def run_active(net: Net, *, auto_chat: bool = True) -> dict:
         code, body = net.get(GROWTH_BASE + "/heatmap")
         check_auth(code)
         recheck = today_activity(body) if 200 <= code < 300 else None
-    except Exception:  # noqa: BLE001
+    except Exception:
         recheck = None
     if recheck is not None and recheck.get("result") == "ACTIVE":
         return {
@@ -227,7 +227,7 @@ def run_makeup(net: Net, state: GrowthState, budget_left: float) -> dict | None:
         return mbody
     except StopRoundError:
         raise
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         state.fail("补登模块异常（%s: %s）" % (type(exc).__name__, exc), -1)
         return None
 
@@ -341,5 +341,5 @@ def run_redeem(net: Net, state: GrowthState, budget_left: float) -> None:
                 state.fail("连登兑换「%s」失败：%s" % (label, msg or "HTTP %s" % c2code), c2code)
     except StopRoundError:
         raise
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         state.fail("连登兑换模块异常（%s: %s）" % (type(exc).__name__, exc), -1)

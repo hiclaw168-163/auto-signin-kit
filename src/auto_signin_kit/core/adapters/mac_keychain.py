@@ -32,8 +32,8 @@ class KeychainError(AdapterError):
 
 def read_password(service: str, account: str) -> str:
     """读 Keychain 通用密码条目;条目缺失或被拒时显式报错。"""
-    proc = subprocess.run(  # noqa: S603 — 固定参数,无外部拼接
-        ["security", "find-generic-password", "-s", service, "-a", account, "-w"],
+    proc = subprocess.run(
+        ["security", "find-generic-password", "-s", service, "-a", account, "-w"],  # noqa: S607 — macOS 固定系统命令
         capture_output=True, text=True, check=False,
     )
     if proc.returncode != 0:
@@ -51,7 +51,7 @@ def decrypt_chrome_mac_v10(raw: bytes, password: str) -> bytes:
     """
     if raw[:3] != b"v10":
         raise AdapterError("数据前缀不是 v10（%r）" % raw[:3])
-    key = PBKDF2HMAC(algorithm=hashes.SHA1(), length=_KEY_LEN, salt=_SALT,
+    key = PBKDF2HMAC(algorithm=hashes.SHA1(), length=_KEY_LEN, salt=_SALT,  # noqa: S303 — Chromium v10 协议即 PBKDF2-SHA1,必须对齐
                      iterations=_ITERATIONS).derive(password.encode("utf-8"))
     decryptor = Cipher(algorithms.AES(key), modes.CBC(_IV)).decryptor()
     padded = decryptor.update(raw[3:]) + decryptor.finalize()
@@ -63,7 +63,7 @@ def decrypt_chrome_mac_v10(raw: bytes, password: str) -> bytes:
 
 def encrypt_chrome_mac_v10(plain: bytes, password: str) -> bytes:
     """反向构造 V10 数据,仅供测试与工具使用(生产只读不写)。"""
-    key = PBKDF2HMAC(algorithm=hashes.SHA1(), length=_KEY_LEN, salt=_SALT,
+    key = PBKDF2HMAC(algorithm=hashes.SHA1(), length=_KEY_LEN, salt=_SALT,  # noqa: S303 — 同上,对齐 Chromium v10 协议
                      iterations=_ITERATIONS).derive(password.encode("utf-8"))
     pad = 16 - len(plain) % 16
     padded = plain + bytes([pad]) * pad

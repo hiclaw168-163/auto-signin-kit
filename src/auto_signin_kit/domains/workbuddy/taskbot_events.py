@@ -299,7 +299,7 @@ def buddy_app_events(buddy_id: str, buddy_name: str) -> list[dict[str, Any]]:
 
 def template_group(conv: str, req: str, template_id: str, name: str) -> list[dict[str, Any]]:
     """「使用模板创建任务」事件组(实测 5 组不同模板一次点亮 template_5)。"""
-    return chat_chain(conv, req, "msg-" + template_id) + [
+    return [*chat_chain(conv, req, "msg-" + template_id),
         _mk("agent_task_created_with_template", {
             "mode": "working", "isCustomModel": False,
             "id": template_id, "name": name, "requestId": req,
@@ -312,7 +312,7 @@ def playbook_events(conv: str, req: str, case_id: str, case_name: str) -> list[d
     """「灵感案例做同款」事件组(判据是 Dialog 发送 playbook_prompt_send)。"""
     payload = {"id": case_id, "name": case_name, "type": "document",
                "categoryId": "", "categoryName": ""}
-    return chat_chain(conv, req, "msg-pb") + [
+    return [*chat_chain(conv, req, "msg-pb"),
         _mk("web_element_click", {"pageName": "playbook_detail", "elementId": "playbook_ctaClick",
                                   "elementName": case_name, "source": "discover"}),
         _mk("playbook_cta_click", {**payload, "source": "discover", "position": 0}),
@@ -322,7 +322,7 @@ def playbook_events(conv: str, req: str, case_id: str, case_name: str) -> list[d
 
 def canvas_events(conv: str, req: str) -> list[dict[str, Any]]:
     """「设计创意画布」事件组(实测点亮 create_canvas,+300 分)。"""
-    return chat_chain(conv, req, "msg-canvas") + [
+    return [*chat_chain(conv, req, "msg-canvas"),
         _mk("wbx_design_canvas_task_create", {
             "conversationId": conv, "requestId": req, "source": "summon_keyword",
             "cost": 12000, "isSuccessful": True,

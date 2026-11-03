@@ -366,7 +366,7 @@ class TestCliSmoke:
         cfg = type("Cfg", (), {"data_dir": str(root), "base_url": "https://x",
                                "budget_seconds": 240.0, "log_empty": False})()
         from auto_signin_kit.domains.trae.api import build_api
-        api, info, staleness = build_api(cfg)
+        _api, info, staleness = build_api(cfg)
         assert staleness is None
         assert info["token"] == INFO["token"]
 

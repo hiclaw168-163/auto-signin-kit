@@ -144,8 +144,8 @@ def matches_cmdline(pid: int) -> bool:
     if IS_WINDOWS:
         return True
     try:
-        proc = subprocess.run(  # noqa: S603 — 固定 argv,无外部输入拼接
-            ["ps", "-p", str(pid), "-o", "args="],
+        proc = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "args="],  # noqa: S607 — POSIX 固定系统命令
             capture_output=True, text=True, timeout=5, check=False,
         )
     except (OSError, subprocess.SubprocessError):
@@ -305,14 +305,14 @@ def _spawn(host: str, port: int, open_browser: bool) -> int:
     with open(log_path, "ab") as log:
         try:
             if IS_WINDOWS:
-                proc = subprocess.Popen(  # noqa: S603 — argv 自拼装,无外部输入
+                proc = subprocess.Popen(
                     argv, stdin=subprocess.DEVNULL, stdout=log,
                     stderr=subprocess.STDOUT,
                     creationflags=subprocess.DETACHED_PROCESS
                     | subprocess.CREATE_NEW_PROCESS_GROUP,
                 )
             else:
-                proc = subprocess.Popen(  # noqa: S603
+                proc = subprocess.Popen(
                     argv, stdin=subprocess.DEVNULL, stdout=log,
                     stderr=subprocess.STDOUT, start_new_session=True,
                 )

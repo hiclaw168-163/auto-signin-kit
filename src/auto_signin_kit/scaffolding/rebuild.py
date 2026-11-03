@@ -32,7 +32,7 @@ def _is_alive(pid: int) -> bool:
 
 def _run(cmd: list[str], cwd: object) -> None:
     # encoding 固定 utf-8: uv 输出是 UTF-8,Windows 默认 GBK 解码会直接崩掉读线程
-    proc = subprocess.run(  # noqa: S603 — 固定 argv,无外部输入拼接
+    proc = subprocess.run(
         cmd, cwd=str(cwd) if cwd else None, capture_output=True, text=True,
         encoding="utf-8", errors="replace", timeout=600, check=False)
     if proc.returncode != 0:
@@ -96,8 +96,8 @@ def spawn_rebuild(wait_pid: int | None, reopen_serve: bool) -> int:
         launcher: list[str] = [uv, "run", "python"]
     else:  # 无 uv 只能退回当前解释器;回滚重装可能 os error 5,但功能可用
         launcher = [sys.executable]
-    argv = launcher + ["-m", "auto_signin_kit.scaffolding.rebuild",
-                       "--wait-pid", str(wait_pid or 0)]
+    argv = [*launcher, "-m", "auto_signin_kit.scaffolding.rebuild",
+            "--wait-pid", str(wait_pid or 0)]
     if reopen_serve:
         argv.append("--reopen-serve")
     log_path = default_log_dir() / "scaffold-rebuild.log"
@@ -105,7 +105,7 @@ def spawn_rebuild(wait_pid: int | None, reopen_serve: bool) -> int:
     with open(log_path, "ab") as log:
         creation = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP \
             if IS_WINDOWS else 0
-        proc = subprocess.Popen(  # noqa: S603 — 固定 argv
+        proc = subprocess.Popen(
             argv, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
             creationflags=creation)
     return proc.pid

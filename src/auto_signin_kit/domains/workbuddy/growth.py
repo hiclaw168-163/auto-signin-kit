@@ -138,7 +138,7 @@ def run_travel(net: Net, state: GrowthState, budget_left: float) -> None:
             )
     except StopRoundError:
         raise
-    except Exception as exc:  # noqa: BLE001  # 单步失败不拖垮其余领取
+    except Exception as exc:  # 单步失败不拖垮其余领取
         state.fail("旅行模块异常（%s: %s）" % (type(exc).__name__, exc), -1)
 
 
@@ -221,7 +221,7 @@ def run_tasks(net: Net, state: GrowthState, budget_left: float) -> list | None:
         return tasks if isinstance(tasks, list) else None
     except StopRoundError:
         raise
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         state.fail("任务模块异常（%s: %s）" % (type(exc).__name__, exc), -1)
         return None
 
@@ -265,5 +265,5 @@ def _claim_task_reward(net: Net, state: GrowthState, titles: dict, task: dict) -
             state.fail("领任务奖「%s」失败：%s" % (title, msg or "HTTP %s" % ccode), ccode)
     except StopRoundError:
         raise
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         state.fail("领任务奖「%s」异常（%s: %s）" % (code, type(exc).__name__, exc), -1)

@@ -72,7 +72,7 @@ def _snapshot(method: str, url: str, payload: Any) -> None:
     if isinstance(payload, (bytes, bytearray)):
         try:
             body = bytes(payload).decode("utf-8", "replace")
-        except Exception:  # noqa: BLE001 — 快照尽力而为
+        except Exception:
             body = "<binary>"
     elif payload is None:
         body = None
@@ -149,11 +149,11 @@ def fetch(
             body = json.dumps(payload).encode("utf-8")
         except (TypeError, ValueError):
             return 0, None, "PAYLOAD_NOT_SERIALIZABLE"
-    request = urllib.request.Request(
+    request = urllib.request.Request(  # noqa: S310 — 仅项目内 http(s) URL,无外部输入拼接
         url, data=body, headers=dict(headers or {}), method=method
     )
     try:
-        with urllib.request.urlopen(
+        with urllib.request.urlopen(  # noqa: S310 — 仅项目内 http(s) URL,无外部输入拼接
             request, timeout=timeout, context=ssl.create_default_context()
         ) as resp:
             raw = resp.read().decode("utf-8")

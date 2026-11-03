@@ -11,6 +11,8 @@ import os
 import time
 from pathlib import Path
 
+from auto_signin_kit.core.errors import AutoSignInKitError
+
 _URL_STATIC = Path("CodeBuddyExtension") / "Data" / "Public" / "auth"
 #: Windows/macOS 桌面端凭据相对路径(分别拼在 %LOCALAPPDATA% 与 Application Support 下)。
 AUTH_BASENAME = _URL_STATIC / "workbuddy-desktop.info"
@@ -64,5 +66,6 @@ def load_session_retry(auth_file: Path, attempts: int = 3, delay: float = 2.0) -
             last = exc
             if index < attempts - 1:
                 time.sleep(delay)
-    assert last is not None
+    if last is None:  # 理论不可达(循环必有赋值),防御 -O 裁剪不用 assert
+        raise AutoSignInKitError("凭据读取重试后未获得结果")
     raise last

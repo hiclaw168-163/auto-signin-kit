@@ -73,8 +73,8 @@ def _now() -> str:
 
 def _last_json(text: str) -> dict[str, Any] | None:
     """取 stdout 里**最后**一条能解析的 JSON 行(emit_result 契约是一行一个事件)。"""
-    for line in reversed((text or "").splitlines()):
-        line = line.strip()
+    for raw_line in reversed((text or "").splitlines()):
+        line = raw_line.strip()
         if line.startswith("{"):
             try:
                 parsed = json.loads(line)
@@ -123,7 +123,7 @@ class _Runner:
 
     def _run(self, job: Job, timeout: int) -> None:
         try:
-            proc = subprocess.run(  # noqa: S603 — argv 白名单拼装,无外部输入拼接
+            proc = subprocess.run(
                 job.argv,
                 capture_output=True,
                 text=True,

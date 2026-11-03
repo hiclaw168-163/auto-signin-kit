@@ -43,7 +43,7 @@ def _write_pid(pid_file, pid: int, port: int = 8688) -> None:
 
 
 def _live_process() -> subprocess.Popen:
-    return subprocess.Popen(  # noqa: S603 — 固定 argv 的短命探针
+    return subprocess.Popen(
         [sys.executable, "-c", "import time; time.sleep(30)"],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
@@ -53,7 +53,7 @@ def _live_process() -> subprocess.Popen:
 
 
 def test_pid_roundtrip(paths):
-    pid_file, _ = paths
+    _pid_file, _ = paths
     info = daemon_mod.PidInfo(pid=42, host="127.0.0.1", port=8688,
                               started_at="2026-11-02T00:00:00+08:00")
     daemon_mod.write_pid(info)
@@ -176,7 +176,7 @@ def test_start_daemon_clears_stale_record_before_spawn(paths, monkeypatch):
 
 
 def test_spawn_platform_flags_and_log_redirect(paths, monkeypatch):
-    _, log = paths
+    _, _log = paths
     monkeypatch.setattr(daemon_mod, "_entry_argv", lambda: ["/fake/auto-signin-kit"])
     captured: dict = {}
 
@@ -328,7 +328,7 @@ def test_status_all_states(paths, monkeypatch):
 
 
 def test_run_child_writes_and_clears_pid(paths, monkeypatch):
-    _, log = paths
+    _, _log = paths
     seen: dict = {}
 
     class _FakeServer:

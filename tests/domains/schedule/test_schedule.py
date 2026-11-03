@@ -91,7 +91,7 @@ class _Override:
 
 def _noop_probe(domain):
     """客户端探测桩: 一律就绪,不拦注册。"""
-    return None
+    return
 
 
 class TestTaskCatalogue:
@@ -231,7 +231,7 @@ class TestPresenceGate:
 
         def probe(domain):
             calls.append(domain)
-            return None
+            return
 
         ready, failed = service.filter_ready(TASKS, probe)
         assert failed == []

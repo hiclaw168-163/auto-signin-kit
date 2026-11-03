@@ -31,7 +31,7 @@ def _sweep_rewards(api: DoubaoApi, config: DoubaoDomainConfig) -> dict[str, Any]
     体验任务(生成文档/表格/PPT 等)须先在产品里真实完成对应操作才会变为
     可领取(status=2),清扫对未完成项不做任何事——不能凭空硬领。
     """
-    scode, body, err = api.campaign_detail(config.campaign_code)
+    scode, body, _err = api.campaign_detail(config.campaign_code)
     payload = body if isinstance(body, dict) else {}
     if scode != 200 or payload.get("code") != 0:
         return {"error": "活动详情查询失败(http=%s code=%s)" % (scode, payload.get("code"))}

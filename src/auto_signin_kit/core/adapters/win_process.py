@@ -43,7 +43,7 @@ def running_process_paths(exe_names: Iterable[str], *, parent_dir: bool = False)
                 ok = kernel32.Process32Next(snapshot, ctypes.byref(entry))
         finally:
             kernel32.CloseHandle(snapshot)
-    except Exception as exc:  # noqa: BLE001 — 进程发现是锦上添花,失败降级为已有结果并留痕
+    except Exception as exc:
         log_debug("进程快照枚举失败: %s: %s" % (type(exc).__name__, exc))
         return roots
     return roots
@@ -68,7 +68,7 @@ def _exe_path_of(kernel32: Any, pid: int) -> Path | None:
         size = wt.DWORD(len(buf))
         if kernel32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size)):
             return Path(buf.value[:size.value])
-    except Exception as exc:  # noqa: BLE001 — 单个进程的 exe 路径拿不到就跳过,留痕即可
+    except Exception as exc:
         log_debug("进程 exe 路径查询失败: %s: %s" % (type(exc).__name__, exc))
         return None
     finally:

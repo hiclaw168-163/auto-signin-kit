@@ -40,7 +40,7 @@ def list_apps() -> dict[str, Any]:
         ready = None
         try:
             ready = bool(meta.ready())
-        except Exception:  # noqa: BLE001 — 探测失败按未知展示,不让列表挂掉
+        except Exception:
             ready = None
         apps.append({
             "name": name,
@@ -73,7 +73,7 @@ def create_app(body: AppCreate) -> dict[str, Any]:
         raise HTTPException(422, str(exc)) from exc
     try:
         _rebuild_and_exit()
-    except Exception as exc:  # noqa: BLE001 — spawn 失败必须回滚,不留半成品域
+    except Exception as exc:
         scaffolding.rollback(manifest)
         raise HTTPException(500, "重建进程拉起失败,已回滚: %s" % exc) from exc
     return {
@@ -94,7 +94,7 @@ def delete_app(name: str) -> dict[str, Any]:
         raise HTTPException(404, str(exc)) from exc
     try:
         _rebuild_and_exit()
-    except Exception as exc:  # noqa: BLE001 — 已删的目录不回滚(删除是终局操作),
+    except Exception as exc:
         # 重建失败只需提示用户手动重装
         raise HTTPException(500, "已删除但重建失败(手动执行 uv sync 后重装即可): %s"
                              % exc) from exc

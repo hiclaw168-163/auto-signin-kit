@@ -31,8 +31,8 @@ CHAT_PROMPT = "这是一次自动活跃打卡，请只回复两个字：好的"
 def parse_sse_text(raw: str) -> str:
     """聚合 SSE 文本里所有 ``delta.content``;非流式/异常行一律跳过不抛。"""
     pieces: list[str] = []
-    for line in raw.splitlines():
-        line = line.strip()
+    for raw_line in raw.splitlines():
+        line = raw_line.strip()
         if not line.startswith("data:"):
             continue
         payload = line[5:].strip()

@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from auto_signin_kit.core.adapters.platform_info import IS_MACOS, IS_WINDOWS
-from auto_signin_kit.core.adapters.scheduler.common import SchedulerError  # noqa: F401
+from auto_signin_kit.core.adapters.scheduler.common import SchedulerError
 from auto_signin_kit.core.ports.scheduler import Scheduler
 
 __all__ = ["SchedulerError", "get_scheduler"]

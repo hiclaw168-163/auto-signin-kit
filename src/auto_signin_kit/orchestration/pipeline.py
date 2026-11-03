@@ -79,5 +79,5 @@ class Pipeline:
         for step in reversed(completed):
             try:
                 step.rollback(ctx)
-            except Exception as e:  # noqa: BLE001 — 回滚尽最大努力,不掩盖原失败
+            except Exception as e:
                 log_warning(f"回滚 {step.name} 时出错(已忽略): {e}")

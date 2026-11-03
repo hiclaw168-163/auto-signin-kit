@@ -20,6 +20,24 @@
 
 对应规则: `E` `W` `I`。
 
+## 一·五、安全与健壮(强制,阿里规范对齐批次 2026-11-03)
+
+对应规则: `S`(bandit) `RET`(return 简化) `RUF`。要点:
+
+- **禁止 `assert` 做业务校验**(S101 仅限 tests/): `python -O` 会跳过 assert,
+  业务前置检查一律显式 `if ...: raise`。
+- **生产代码禁裸捕获**: `except Exception` 只允许出现在"边界降级"场景
+  (stdout 写入失败转日志、台账 best-effort),且必须带日志或转译,逐处
+  `# noqa: S110/BLE001` 注明理由。
+- **subprocess 全程固定 argv、禁 shell**;S603 全局豁免的理由是架构门禁
+  (`test_domains_do_not_call_subprocess_directly` 等)已覆盖注入面。
+- **平台协议要求的"弱算法"**(如 Chromium v10 的 PBKDF2-SHA1)在调用行
+  `# noqa: S303` 注明"协议对齐",禁止用于自选哈希。
+- **urllib.urlopen 限项目内/本机 URL**(S310 豁免处需注明);headers 里
+  的凭证永不写入台账(请求快照只记 method/url 脱敏/body)。
+- 全角标点/中文引号是文案内容(`RUF001-003` 全局豁免);豁免全局规则必须
+  在本文件或 pyproject 注释里写理由,**禁止**直接放宽全局规则集。
+
 ## 二、命名(强制)
 
 | 对象 | 风格 | 示例 |

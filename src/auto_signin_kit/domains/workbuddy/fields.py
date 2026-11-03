@@ -68,7 +68,7 @@ def fmt_eta(arrive_at: Any, server_now: Any) -> str:
         return ""
     if left <= 0:
         return "，已到达待领取"
-    minutes = int(round(left / 60.0))
+    minutes = round(left / 60.0)
     if minutes < 60:
         return "，约 %d 分钟后回" % max(1, minutes)
     return "，约 %.1f 小时后回" % (left / 3600.0)

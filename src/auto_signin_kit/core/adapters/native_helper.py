@@ -63,7 +63,7 @@ def run_json_stdin_helper(
         raise NativeHelperError("HELPER_TIMEOUT")
     env = (env_filter or (lambda base: base))({})
     try:
-        process = subprocess.Popen(  # noqa: S603  # 参数由调用方(域凭据逻辑)控制
+        process = subprocess.Popen(  # 参数由调用方(域凭据逻辑)控制
             [exe, "-e", script],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -179,7 +179,7 @@ def run_capture(
     if getattr(subprocess, "CREATE_NO_WINDOW", None) is not None:
         kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
     try:
-        proc = subprocess.run(  # noqa: S603
+        proc = subprocess.run(
             [exe, *args],
             input=input_bytes,
             capture_output=True,

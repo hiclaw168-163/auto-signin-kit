@@ -162,7 +162,8 @@ def _read_store_retry(root: Path, attempts: int = 3) -> dict:
             last = exc
             if index + 1 < attempts:
                 time.sleep(0.25)
-    assert last is not None
+    if last is None:  # 理论不可达(循环必有赋值),防御 -O 裁剪不用 assert
+        raise AuthFormatError("重试后未获得读取结果")
     if isinstance(last, (AuthFormatError, DecryptError)):
         raise AuthFormatError(str(last))
     raise AuthFormatError("%s 读取失败（%s: %s）" % (AUTH_FILE, type(last).__name__, last))

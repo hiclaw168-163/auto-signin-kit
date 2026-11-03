@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import pytest
 
 from auto_signin_kit.core.errors import ConfigError
@@ -13,7 +15,7 @@ class _Capture(SigninDomain):
 
     name = "demo"
     display = "Demo"
-    emitted: list = []
+    emitted: ClassVar[list] = []
 
     def _emit(self, out, label, *, silent):
         self.emitted.append((out, label, silent))

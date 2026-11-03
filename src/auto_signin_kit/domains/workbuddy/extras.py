@@ -57,7 +57,7 @@ def run_lottery(net: Net, state: GrowthState, budget_left: float) -> None:
                 state.fail("开盲盒失败：%s" % (msg or "HTTP %s" % dcode), dcode)
     except StopRoundError:
         raise
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         state.fail("盲盒模块异常（%s: %s）" % (type(exc).__name__, exc), -1)
 
 
@@ -104,7 +104,7 @@ def run_buddy_box(net: Net, state: GrowthState, budget_left: float) -> None:
             state.fail("开 Buddy 盲盒失败：%s" % (msg or "HTTP %s" % ocode), ocode)
     except StopRoundError:
         raise
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         state.fail("Buddy 盲盒模块异常（%s: %s）" % (type(exc).__name__, exc), -1)
 
 
@@ -119,7 +119,7 @@ def run_display(
             ecode, ebody = net.get(GROWTH_BASE + "/energy")
             if ecode not in (401, 403) and 200 <= ecode < 300:
                 energy = dig(ebody, "balance")
-        except Exception as exc:  # noqa: BLE001 — 展示值失败只降级不炸整轮,但留痕到调试日志
+        except Exception as exc:
             log_debug("能量余额获取失败(展示用,已跳过): %s: %s" % (type(exc).__name__, exc))
     # 本轮没取过 /streak 或补登改了天数时才重新取;同一轮不打两次同一接口。
     try:
@@ -131,7 +131,7 @@ def run_display(
             if scode2 not in (401, 403):
                 streak_obj = dig(sbody2, "streak") or {}
                 streak_days = streak_obj.get("days") if isinstance(streak_obj, dict) else None
-    except Exception as exc:  # noqa: BLE001 — 同上,展示值降级但留痕
+    except Exception as exc:
         log_debug("连签天数获取失败(展示用,已跳过): %s: %s" % (type(exc).__name__, exc))
     return energy, streak_days
 

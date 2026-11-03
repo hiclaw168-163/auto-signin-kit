@@ -163,7 +163,7 @@ def _act_lighthouse(net: Net, task: dict) -> str:
                             expert_name=light.get("display_name_zh"), expert_industry_id="")
     use = ev.actual_use_event(light, conv, req, mode="LOCAL")
     use.update(type="", cost=0)  # 对齐真实样本: 轻量云专家 type 为空、cost=0
-    ev.report_desktop(net, events + [use])
+    ev.report_desktop(net, [*events, use])
     return "已上报轻量云专家召唤+使用链（真实对话 requestId）"
 
 
@@ -175,7 +175,7 @@ def _act_skill(net: Net, task: dict) -> str:
     for chain_ev in events:
         if chain_ev.get("eventCode") == "chat_message_response":
             chain_ev["finishReason"] = "tool_calls"
-    ev.report_desktop(net, events + [ev.skill_info_event(conv, req, msg)])
+    ev.report_desktop(net, [*events, ev.skill_info_event(conv, req, msg)])
     return "已上报真实对话 + skill_info 技能加载事件"
 
 
@@ -252,7 +252,7 @@ def run_progress(
         if budget_left() <= ev.EXPERT_BUDGET_FLOOR:
             state.note("时间预算吃紧，剩余任务进度下次再制造")
             return
-        desc, action = entry
+        _desc, action = entry  # desc 仅在预算告警文案里用,此处不需要
         title = task.get("title") or code
         try:
             msg = action(net, task)
@@ -261,6 +261,6 @@ def run_progress(
             raise
         except ev.ActionError as exc:
             state.fail("任务「%s」自动完成失败：%s" % (title, exc), 400)
-        except Exception as exc:  # noqa: BLE001  # 单动作失败不拖垮其余任务
+        except Exception as exc:  # 单动作失败不拖垮其余任务
             state.fail("任务「%s」自动完成异常（%s: %s）" % (title, type(exc).__name__, exc), -1)
         time.sleep(ev.REPORT_GAP)

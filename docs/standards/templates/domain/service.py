@@ -18,7 +18,7 @@
 
 from __future__ import annotations
 
-from auto_signin_kit.core.errors import CommandError  # noqa: F401  # 按需使用
+from auto_signin_kit.core.errors import CommandError  # 按需使用
 
 
 def do_something(arg: str) -> str:

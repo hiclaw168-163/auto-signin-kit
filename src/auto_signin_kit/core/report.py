@@ -121,7 +121,7 @@ def _write_stdout(payload: str) -> None:
     try:
         stream.write(payload + "\n")
         stream.flush()
-    except Exception as exc:  # noqa: BLE001 — stdout 不可写时不炸输出通道,但要在 stderr 留痕
+    except Exception as exc:
         log_debug("stdout 写入失败(%s: %s),结果转走日志文件通道" % (type(exc).__name__, exc))
 
 
@@ -178,7 +178,7 @@ def emit_result(
         from auto_signin_kit.core import store
 
         store.record_payload(payload)
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: S110 — 台账 best-effort,绝不影响签到主流程
         pass
     is_error = isinstance(out, dict) and out.get("result") == "ERROR"
     if not silent:

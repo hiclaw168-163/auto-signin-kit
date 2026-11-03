@@ -31,7 +31,7 @@ def probe(port: int | None = None) -> bool:
     """
     try:
         port = resolve_port() if port is None else port
-        with urllib.request.urlopen(
+        with urllib.request.urlopen(  # noqa: S310 — 仅 127.0.0.1 本机探测
                 "http://127.0.0.1:%s/json/version" % port, timeout=1) as resp:
             return resp.status == 200 and bool(json.loads(resp.read()))
     except (OSError, ValueError):
@@ -49,7 +49,7 @@ def cookies_via_cdp(port: int | None = None) -> dict[str, str] | None:
         return None
     pairs: dict[str, str] = {}
     try:
-        targets = json.loads(urllib.request.urlopen(
+        targets = json.loads(urllib.request.urlopen(  # noqa: S310 — 仅 127.0.0.1 本机探测
             "http://127.0.0.1:%s/json/list" % port, timeout=3).read())
         for target in targets:
             if target.get("type") not in ("page", "webview"):

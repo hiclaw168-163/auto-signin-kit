@@ -44,7 +44,7 @@ def build() -> Path:
     npm = _npm()
     for args in (["install"], ["run", "build"]):
         try:
-            proc = subprocess.run(  # noqa: S603 — 固定参数,无外部拼接
+            proc = subprocess.run(
                 [npm, *args],
                 cwd=FRONTEND_DIR,
                 capture_output=True,
