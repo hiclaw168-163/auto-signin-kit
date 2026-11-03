@@ -55,3 +55,12 @@ def is_installed() -> bool:
         return _runtime_path() is not None
     except AuthError:
         return False
+
+
+def client_info() -> dict:
+    """客户端档案(账户表登记用): 安装路径。不可得返回空 dict,如实上报。"""
+    try:
+        path = _runtime_path()
+    except AuthError:
+        return {}
+    return {"install_path": path} if path else {}

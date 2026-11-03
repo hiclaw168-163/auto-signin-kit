@@ -106,6 +106,20 @@ def _get_scheduler() -> Any:
     return get_scheduler()
 
 
+def _sync_profiles() -> dict[str, Any]:
+    """账户档案同步(落 ask_accounts): 复用管理台的采集编排。
+
+    逻辑本体在 ui.apps_api(遍历注册表的 client_info 声明),init 在顶层
+    编排它属于允许的依赖方向(init > ui);失败不挡初始化,如实上报。
+    """
+    try:
+        from auto_signin_kit.ui.apps_api import sync_client_info
+
+        return sync_client_info()
+    except Exception as exc:  # 档案同步失败不影响就绪判定
+        return {"result": "ERROR", "done": [], "failed": [{"error": str(exc)}]}
+
+
 def _ensure_ui(start_ui: bool, interactive: bool, confirm: PromptConfirm) -> str:
     """确保管理台守护进程在跑;返回状态描述(不因 UI 失败而整体失败)。"""
     if not start_ui:
@@ -154,6 +168,10 @@ def run_init(
         if not hard_fail else "skipped(环境未就绪)"
     )
 
+    profiles: dict[str, Any] = {"result": "SKIPPED", "done": [], "failed": []}
+    if not hard_fail and enabled:
+        profiles = _sync_profiles()
+
     todo = _todo_list(hard_fail, not_ready, failed)
     result: dict[str, Any] = {
         "checks": checks,
@@ -163,6 +181,7 @@ def run_init(
         "failed": failed,
         "not_ready": not_ready,
         "ui": ui_state,
+        "profiles": profiles,
         "todo": todo,
         "exit": 2 if hard_fail else (1 if todo else 0),
     }

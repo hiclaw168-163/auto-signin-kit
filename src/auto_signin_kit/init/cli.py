@@ -51,6 +51,12 @@ def _render(result: dict) -> None:  # type: ignore[type-arg]
         typer.echo("  ✗ %s: %s" % (item["name"], item["error"]))
     typer.echo("== Web 管理台 ==")
     typer.echo("  %s" % result["ui"])
+    profiles = result.get("profiles", {})
+    typer.echo("== 账户档案 ==")
+    for item in profiles.get("done", []):
+        typer.echo("  ✓ %s" % item["domain"])
+    for item in profiles.get("failed", []):
+        typer.echo("  - %s: %s" % (item.get("domain", "?"), item.get("error", "")))
     if result["todo"]:
         typer.echo("== 待办 ==")
         for line in result["todo"]:

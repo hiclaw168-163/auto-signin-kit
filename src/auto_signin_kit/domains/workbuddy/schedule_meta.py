@@ -12,13 +12,13 @@
 from __future__ import annotations
 
 from auto_signin_kit.core.ports.scheduler import ScheduleSpec
-from auto_signin_kit.domains.workbuddy import client_info as _client_info
+from auto_signin_kit.domains.workbuddy.runtime import client_info as _collect
 from auto_signin_kit.domains.workbuddy.runtime import is_installed
 
 DISPLAY_NAME = "WorkBuddy"
 
 #: 域档案契约(可选声明): 客户端信息采集;UI 同步账户档案时调用。
-client_info = _client_info.client_info
+client_info = _collect
 
 
 def ready() -> bool:

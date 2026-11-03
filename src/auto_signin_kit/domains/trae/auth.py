@@ -130,6 +130,18 @@ def is_installed() -> bool:
     return any(root.is_dir() for root in data_roaming_roots(config.data_dir))
 
 
+def client_info() -> dict:
+    """客户端档案(账户表登记用): 数据目录。不可得返回空 dict,如实上报。"""
+    from auto_signin_kit.core.config import load_domain_config_model
+    from auto_signin_kit.domains.trae.schema import TraeDomainConfig
+
+    config = load_domain_config_model("trae", TraeDomainConfig, merge_local=True)
+    for root in data_roaming_roots(config.data_dir):
+        if root.is_dir():
+            return {"data_dir": str(root)}
+    return {}
+
+
 def _read_storage_file(root: Path) -> tuple[Path, dict]:
     """在数据目录下找 storage.json 并读取。"""
     storage = root / STORAGE_REL

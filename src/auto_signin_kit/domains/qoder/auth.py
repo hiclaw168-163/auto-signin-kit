@@ -106,6 +106,14 @@ def is_installed() -> bool:
     return any(root.is_dir() for root in find_auth_dirs())
 
 
+def client_info() -> dict:
+    """客户端档案(账户表登记用): 数据目录。不可得返回空 dict,如实上报。"""
+    for root in find_auth_dirs():
+        if root.is_dir():
+            return {"data_dir": str(root)}
+    return {}
+
+
 def token_expired(sess: dict) -> bool:
     """``expiresAt`` 已过期(过去)返回 True;判定逻辑在 core.kit.tokens。"""
     return _core_token_expired(sess, "expiresAt")
