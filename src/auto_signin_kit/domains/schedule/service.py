@@ -204,6 +204,7 @@ def run_action(
     """
     if action not in ACTIONS:
         emit_result({"domain": "schedule",
+            "action": action,
             "result": "ERROR",
             "needs_attention": True,
             "report": unknown_action_report(action, ACTIONS),
@@ -212,6 +213,7 @@ def run_action(
     tasks = select_tasks(config, domain)
     if not tasks:
         emit_result({"domain": "schedule",
+            "action": action,
             "result": "ERROR",
             "needs_attention": True,
             "report": "没有匹配的任务（可用域：%s；也检查配置里的 enabled_tasks）"
@@ -224,6 +226,7 @@ def run_action(
         items = status(tasks, active)
         missing = [item["name"] for item in items if not item["installed"]]
         emit_result({"domain": "schedule",
+            "action": action,
             "result": "OK",
             "needs_attention": False,
             "platform": active.platform,
@@ -248,5 +251,5 @@ def run_action(
     out["platform"] = active.platform
     if dry_run:
         out["report"] = "[dry-run] " + out["report"]
-    emit_result(out, domain="schedule")
+    emit_result(out, domain="schedule", action=action)
     return 1 if failed else 0
