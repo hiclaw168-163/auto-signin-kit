@@ -10,8 +10,7 @@ from __future__ import annotations
 import typer
 
 from auto_signin_kit.core.config import load_domain_config_model
-from auto_signin_kit.core.errors import AutoSignInKitError
-from auto_signin_kit.core.logging import log_error
+from auto_signin_kit.core.kit.cli import run_guarded as _run
 from auto_signin_kit.domains.schedule import service
 from auto_signin_kit.domains.schedule.schema import ScheduleDomainConfig
 
@@ -26,15 +25,6 @@ def _root() -> None:
 
 def _config() -> ScheduleDomainConfig:
     return load_domain_config_model("schedule", ScheduleDomainConfig, merge_local=True)
-
-
-def _run(fn, *args, **kwargs):
-    """统一异常处理: 业务异常转对应退出码,而不是笼统 1。"""
-    try:
-        return fn(*args, **kwargs)
-    except AutoSignInKitError as e:
-        log_error(str(e))
-        raise typer.Exit(e.exit_code) from e
 
 
 @app.command()
