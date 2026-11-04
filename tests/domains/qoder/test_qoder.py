@@ -383,15 +383,28 @@ class TestRunStatus:
 
 
 class TestScheduleSkip:
-    """静默调度时当天已成功领取 → 不执行、不 emit、不落库。"""
+    """qoder 不做日历日跳过: 领取窗口按每天 10:00 轮换(非自然日),
+    当天 00:05 领到的是昨天的窗口,10:00 开新窗口后的调度触发必须真跑,
+    由服务端真值(claimStatus)决定领还是报 ALREADY。"""
 
-    def test_silent_claim_skips_when_done_today(self, monkeypatch):
-        monkeypatch.setattr("auto_signin_kit.core.kit.actions.done_today", lambda domain: True)
-        emitted: list = []
-        monkeypatch.setattr("auto_signin_kit.core.report.emit_result",
-                            lambda out, **kw: emitted.append(out))
+    def test_domain_disables_calendar_day_skip(self):
+        assert service.QoderDomain.skip_when_done == ()
+
+    def test_silent_claim_runs_even_when_done_today(self, monkeypatch):
+        """done_today=True 也照常执行: 10:00 新窗口的 CLAIMABLE 不能被误跳过。"""
         from types import SimpleNamespace
 
+        monkeypatch.setattr("auto_signin_kit.core.kit.actions.done_today",
+                            lambda domain: True)
+        emitted: list = []
+        monkeypatch.setattr("auto_signin_kit.core.kit.domain.emit_result",
+                            lambda out, **kw: emitted.append(out))
+        monkeypatch.setattr(service, "build_api",
+                            lambda cfg: (SimpleNamespace(token_expires_at=None),
+                                         {"expiresAt": None}, "FRESH"))
+        already = {"result": "ALREADY", "needs_attention": False,
+                   "campaign": "act-x", "credits": 100, "report": "本周期已领取"}
+        monkeypatch.setattr(service, "claim_once", lambda api, budget, **kw: already)
         cfg = SimpleNamespace(budget_seconds=None, base_url="https://cfg.example")
         assert service.run_action("claim", cfg, silent=True) == 0
-        assert emitted == []
+        assert [e["result"] for e in emitted] == ["ALREADY"]  # 真跑了,不是静默跳过

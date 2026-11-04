@@ -239,6 +239,11 @@ class QoderDomain(SigninDomain):
     display = "Qoder CN"
     sensitive = SENSITIVE
     ready_noun = "领取"
+    #: 领取窗口按每天 10:00 轮换(非自然日),台账 done_today(自然日)会误判:
+    #: 当天 00:05 领到的是"昨天的窗口",10:00 开新窗口后的调度触发全部被
+    #: 误跳过,真实窗口要拖到次日才领。claim_once 本身服务端真值驱动
+    #: (只 POST CLAIMABLE,领过返回 ALREADY),跳过判断交给服务端,关闭日历日跳过。
+    skip_when_done = ()
 
     def build(self, config: Any, *, once: bool = False, dry_run: bool = False) -> Any:
         """登录态 → Api;三种凭证失败按语义转 DomainError。"""
