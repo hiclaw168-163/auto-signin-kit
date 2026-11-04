@@ -151,6 +151,19 @@ def claim_all(api: Api, campaigns: list[dict], budget: Budget) -> dict:
             "credits": total, "report": report}
 
 
+def _snapshot(campaigns: list[dict]) -> list[dict]:
+    """活动快照(落库诊断用): 空列表/不可领取时留证,看服务端当时到底返回了什么。"""
+    return [
+        {
+            "id": _campaign_key(c),
+            "actionType": c.get("actionType") or "?",
+            "claimStatus": c.get("claimStatus") or "?",
+            "window": _window(c) or None,
+        }
+        for c in campaigns
+    ]
+
+
 def _claim_picked(api: Api, picked: list[dict], budget: Budget, dry_run: bool) -> dict:
     keys = "、".join(_campaign_key(c) for c in picked)
     amount = _simplify_amount([_benefit_amount(c) for c in picked])
@@ -198,8 +211,10 @@ def claim_once(api: Api, budget: Budget, *, retry: bool = True, dry_run: bool = 
             for c in picked["active"]
         )
         return {"result": "PENDING", "needs_attention": True,
+                "campaigns": _snapshot(picked["active"]),
                 "report": "活动存在但当前不可领取：%s" % rows}
     return {"result": "INACTIVE", "needs_attention": False,
+            "campaigns": _snapshot(_campaigns(payload)),
             "report": "当前没有可领取的 Credits 活动（活动可能已结束）"}
 
 
