@@ -39,11 +39,12 @@ KNOWN_ACTIONS = (
     "status", "claim", "all", "doctor", "active",
 )
 
-#: 静默调度时,当天已成功签到即可整体跳过的动作(签到主入口与其兜底/轮询);
-#: active(活跃保底)/growth(成长查询)/status/doctor 各有独立职责,不跳。
-SKIP_WHEN_DONE = (
-    "auto", "silent", "claim", "all", "poll", "silent-poll", "silent-growth",
-)
+#: 静默调度时,当天已成功签到即可整体跳过的动作(**纯签到**主入口与其兜底);
+#: poll/silent-poll/silent-growth 不跳——它们带成长中心(旅行礼物/任务领奖),
+#: 是独立于签到的收益源,"签了到"不等于"旅行礼物已领"(2026-11-04 猫猫旅行
+#: 积分漏领的根因);签到部分在 run_daily 里自查幂等,不需要外层跳过。
+#: active(活跃保底)/growth(成长查询)/status/doctor 各有独立职责,也不跳。
+SKIP_WHEN_DONE = ("auto", "silent", "claim", "all")
 
 
 def log_path() -> Path:

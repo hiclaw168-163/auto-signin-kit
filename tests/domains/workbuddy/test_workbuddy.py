@@ -227,7 +227,8 @@ class TestRunActiveChain:
 
 
 class TestScheduleSkip:
-    """静默调度时当天已成功签到 → 不执行、不 emit、不落库。"""
+    """静默调度时当天已成功签到 → 纯签到动作不执行、不 emit、不落库;
+    轮询/成长类动作不跳——成长中心(旅行礼物/任务领奖)是独立收益源。"""
 
     def test_silent_auto_skips_when_done_today(self, monkeypatch):
         monkeypatch.setattr("auto_signin_kit.core.kit.actions.done_today",
@@ -239,3 +240,21 @@ class TestScheduleSkip:
 
         assert service.run_action("auto", SimpleNamespace(), silent=True) == 0
         assert emitted == []
+
+    def test_poll_family_is_never_skipped(self, monkeypatch):
+        """签了到 ≠ 旅行礼物已领: silent-poll 在 done_today=True 时仍真跑。"""
+        monkeypatch.setattr("auto_signin_kit.core.kit.actions.done_today",
+                            lambda domain: True)
+        assert "silent-poll" not in service.SKIP_WHEN_DONE
+        assert "poll" not in service.SKIP_WHEN_DONE
+        assert "silent-growth" not in service.SKIP_WHEN_DONE
+        # 行为验证: done_today=True 时 poll 走到 load_credentials 之后
+        # (不再在 skip 处短路返回 0)——stub 凭据加载失败即证明已越过 skip
+        monkeypatch.setattr(service, "load_credentials",
+                            lambda: (None, {"result": "NO_AUTH",
+                                            "report": "越过 skip 的证据"}))
+        from types import SimpleNamespace
+
+        cfg = SimpleNamespace(budget_seconds=None, endpoint=None, taskbot=False)
+        out = service.run_action("silent-poll", cfg, silent=True)
+        assert out == 2  # 走到了凭据加载失败分支,而不是被 skip 静默吞掉
