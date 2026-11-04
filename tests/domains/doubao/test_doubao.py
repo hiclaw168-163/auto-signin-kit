@@ -283,6 +283,16 @@ class TestCdpIdentity:
         monkeypatch.setenv("DOUBAO_CDP_PORT", "not-a-number")
         assert cookies_mod.cdp_available() is False
 
+    def test_resolve_port_env_wins_over_config_fallback(self, monkeypatch):
+        # 环境变量 > 域配置 fallback > 内置默认,三级回落
+        monkeypatch.setenv("DOUBAO_CDP_PORT", "9300")
+        assert cdp_mod.resolve_port(9223) == 9300
+
+    def test_resolve_port_falls_back_to_config_then_default(self, monkeypatch):
+        monkeypatch.delenv("DOUBAO_CDP_PORT", raising=False)
+        assert cdp_mod.resolve_port(9223) == 9223
+        assert cdp_mod.resolve_port(None) == 9222
+
 
 class TestDoubaoApi:
     def test_urls_carry_full_common_query(self, monkeypatch):
@@ -339,7 +349,7 @@ def _config(tmp_path):
 def no_cookies(monkeypatch):
     """service 层测试: cookie 链路直接返回假头,绕开文件系统。"""
     monkeypatch.setattr(cookies_mod, "load_cookie_header",
-                        lambda user_data_dir=None: "sessionid=fake")
+                        lambda user_data_dir=None, cdp_port=None: "sessionid=fake")
 
 
 def _router(routes):
@@ -460,11 +470,24 @@ class TestServiceActions:
         assert service.run_action("bogus", _config(no_cookies)) == 2
 
     def test_cookie_error_maps_to_no_auth(self, monkeypatch, tmp_path):
-        def raise_no_auth(user_data_dir=None):
+        def raise_no_auth(user_data_dir=None, cdp_port=None):
             raise cookies_mod.DoubaoCookieError("登录态不完整: 缺 sessionid")
 
         monkeypatch.setattr(cookies_mod, "load_cookie_header", raise_no_auth)
         assert service.run_action("claim", _config(tmp_path)) == 2  # DoubaoCookieError.exit_code
+
+    def test_config_cdp_port_flows_to_cookie_loader(self, monkeypatch):
+        seen: dict = {}
+
+        def fake_load(user_data_dir=None, cdp_port=None):
+            seen["cdp_port"] = cdp_port
+            return "sessionid=fake"
+
+        monkeypatch.setattr(cookies_mod, "load_cookie_header", fake_load)
+        config = DoubaoDomainConfig(campaign_code="c", user_data_dir="/nonexistent",
+                                    budget_seconds=60, cdp_port=9223)
+        service.run_action("claim", config)
+        assert seen["cdp_port"] == 9223
 
 
 class TestScheduleSkip:
@@ -497,7 +520,8 @@ class TestCli:
 
     def test_doctor_reports_offline(self, monkeypatch):
         monkeypatch.setattr(cookies_mod, "doctor_report",
-                            lambda user_data_dir=None: {"session_ok": False,
-                                                        "session_error": "Cookie 库不存在"})
+                            lambda user_data_dir=None, cdp_port=None: {
+                                "session_ok": False,
+                                "session_error": "Cookie 库不存在"})
         result = CliRunner().invoke(app, ["doctor"])
         assert result.exit_code == 1

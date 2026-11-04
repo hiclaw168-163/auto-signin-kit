@@ -21,3 +21,6 @@ class DoubaoDomainConfig(BudgetedConfig):
     campaign_code: str = DEFAULT_CAMPAIGN_CODE
     #: 豆包客户端 Chromium 数据目录;留空 = 自动探测(%LOCALAPPDATA%/Doubao/User Data)。
     user_data_dir: str | None = None
+    #: CDP 调试端口(macOS 唯一 Cookie 通道);须与客户端启动参数
+    #: ``--remote-debugging-port`` 一致。环境变量 DOUBAO_CDP_PORT 仍优先。
+    cdp_port: int = 9222

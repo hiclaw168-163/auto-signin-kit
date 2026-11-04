@@ -219,7 +219,8 @@ def _read_db(db_path: Path, aes_key: bytes) -> dict[str, str]:
     return pairs
 
 
-def load_cookie_header(user_data_dir: Path | None = None) -> str:
+def load_cookie_header(user_data_dir: Path | None = None,
+                       cdp_port: int | None = None) -> str:
     """解出豆包会话 Cookie 并拼成请求头;失败抛 ``DoubaoCookieError``。
 
     合并顺序: 文件库按修改时间新者优先;若客户端带调试端口运行,CDP 实时值
@@ -230,6 +231,10 @@ def load_cookie_header(user_data_dir: Path | None = None) -> str:
     缺 cookie 时按"CDP 可达但没取到 / 双通道均失败 / 文件读到了但登录态不完整"
     三种确定情形分别报错,绝不合并成一句模糊的"登录态不完整"。
     """
+    try:
+        port = cdp.resolve_port(cdp_port)
+    except ValueError as exc:
+        raise DoubaoCookieError("CDP 端口配置非法(DOUBAO_CDP_PORT/cdp_port): %s" % exc) from exc
     root = user_data_dir or default_user_data_dir()
     candidates = _candidate_dbs(root)
     if not candidates:
@@ -251,48 +256,55 @@ def load_cookie_header(user_data_dir: Path | None = None) -> str:
     # 总是尝试 CDP: 文件库可能持有"格式有效但已被服务端判过期"的旧会话
     # (实测: 更新客户端重登后 Default 仍是旧 sessionid,服务端回"登录已过期"),
     # CDP 可达时实时值一定是最权威的;客户端未带调试端口时 1 秒即返回 None。
-    live = cookies_via_cdp()
+    live = cookies_via_cdp(port=port)
     if live:
         merged.update(live)  # CDP 实时值优先级最高
     missing = [n for n in REQUIRED_COOKIES if n not in merged]
     if not missing:
         return "; ".join("%s=%s" % (n, v) for n, v in sorted(merged.items()))
     missing_str = ",".join(missing)
-    if cdp.probe():
+    if cdp.probe(port):
         # 端口通但拿不到会话: 多半是没有打开的 doubao 页面(target 过滤后为空)
         raise DoubaoCookieError(
             "CDP 已连通(端口 %s)但未取到完整登录态(缺 %s): 调试端口上没有打开的"
             " doubao 页面(请在豆包客户端内保持在已登录界面),或 CDP 会话查询失败"
-            % (cdp.resolve_port(), missing_str))
+            % (port, missing_str))
     if not IS_WINDOWS:
         raise DoubaoCookieError(
             "%s (CDP 端口 %s 不可达,缺 %s)"
-            % (MAC_DECRYPT_UNSUPPORTED, cdp.resolve_port(), missing_str))
+            % (MAC_DECRYPT_UNSUPPORTED, port, missing_str))
     if errors:
         # 双通道均失败: 把两边的真实错误原样抛出,不做兜底包装。
         raise DoubaoCookieError(
             "登录态两个读取通道均失败——①文件库: %s;②CDP: 调试端口 %s 不可达"
             "(豆包未带 --remote-debugging-port 启动)。客户端运行期间登录态只在内存:"
             "用桌面快捷方式 Doubao-signin.lnk 重启豆包(自带调试端口),或托盘右键"
-            "完全退出豆包让 Cookie 落盘后重试" % ("; ".join(errors),
-                                                  cdp.resolve_port()))
+            "完全退出豆包让 Cookie 落盘后重试" % ("; ".join(errors), port))
     # 文件解密成功但缺字段: 磁盘上的登录态确实不完整(过期/未登录)。
     raise DoubaoCookieError(
         "登录态不完整: 缺 %s(文件库解密成功但没有这些字段,磁盘登录态已过期:"
         "重新登录豆包客户端后重试)" % missing_str)
 
 
-def cdp_available() -> bool:
+def cdp_available(cdp_port: int | None = None) -> bool:
     """调试端口可达 **且** 确为豆包客户端(校验 /json/version 的 Browser 字段)。
 
     只探端口会误报: 9222 也可能被其他 Chromium 应用占用(实测 Qoder IDE)。
     """
-    return cdp.probe()
+    try:
+        return cdp.probe(cdp.resolve_port(cdp_port))
+    except ValueError:
+        return False
 
 
-def doctor_report(user_data_dir: Path | None = None) -> dict[str, Any]:
+def doctor_report(user_data_dir: Path | None = None,
+                  cdp_port: int | None = None) -> dict[str, Any]:
     """离线体检: 各环节逐一检查并给出结论,供 doctor 命令输出。"""
 
+    try:
+        port = cdp.resolve_port(cdp_port)
+    except ValueError:
+        port = None  # 非法端口如实落 checks,不炸整个体检
     root = user_data_dir or default_user_data_dir()
     dbs = _candidate_dbs(root)
     checks: dict[str, Any] = {
@@ -301,11 +313,12 @@ def doctor_report(user_data_dir: Path | None = None) -> dict[str, Any]:
         "local_state_exists": (root / LOCAL_STATE_REL).exists(),
         "cookie_dbs": [str(p.relative_to(root)) for p in dbs],
         "cookie_db_locked": [str(p.relative_to(root)) for p in dbs if _db_locked(p)],
-        "cdp_available": cdp_available(),
+        "cdp_port": port,
+        "cdp_available": cdp_available(cdp_port),
     }
     if checks["cookie_dbs"] and (checks["local_state_exists"] or not IS_WINDOWS):
         try:
-            load_cookie_header(root)
+            load_cookie_header(root, cdp_port=cdp_port)
             checks["session_ok"] = True
         except DoubaoCookieError as exc:
             checks["session_ok"] = False

@@ -15,9 +15,15 @@ _DOUBAO_URL = "https://www.doubao.com"
 _DEFAULT_PORT = 9222
 
 
-def resolve_port() -> int:
-    """DOUBAO_CDP_PORT 优先,缺省回落 9222;非法值如实抛 ValueError。"""
-    return int(os.environ.get("DOUBAO_CDP_PORT", _DEFAULT_PORT))
+def resolve_port(fallback: int | None = None) -> int:
+    """DOUBAO_CDP_PORT 优先,其次 fallback(域配置 cdp_port),缺省 9222。
+
+    非法值如实抛 ValueError。
+    """
+    env = os.environ.get("DOUBAO_CDP_PORT")
+    if env:
+        return int(env)
+    return fallback if fallback is not None else _DEFAULT_PORT
 
 
 def probe(port: int | None = None) -> bool:

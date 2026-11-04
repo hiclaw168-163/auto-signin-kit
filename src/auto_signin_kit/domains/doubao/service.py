@@ -153,7 +153,8 @@ class DoubaoDomain(SigninDomain):
               dry_run: bool = False) -> DoubaoApi:
         """Cookie 解密 → DoubaoApi;``once``= 网络错误不重试。"""
         try:
-            cookie_header = cookies.load_cookie_header(_user_data_dir(config))
+            cookie_header = cookies.load_cookie_header(_user_data_dir(config),
+                                                       cdp_port=config.cdp_port)
         except AutoSignInKitError as exc:
             result = "NO_AUTH" if isinstance(exc, cookies.DoubaoCookieError) else "ERROR"
             raise DomainError(result, str(exc), exit_code=exc.exit_code) from exc
@@ -172,7 +173,7 @@ class DoubaoDomain(SigninDomain):
 
     def doctor(self, config: Any) -> tuple[dict, int]:
         """离线体检: 平台/数据目录/Cookie 解密链路逐项检查(不联网)。"""
-        report = cookies.doctor_report(_user_data_dir(config))
+        report = cookies.doctor_report(_user_data_dir(config), cdp_port=config.cdp_port)
         ok = bool(report.get("session_ok"))
         return make_result(
             "OK" if ok else "ERROR",
