@@ -62,12 +62,20 @@ _RUNS_COLUMN_ORDER = ("id", "domain", "account_name", "executed_at", "operation"
                       "request", "response", "detail", "created_at",
                       "updated_at")
 
+#: ask_apps 的目标列序(主键 → 业务主体 → 开关 → 展示描述 → 审计)。
+_APP_COLUMN_ORDER = ("id", "app_code", "region", "enabled", "app_name",
+                     "app_desc", "created_at", "updated_at")
+
 #: 列名规约: 避开数据库关键字——SQLite 官方关键字表里有 ACTION,
-#: MySQL 官方关键字表里有 ACTION/ACCOUNT(2026-11-05 两次规约)。
+#: MySQL 官方关键字表里有 ACTION/ACCOUNT;ask_apps 业务键统一 app_ 前缀
+#: (domain/display/note 是 2026-11-05 首版命名,重设计为 app_code 等)。
 _RENAME_MIGRATIONS = (
     ("ask_signin_runs", "action", "operation"),
     ("ask_schedule_changes", "action", "operation"),
     ("ask_signin_runs", "account", "account_name"),
+    ("ask_apps", "domain", "app_code"),
+    ("ask_apps", "display", "app_name"),
+    ("ask_apps", "note", "app_desc"),
 )
 
 #: 老库迁移: ALTER 加列后,把历史上靠 action 标记的回填行规整到 source 列;
@@ -223,7 +231,15 @@ def _migrate(conn: sqlite3.Connection) -> None:
                 conn.execute(add_sql)
                 if backfill_sql:
                     conn.execute(backfill_sql)
+    # ask_apps.region: 应用主档的版本区(国内版/国际版);首版建表没有此列,
+    # 老库补列时存量行回填 'cn'(当前每应用都是国内版)
+    apps_columns = {row["name"] for row in conn.execute("PRAGMA table_info(ask_apps)")}
+    if apps_columns and "region" not in apps_columns:
+        with conn:
+            conn.execute("ALTER TABLE ask_apps ADD COLUMN region"
+                         " TEXT NOT NULL DEFAULT 'cn'")
     # 列序重建(必须在补列之后: 按名列拷贝要求旧表已有全部目标列)
+    _reorder_table(conn, "ask_apps", _APP_COLUMN_ORDER, _load_sql("ask_apps.sql"))
     _reorder_table(conn, "ask_accounts", _ACCOUNT_COLUMN_ORDER, _ASK_ACCOUNTS_DDL)
     _reorder_table(conn, "ask_signin_runs", _RUNS_COLUMN_ORDER,
                    _load_sql("ask_signin_runs.sql"))

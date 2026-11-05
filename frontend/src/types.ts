@@ -10,7 +10,8 @@ export interface AppInfo {
   config: Record<string, unknown> | null // 域 YAML 字段视图;null = 配置文件不存在
   times: string[] // 该域全部定时任务的触发时间(已套 schedule.yaml 覆盖)
   enabled: boolean // 应用总开关(ask_apps;从未操作过 = true)
-  note: string | null
+  region: string // 版本区: cn / intl(国内版/国际版,未来应用变体各占一行)
+  app_desc: string | null // 应用描述/备注(ask_apps.app_desc)
 }
 
 export interface AppsInfo {
