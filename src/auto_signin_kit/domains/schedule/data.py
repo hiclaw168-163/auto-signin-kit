@@ -70,6 +70,18 @@ def domain_of(spec: ScheduleSpec) -> str:
     return spec.argv[1] if len(spec.argv) > 1 else ""
 
 
+def app_label(spec: ScheduleSpec) -> str:
+    """任务归属的应用标签(UI 分组/应用同步用)。
+
+    常规域 = 域名;web_signin 引擎的任务(一个域承载 N 个声明式应用)
+    归属到 ``--app`` 的应用编码——引擎在其 schedule_meta 里声明
+    ``app_label(spec)`` 扩展点,这里只认扩展点,不 import 业务域。
+    """
+    module = provider_of(domain_of(spec))
+    labeler = getattr(module, "app_label", None)
+    return labeler(spec) if callable(labeler) else domain_of(spec)
+
+
 def known_domains() -> tuple[str, ...]:
     """清单里出现过的域名,去重后按出现顺序返回(用于报错提示)。"""
     out: list[str] = []

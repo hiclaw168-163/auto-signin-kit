@@ -1,0 +1,43 @@
+# Trae CN 声明式应用(web_signin 引擎);规范见 docs/standards/STD-07-声明式应用接入.md
+# 调用协议与凭据解锁原 domains/trae 域取证结论(NOTE-03): claim 必须带
+# x-device-id 等设备头,缺头回业务码 9004;9074 是活动期限流,退避重试。
+app_code: trae
+region: cn
+display: Trae CN
+base_url: https://api.trae.cn
+budget_seconds: 240
+
+auth:
+  kind: ss_aes              # Trae 桌面端 SS_AES 加密信封(引擎内置适配器)
+  env: TRAE_TOKEN           # 环境变量令牌可选,仅 default 账户消费
+  token_header:
+    name: Authorization
+    prefix: "Cloud-IDE-JWT "
+  headers:
+    X-User-Region: cn       # 与桌面端指纹对齐(缺省 UA/区域头是风控观察项)
+
+business_codes:
+  1001: AUTH_REJECTED       # 服务端无法认证 → 请打开桌面端重新登录
+code_path: code
+code_ok: 0
+
+status:
+  method: POST
+  path: /trae/api/v2/ug/checkin_credits/status
+  body: { req_source: 1 }
+  mapping:
+    checked_in: checked_in
+    credits: credits
+    extra_credits: extra_credits
+
+claim:
+  method: POST
+  path: /trae/api/v2/ug/checkin_credits/claim
+  body: { req_source: 1 }
+  checked_in_path: checked_in   # 服务端若回显 checked_in 直接采信
+  retry_on: [9074]              # 活动参与人数过多被限流 → 同轮退避重试
+  confirm_by_status: true       # claim 受理响应不回显结果,以 status 复查为准
+
+schedule:
+  times: ["09:05", "13:05", "15:05", "19:05", "21:05", "23:05"]
+  limit_minutes: 5

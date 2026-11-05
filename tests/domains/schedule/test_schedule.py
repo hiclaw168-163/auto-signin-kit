@@ -19,14 +19,14 @@ from auto_signin_kit.domains.schedule.data import TASKS, domain_of, known_domain
 runner = CliRunner()
 
 #: 各任务的**最低**执行时限(分钟);低于它就会在脚本自己收尾前被平台强杀。
-#: 数字来自各域的时间预算上限: workbuddy 主入口 540s、轮询 240s、qoder/trae 240s、
+#: 数字来自各域的时间预算上限: workbuddy 主入口 540s、轮询 240s、qoder/trae(引擎) 240s、
 #: doubao 60s。
 MIN_LIMIT_MINUTES = {
     "WorkBuddyAutoSignin": 10,
     "WorkBuddyGrowthPoll": 5,
     "WorkBuddyActiveCheck": 5,
     "QoderDailyCredits": 5,
-    "TraeDailyCheckin": 5,
+    "WebSigninTrae": 5,
     "DoubaoDailyCheckin": 5,
 }
 
@@ -165,15 +165,15 @@ class TestServiceOrchestration:
 
     def test_times_and_limit_come_from_config(self):
         """调度时间由配置决定——改时间改 YAML 即可,不必动代码。"""
-        config = _Config(tasks={"TraeDailyCheckin": _Override(("03:07",), 9)})
+        config = _Config(tasks={"WebSigninTrae": _Override(("03:07",), 9)})
         trae = next(t for t in service.select_tasks(config, None)
-                    if t.name == "TraeDailyCheckin")
+                    if t.name == "WebSigninTrae")
         assert trae.times == ("03:07",)
         assert trae.limit_minutes == 9
 
     def test_unlisted_task_keeps_default_times(self):
         """只改一个任务时,其余任务沿用清单默认值,不必抄整张表。"""
-        config = _Config(tasks={"TraeDailyCheckin": _Override(("03:07",))})
+        config = _Config(tasks={"WebSigninTrae": _Override(("03:07",))})
         picked = service.select_tasks(config, None)
         qoder = next(t for t in picked if t.name == "QoderDailyCredits")
         default = next(t for t in TASKS if t.name == "QoderDailyCredits")
@@ -182,9 +182,9 @@ class TestServiceOrchestration:
 
     def test_enabled_tasks_narrows_selection(self):
         scheduler = FakeScheduler()
-        assert service.run_action("install", _Config(enabled=["TraeDailyCheckin"]),
+        assert service.run_action("install", _Config(enabled=["WebSigninTrae"]),
                                   scheduler=scheduler, probe=_noop_probe) == 0
-        assert scheduler.installed == {"TraeDailyCheckin"}
+        assert scheduler.installed == {"WebSigninTrae"}
 
 
 class TestPresenceGate:
@@ -200,7 +200,7 @@ class TestPresenceGate:
         code = service.run_action("install", _Config(), scheduler=scheduler, probe=probe)
         assert code == 1
         assert scheduler.installed == {
-            "QoderDailyCredits", "TraeDailyCheckin", "DoubaoDailyCheckin"}
+            "QoderDailyCredits", "WebSigninTrae", "DoubaoDailyCheckin"}
         assert not scheduler.calls or all(
             not name.startswith("WorkBuddy") for _, name in scheduler.calls)
 
@@ -238,7 +238,7 @@ class TestPresenceGate:
         assert failed == []
         assert len(ready) == len(TASKS)
         # 顺序 = schedule_meta 注册表顺序(entry-point 名字母序,稳定)
-        assert calls == ["doubao", "qoder", "trae", "workbuddy"]
+        assert calls == ["doubao", "qoder", "web_signin", "workbuddy"]
 
     def test_unknown_domain_passes_gate(self):
         """未登记探测的域(未来新域)照常注册,不挡路。"""
@@ -250,14 +250,14 @@ class TestPresenceGate:
         """cli 不注入 probe 时走真实探测;打桩后未就绪的域不注册。"""
         monkeypatch.setattr(service, "get_scheduler", lambda: FakeScheduler())
         monkeypatch.setattr(service, "_default_probe",
-                            lambda domain: "未检测到" if domain == "trae" else None)
+                            lambda domain: "未检测到" if domain == "web_signin" else None)
         from auto_signin_kit.domains.schedule.cli import app as cli_app
 
-        result = runner.invoke(cli_app, ["install", "--domain", "trae"])
+        result = runner.invoke(cli_app, ["install", "--domain", "web_signin"])
         assert result.exit_code == 1
         payload = json.loads(capsys.readouterr().out or result.output)
         assert payload["result"] == "FAILED"
-        assert payload["failed"][0]["name"] == "TraeDailyCheckin"
+        assert payload["failed"][0]["name"] == "WebSigninTrae"
 
 
 class TestCli:
@@ -275,7 +275,7 @@ class TestCli:
         assert json.loads(result.output)["result"] == "OK"
 
     def test_status_uses_injected_scheduler(self, monkeypatch):
-        installed = {"TraeDailyCheckin"}
+        installed = {"WebSigninTrae"}
         monkeypatch.setattr(service, "get_scheduler", lambda: FakeScheduler(installed))
         result = runner.invoke(app, ["status"])
         assert result.exit_code == 0

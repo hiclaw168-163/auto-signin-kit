@@ -38,7 +38,7 @@ auto-signin-kit = "auto_signin_kit.cli:main"
 [project.entry-points."auto_signin_kit.domains"]
 workbuddy = "auto_signin_kit.domains.workbuddy:app"
 qoder = "auto_signin_kit.domains.qoder:app"
-trae = "auto_signin_kit.domains.trae:app"
+web_signin = "auto_signin_kit.domains.web_signin:app"
 schedule = "auto_signin_kit.domains.schedule:app"
 doubao = "auto_signin_kit.domains.doubao:app"
 
@@ -47,7 +47,7 @@ doubao = "auto_signin_kit.domains.doubao:app"
 [project.entry-points."auto_signin_kit.schedule_meta"]
 doubao = "auto_signin_kit.domains.doubao.schedule_meta"
 qoder = "auto_signin_kit.domains.qoder.schedule_meta"
-trae = "auto_signin_kit.domains.trae.schedule_meta"
+web_signin = "auto_signin_kit.domains.web_signin.schedule_meta"
 workbuddy = "auto_signin_kit.domains.workbuddy.schedule_meta"
 
 # 扩展组(非业务域,独立 entry-point 组,SPEC-09/11);cli.py 同样只遍历挂载。
@@ -122,12 +122,13 @@ type = "independence"
 modules = [
     "auto_signin_kit.domains.workbuddy",
     "auto_signin_kit.domains.qoder",
-    "auto_signin_kit.domains.trae",
+    "auto_signin_kit.domains.web_signin",
     "auto_signin_kit.domains.schedule",
     "auto_signin_kit.domains.doubao",
 ]
 # 2026-11 起无特例: 调度任务/探测由各域 schedule_meta.py 声明,
 # schedule 经 entry-point 注册表发现,不再 import 任何业务域。
+# 2026-11-05: trae 已迁为 web_signin 引擎的声明式应用(config/apps/trae.yaml)。
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

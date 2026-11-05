@@ -19,7 +19,7 @@ def _fake_confirm(answers: dict[str, bool]) -> Any:
 class TestBusinessDomains:
     def test_lists_all_registered_schedule_meta_domains(self) -> None:
         names = {d["domain"] for d in service.business_domains()}
-        assert {"workbuddy", "qoder", "trae", "doubao"} <= names
+        assert {"workbuddy", "qoder", "web_signin", "doubao"} <= names
         for d in service.business_domains():
             assert d["display"], "展示名缺失"
 

@@ -37,6 +37,16 @@ def _known_domains() -> set[str]:
     return {ep.name for ep in entry_points(group="auto_signin_kit.domains")}
 
 
+def _known_app_codes() -> set[str]:
+    """声明式应用的编码空间(config/apps/*.yaml);配置目录缺失时视为空。"""
+    try:
+        from auto_signin_kit.core.config import resolve_config_dir
+
+        return {p.stem for p in (resolve_config_dir() / "apps").glob("*.yaml")}
+    except Exception:  # 目录不存在/读不了 → 不占用命名空间(真实错误在别处暴露)
+        return set()
+
+
 def validate(name: str, kind: str, base_url: str, daily_time: str) -> None:
     """非法输入显式报错(不静默兜底);全部合法则静默返回。"""
     if not _DOMAIN_RE.match(name or ""):
@@ -46,6 +56,9 @@ def validate(name: str, kind: str, base_url: str, daily_time: str) -> None:
         raise ConfigError("域名 %r 是 Python 关键字,不能用" % name)
     if name in _known_domains():
         raise ConfigError("域名 %r 已存在(entry_points 已注册同名域)" % name)
+    if name in _known_app_codes():
+        raise ConfigError("应用编码 %r 已被声明式应用占用(config/apps/%s.yaml)"
+                          % (name, name))
     if kind not in ("web", "client"):
         raise ConfigError("kind 只能是 web 或 client,得到 %r" % kind)
     if not base_url.startswith(("http://", "https://")):
