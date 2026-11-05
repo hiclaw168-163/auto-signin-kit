@@ -6,7 +6,8 @@ import { appsApi } from '../api'
 import type { AppInfo } from '../types'
 
 // 应用管理(SPEC-11): 新建触发脚手架生成+后台重建(服务会短暂离线并自动回来,
-// 前端轮询恢复);删除是终局操作,输入域名二次确认。
+// 前端轮询恢复);编辑收敛为单一入口(弹窗内含基本信息/参数配置两个页签,删除
+// 也在弹窗里),行内不再堆按钮。
 
 const router = useRouter()
 const message = useMessage()
@@ -22,6 +23,7 @@ const form = reactive({
   display: '',
   base_url: '',
   daily_time: '09:05',
+  region: 'cn',
 })
 
 async function load() {
@@ -49,39 +51,8 @@ async function toggleApp(a: AppInfo, enabled: boolean) {
   }
 }
 
-// ---------------- 主档编辑(ask_apps: 显示名覆盖/描述,即时生效) ----------------
-
-const editingProfile = ref(false)
-const savingProfile = ref(false)
-const profileForm = reactive({ name: '', app_name: '', app_desc: '' })
-
 function regionLabel(region: string): string {
   return region === 'intl' ? '国际版' : '国内版'
-}
-
-function openProfile(a: AppInfo) {
-  profileForm.name = a.name
-  profileForm.app_name = a.app_name ?? ''
-  profileForm.app_desc = a.app_desc ?? ''
-  editingProfile.value = true
-}
-
-async function saveProfile() {
-  savingProfile.value = true
-  try {
-    // 空串 = 显式清空(回落注册表展示名);接口语义: None 是不改
-    const out = await appsApi.updateState(profileForm.name, {
-      app_name: profileForm.app_name,
-      app_desc: profileForm.app_desc,
-    })
-    message.success(out.message)
-    editingProfile.value = false
-    await load()
-  } catch (e) {
-    message.error(String(e))
-  } finally {
-    savingProfile.value = false
-  }
 }
 
 function kindTag(kind: string | null): { label: string; type: 'success' | 'info' | 'default' } {
@@ -121,28 +92,16 @@ async function create() {
   }
 }
 
-async function remove(app: AppInfo) {
-  working.value = true
-  try {
-    const out = await appsApi.remove(app.name)
-    message.info(out.message)
-    await pollUntilBack()
-  } catch (e) {
-    message.error(String(e))
-  } finally {
-    working.value = false
-  }
-}
-
-// 客户端档案同步: 逐域采集版本/设备标识/登录身份,写入账户维表(即时,无重建)
+// 应用同步: 探测本机已装应用 → ask_apps 建主档(含 region)+ 账户档案(即时,无重建)
 const syncingInfo = ref(false)
 
-async function syncClientInfo() {
+async function syncApps() {
   syncingInfo.value = true
   try {
-    const out = await appsApi.syncClientInfo()
+    const out = await appsApi.syncApps()
     if (out.result === 'OK') {
-      message.success(`${out.done.length} 个域的客户端档案已更新`)
+      message.success(`已同步 ${out.synced.length} 个应用` +
+        (out.skipped.length ? `，${out.skipped.length} 个未安装已跳过` : ''))
     } else {
       message.warning(`部分失败: ${out.failed.map((f) => `${f.domain}(${f.error})`).join('; ')}`)
     }
@@ -172,7 +131,7 @@ async function pollUntilBack() {
   message.warning('等待超时,请稍后手动刷新;重建日志见 logs/scaffold-rebuild.log')
 }
 
-// ---------------- 配置编辑(表单化部分更新,不触发重建) ----------------
+// ---------------- 应用编辑(单一入口: 基本信息页签 + 参数配置页签 + 删除) ----------------
 
 interface FieldRow {
   key: string
@@ -185,6 +144,9 @@ const editName = ref('')
 const editLoading = ref(false)
 const savingEdit = ref(false)
 const editFields = ref<FieldRow[]>([])
+const editProfile = reactive({ app_name: '', app_desc: '' })
+const profileOrig = reactive({ app_name: '', app_desc: '' }) // 打开时快照,判主档是否有改动
+const editTab = ref('profile')
 
 function isScalar(v: unknown): boolean {
   return v === null || ['string', 'number', 'boolean'].includes(typeof v)
@@ -192,6 +154,11 @@ function isScalar(v: unknown): boolean {
 
 async function openEdit(app: AppInfo) {
   editName.value = app.name
+  editProfile.app_name = app.app_name ?? ''
+  editProfile.app_desc = app.app_desc ?? ''
+  profileOrig.app_name = editProfile.app_name
+  profileOrig.app_desc = editProfile.app_desc
+  editTab.value = 'profile'
   editLoading.value = true
   editing.value = true
   try {
@@ -210,25 +177,54 @@ async function openEdit(app: AppInfo) {
 }
 
 async function saveEdit() {
+  // 主档 diff: 空串 = 显式清空(回落注册表展示名);接口语义: None 是不改
+  const profileChanged = editProfile.app_name !== profileOrig.app_name
+    || editProfile.app_desc !== profileOrig.app_desc
   const updates: Record<string, unknown> = {}
   for (const f of editFields.value) {
     if (!isScalar(f.original) || f.value === f.original) continue
     // 字符串字段的留空: 原值是 null 时保持 null,否则按空串提交
     updates[f.key] = f.value === '' && f.original === null ? null : f.value
   }
-  if (!Object.keys(updates).length) {
+  if (!profileChanged && !Object.keys(updates).length) {
     message.info('没有修改')
     return
   }
   savingEdit.value = true
   try {
-    const out = await appsApi.update(editName.value, updates)
-    message.success(out.message)
+    if (profileChanged) {
+      const out = await appsApi.updateState(editName.value, {
+        app_name: editProfile.app_name,
+        app_desc: editProfile.app_desc,
+      })
+      message.success(out.message)
+    }
+    if (Object.keys(updates).length) {
+      const out = await appsApi.update(editName.value, updates)
+      message.success(out.message)
+    }
     editing.value = false
+    await load()
   } catch (e) {
     message.error(String(e))
   } finally {
     savingEdit.value = false
+  }
+}
+
+// 删除也收进编辑弹窗,行内只留「编辑」一个入口
+async function removeApp() {
+  const name = editName.value
+  editing.value = false
+  working.value = true
+  try {
+    const out = await appsApi.remove(name)
+    message.info(out.message)
+    await pollUntilBack()
+  } catch (e) {
+    message.error(String(e))
+  } finally {
+    working.value = false
   }
 }
 
@@ -239,8 +235,8 @@ onMounted(load)
   <n-space vertical size="large">
     <n-space align="center">
       <n-button type="primary" @click="creating = true">新建应用</n-button>
-      <n-button quaternary :loading="syncingInfo" @click="syncClientInfo">
-        同步客户端档案
+      <n-button quaternary :loading="syncingInfo" @click="syncApps">
+        同步本机应用
       </n-button>
       <n-button quaternary :loading="loading" @click="load">刷新</n-button>
       <n-text v-if="rebuilding" type="warning" depth="1">
@@ -258,21 +254,24 @@ onMounted(load)
 
     <n-table size="small" :single-line="false" style="background: var(--ask-surface)">
       <thead>
-        <tr><th>应用</th><th>类别</th><th>就绪探测</th><th>每日时间</th><th>配置</th><th>启用</th><th>操作</th></tr>
+        <tr>
+          <th>应用编码</th><th>应用名称</th><th>类别</th><th>就绪探测</th>
+          <th>每日时间</th><th>配置</th><th>启用</th><th>操作</th>
+        </tr>
       </thead>
       <tbody>
         <tr v-for="a in apps" :key="a.name">
           <td>
-            <span style="font-weight: 600" :style="a.enabled ? '' : 'opacity: 0.5'">{{ a.display }}</span>
+            <code style="font-weight: 600" :style="a.enabled ? '' : 'opacity: 0.5'">{{ a.name }}</code>
             <n-tag size="tiny" :bordered="false" style="margin-left: 8px"
                    :type="a.region === 'intl' ? 'warning' : 'default'">
               {{ regionLabel(a.region) }}
             </n-tag>
-            <div>
-              <n-text depth="3" style="font-size: 12px">{{ a.name }}</n-text>
-              <n-text v-if="a.app_desc" depth="3" style="margin-left: 8px; font-size: 12px">
-                {{ a.app_desc }}
-              </n-text>
+          </td>
+          <td>
+            <span style="font-weight: 600">{{ a.display }}</span>
+            <div v-if="a.app_desc">
+              <n-text depth="3" style="font-size: 12px">{{ a.app_desc }}</n-text>
             </div>
           </td>
           <td>
@@ -306,21 +305,11 @@ onMounted(load)
                       @update:value="(v: boolean) => toggleApp(a, v)" />
           </td>
           <td>
-            <n-space size="small">
-              <n-button size="tiny" @click="openProfile(a)">主档</n-button>
-              <n-button size="tiny" type="primary" ghost @click="openEdit(a)">编辑配置</n-button>
-              <n-popconfirm :show-icon="false">
-                <template #trigger>
-                  <n-button size="tiny" type="error" ghost :disabled="working">删除</n-button>
-                </template>
-                删除是终局操作(物理删除代码与配置)。确认删除
-                <b>{{ a.name }}</b>?
-              </n-popconfirm>
-            </n-space>
+            <n-button size="tiny" type="primary" ghost @click="openEdit(a)">编辑</n-button>
           </td>
         </tr>
         <tr v-if="!apps.length && !loading">
-          <td colspan="7" style="text-align: center">
+          <td colspan="8" style="text-align: center">
             <n-text depth="3">还没有应用,点"新建应用"开始</n-text>
           </td>
         </tr>
@@ -329,19 +318,26 @@ onMounted(load)
 
     <n-modal v-model:show="creating" preset="card" title="新建应用" style="max-width: 520px">
       <n-form label-placement="left" label-width="92">
-        <n-form-item label="域名">
-          <n-input v-model:value="form.name" placeholder="如 github_discuss(小写字母/数字/下划线)" />
+        <n-form-item label="应用编码" required>
+          <n-input v-model:value="form.name"
+                   placeholder="全库关联键,如 github_discuss(小写字母/数字/下划线)" />
         </n-form-item>
-        <n-form-item label="签到类型">
+        <n-form-item label="签到类型" required>
           <n-radio-group v-model:value="form.kind">
             <n-radio value="web">网页版签(HTTP 接口)</n-radio>
             <n-radio value="client">客户端签到(本地客户端/CDP)</n-radio>
           </n-radio-group>
         </n-form-item>
-        <n-form-item label="显示名">
-          <n-input v-model:value="form.display" placeholder="缺省用域名" />
+        <n-form-item label="版本区">
+          <n-radio-group v-model:value="form.region">
+            <n-radio value="cn">国内版</n-radio>
+            <n-radio value="intl">国际版</n-radio>
+          </n-radio-group>
         </n-form-item>
-        <n-form-item label="接口宿主">
+        <n-form-item label="应用名称">
+          <n-input v-model:value="form.display" placeholder="界面上显示的名字,缺省用应用编码" />
+        </n-form-item>
+        <n-form-item label="接口宿主" required>
           <n-input v-model:value="form.base_url" placeholder="https://..." />
         </n-form-item>
         <n-form-item label="每日时间">
@@ -359,64 +355,66 @@ onMounted(load)
       </template>
     </n-modal>
 
-    <n-modal v-model:show="editingProfile" preset="card"
-             :title="`应用主档: ${profileForm.name}`" style="max-width: 480px">
-      <n-alert type="info" :show-icon="false" style="margin-bottom: 12px">
-        主档是应用的全库锚点(关联键 <code>app_code</code>)。显示名留空 = 用
-        注册表内置名;描述随意,便于多人/多机管理时识别应用。
-      </n-alert>
-      <n-form label-placement="left" label-width="92">
-        <n-form-item label="显示名">
-          <n-input v-model:value="profileForm.app_name"
-                   placeholder="留空 = 用注册表内置名" />
-        </n-form-item>
-        <n-form-item label="描述">
-          <n-input v-model:value="profileForm.app_desc" type="textarea"
-                   :rows="2" placeholder="应用用途/备注" />
-        </n-form-item>
-      </n-form>
-      <template #footer>
-        <n-space justify="end">
-          <n-button @click="editingProfile = false">取消</n-button>
-          <n-button type="primary" :loading="savingProfile" @click="saveProfile">
-            保存
-          </n-button>
-        </n-space>
-      </template>
-    </n-modal>
-
-    <n-modal v-model:show="editing" preset="card" :title="`编辑配置: ${editName}`"
-             style="max-width: 560px">
+    <n-modal v-model:show="editing" preset="card" :title="`编辑应用: ${editName}`"
+             style="max-width: 600px">
       <n-spin :show="editLoading">
-        <n-alert type="info" :show-icon="false" style="margin-bottom: 12px">
-          保存后<b>下次运行命令时生效</b>(不需要重建)。重写会移除 YAML 注释,
-          需要保留注释的精细编辑请到
-          <n-button text type="primary" @click="router.push({ name: 'config' })">配置</n-button>
-          页用文本编辑。
-        </n-alert>
-        <n-form label-placement="left" label-width="150">
-          <n-form-item v-for="f in editFields" :key="f.key" :label="f.key">
-            <n-input-number v-if="typeof f.original === 'number'"
-                            v-model:value="f.value as number | null"
-                            style="width: 100%" />
-            <n-switch v-else-if="typeof f.original === 'boolean'"
-                      v-model:value="f.value as boolean" />
-            <n-input v-else-if="isScalar(f.original)"
-                     v-model:value="f.value as string | null"
-                     :placeholder="f.original === null ? '留空 = 未设置(null)' : ''" />
-            <n-text v-else depth="3" style="font-size: 12px">
-              复杂字段(列表/映射),请到「配置」页用 YAML 编辑
-            </n-text>
-          </n-form-item>
-          <n-form-item v-if="!editFields.length">
-            <n-text depth="3">该域还没有配置文件(可从 config/examples 复制)</n-text>
-          </n-form-item>
-        </n-form>
+        <n-tabs v-model:value="editTab" type="line">
+          <n-tab-pane name="profile" tab="基本信息">
+            <n-alert type="info" :show-icon="false" style="margin-bottom: 12px">
+              应用编码 <code>{{ editName }}</code> 是全库锚点,不可改。显示名留空 =
+              用注册表内置名;描述随意,便于多人/多机管理时识别应用。
+            </n-alert>
+            <n-form label-placement="left" label-width="92">
+              <n-form-item label="应用名称">
+                <n-input v-model:value="editProfile.app_name"
+                         placeholder="留空 = 用注册表内置名" />
+              </n-form-item>
+              <n-form-item label="描述">
+                <n-input v-model:value="editProfile.app_desc" type="textarea"
+                         :rows="2" placeholder="应用用途/备注" />
+              </n-form-item>
+            </n-form>
+          </n-tab-pane>
+          <n-tab-pane name="config" tab="参数配置">
+            <n-alert type="info" :show-icon="false" style="margin-bottom: 12px">
+              保存后<b>下次运行命令时生效</b>(不需要重建)。重写会移除 YAML 注释,
+              需要保留注释的精细编辑请到
+              <n-button text type="primary" @click="router.push({ name: 'config' })">配置</n-button>
+              页用文本编辑。
+            </n-alert>
+            <n-form label-placement="left" label-width="150">
+              <n-form-item v-for="f in editFields" :key="f.key" :label="f.key">
+                <n-input-number v-if="typeof f.original === 'number'"
+                                v-model:value="f.value as number | null"
+                                style="width: 100%" />
+                <n-switch v-else-if="typeof f.original === 'boolean'"
+                          v-model:value="f.value as boolean" />
+                <n-input v-else-if="isScalar(f.original)"
+                         v-model:value="f.value as string | null"
+                         :placeholder="f.original === null ? '留空 = 未设置(null)' : ''" />
+                <n-text v-else depth="3" style="font-size: 12px">
+                  复杂字段(列表/映射),请到「配置」页用 YAML 编辑
+                </n-text>
+              </n-form-item>
+              <n-form-item v-if="!editFields.length">
+                <n-text depth="3">该域还没有配置文件(可从 config/examples 复制)</n-text>
+              </n-form-item>
+            </n-form>
+          </n-tab-pane>
+        </n-tabs>
       </n-spin>
       <template #footer>
-        <n-space justify="end">
-          <n-button @click="editing = false">取消</n-button>
-          <n-button type="primary" :loading="savingEdit" @click="saveEdit">保存</n-button>
+        <n-space justify="space-between">
+          <n-popconfirm :show-icon="false" @positive-click="removeApp">
+            <template #trigger>
+              <n-button type="error" ghost :disabled="working">删除应用</n-button>
+            </template>
+            删除是终局操作(物理删除代码与配置)。确认删除<b>{{ editName }}</b>?
+          </n-popconfirm>
+          <n-space>
+            <n-button @click="editing = false">取消</n-button>
+            <n-button type="primary" :loading="savingEdit" @click="saveEdit">保存</n-button>
+          </n-space>
         </n-space>
       </template>
     </n-modal>

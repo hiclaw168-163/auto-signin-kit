@@ -60,7 +60,8 @@ export const jobApi = {
 // 配置编辑(getConfig/update)只写 YAML,不触发重建,下次命令运行时生效。
 export const appsApi = {
   list: () => get<AppsInfo>('/api/apps'),
-  create: (body: { name: string; kind: string; display?: string; base_url: string; daily_time: string }) =>
+  create: (body: { name: string; kind: string; display?: string; base_url: string;
+                    daily_time: string; region?: string }) =>
     post<AppCreateResult>('/api/apps', body),
   remove: (name: string) =>
     del<AppCreateResult>(`/api/apps/${encodeURIComponent(name)}`),
@@ -72,9 +73,12 @@ export const appsApi = {
   updateState: (name: string, body: { enabled?: boolean; app_name?: string; app_desc?: string }) =>
     put<{ result: string; app: Record<string, unknown>; message: string }>(
       `/api/apps/${encodeURIComponent(name)}/state`, body),
-  syncClientInfo: () =>
-    post<{ result: string; done: { domain: string }[]; failed: { domain: string; error: string }[] }>(
-      '/api/apps/client-info/sync', {}),
+  // 应用同步: 探测本机已装应用 → ask_apps 建主档(含 region)+ 账户档案
+  syncApps: () =>
+    post<{ result: string; synced: { domain: string; region: string; profile: boolean }[];
+           skipped: { domain: string; reason: string }[];
+           failed: { domain: string; error: string }[] }>(
+      '/api/apps/sync', {}),
 }
 
 export const configApi = {
