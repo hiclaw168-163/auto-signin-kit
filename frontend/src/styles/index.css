@@ -1,15 +1,21 @@
 /* 设计 token(ui-ux-pro-max 设计原则落地):
-   - 暗色管理台,文字对比度 >= 4.5:1(浅灰字配深底)
+   - 色板来源: ui-ux-pro-max colors.csv #81「Developer Tool / IDE 🌙」
+     (slate 蓝黑 + 运行绿;暗色是 devtool 行业主流,亮色参考 #7 Analytics
+     Dashboard 与 #166 Status Page)
+   - 双主题(SPEC-13 设置页): :root 为暗色(历史默认),:root[data-theme='light']
+     覆盖亮色;App.vue 按 settings.theme 写 data-theme,组件只用变量不写死色值
+   - 文字对比度 >= 4.5:1(WCAG AA)
    - 语义色与业务语义绑定: green=成功 / amber=需关注 / red=失败 / sky=信息
    - 颜色不作为唯一信息载体(标签永远带文字)
    - 不用 emoji 当图标(全部 SVG,@vicons/ionicons5) */
 :root {
-  --ask-bg: #0f1115;
-  --ask-surface: #171a21;
-  --ask-surface-2: #1d222c;
-  --ask-border: #262b36;
-  --ask-text: #e5e7eb;
-  --ask-muted: #9aa3b2;
+  /* slate-900 底 + slate 层次:比纯黑灰多一层"冷蓝",层次感来自色温而非明度 */
+  --ask-bg: #0f172a;
+  --ask-surface: #1b2336;
+  --ask-surface-2: #272f42;
+  --ask-border: #475569;
+  --ask-text: #f8fafc;
+  --ask-muted: #94a3b8;
   --ask-primary: #22c55e;
   --ask-warning: #f59e0b;
   --ask-danger: #ef4444;
@@ -17,6 +23,20 @@
   --ask-radius: 10px;
   --ask-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
     "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+}
+
+:root[data-theme='light'] {
+  --ask-bg: #f8fafc;
+  --ask-surface: #ffffff;
+  --ask-surface-2: #e9eef6;
+  --ask-border: #dbe3ed;
+  --ask-text: #1e293b;
+  --ask-muted: #475569;
+  /* 亮底上的绿要压深一档才够 4.5:1 对比 */
+  --ask-primary: #16a34a;
+  --ask-warning: #b45309;
+  --ask-danger: #dc2626;
+  --ask-info: #0369a1;
 }
 
 html,

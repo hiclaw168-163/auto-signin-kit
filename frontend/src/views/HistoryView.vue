@@ -4,13 +4,14 @@ import { useMessage } from 'naive-ui'
 import { dashboardApi } from '../api'
 import { resultOptions } from '../api/meta'
 import StatusTag from '../components/common/StatusTag.vue'
+import { settings } from '../composables/settings'
 import type { DailyRow, EventRow, Overview } from '../types'
 
 // 签到台账: 每日折叠视图(每天每域最后一次运行 = 当天最终状态) + 按日期下钻明细。
 
 const message = useMessage()
 const overview = ref<Overview | null>(null)
-const days = ref(14)
+const days = ref(settings.historyDays) // 默认窗口来自设置页(SPEC-13)
 const domain = ref<string | null>(null)
 const result = ref<string | null>(null)
 // computed 包一层: 词表由 App.vue 全局加载,晚到时选项自动补上

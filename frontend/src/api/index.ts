@@ -7,6 +7,7 @@ import type {
   AppUpdateResult,
   AppsInfo,
   ConfigItem,
+  CreditsStats,
   DailyRow,
   EventRow,
   JobInfo,
@@ -31,6 +32,11 @@ export const accountsApi = {
   list: (days = 14) => get<AccountsInfo>('/api/accounts', { days }),
   setEnabled: (domain: string, name: string, enabled: boolean) =>
     post<{ ok: boolean }>('/api/accounts/enabled', { domain, name, enabled }),
+}
+
+// SPEC-13 积分统计: 本地台账聚合(趋势/按域/余额快照)。
+export const creditsApi = {
+  stats: (days = 30) => get<CreditsStats>('/api/credits/stats', { days }),
 }
 
 export const scheduleApi = {

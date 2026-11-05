@@ -6,29 +6,56 @@ import {
   AppsOutline,
   CalendarClearOutline,
   MedkitOutline,
+  OptionsOutline,
   PersonCircleOutline,
+  PieChartOutline,
   SettingsOutline,
   StatsChartOutline,
   TimeOutline,
 } from '@vicons/ionicons5'
+import { settings } from '../composables/settings'
 
-// 管理台布局壳: 左侧暗色导航 + 右侧内容。SVG 图标(禁 emoji 当图标)。
+// 管理台布局壳: 左侧导航 + 右侧内容。SVG 图标(禁 emoji 当图标)。
+//
+// 导航分组(SPEC-13): 按业务角色归三组,新功能按归属落组不再平铺——
+// - 总览: 全局一眼
+// - 签到运营: 与"把签到跑好/看清楚"直接相关(积分统计、Token 统计、
+//   会话同步等后续功能都落这组)
+// - 系统: 工具自身的安装/配置/健康
 const route = useRoute()
 const router = useRouter()
-const collapsed = ref(false)
+// 折叠初始值来自设置页;用户手动收展即时生效并回写为默认态。
+const collapsed = ref(settings.siderCollapsed)
 
 function icon(render: () => typeof NIcon) {
   return () => h(NIcon, null, { default: render })
 }
 
 const menus: MenuOption[] = [
-  { label: '签到总览', key: 'dashboard', icon: icon(() => h(StatsChartOutline)) },
-  { label: '账户管理', key: 'accounts', icon: icon(() => h(PersonCircleOutline)) },
-  { label: '应用管理', key: 'apps', icon: icon(() => h(AppsOutline)) },
-  { label: '签到台账', key: 'history', icon: icon(() => h(TimeOutline)) },
-  { label: '定时任务', key: 'schedule', icon: icon(() => h(CalendarClearOutline)) },
-  { label: '域配置', key: 'config', icon: icon(() => h(SettingsOutline)) },
-  { label: '体检', key: 'doctor', icon: icon(() => h(MedkitOutline)) },
+  {
+    type: 'group', label: '总览', key: 'g-overview',
+    children: [
+      { label: '签到总览', key: 'dashboard', icon: icon(() => h(StatsChartOutline)) },
+    ],
+  },
+  {
+    type: 'group', label: '签到运营', key: 'g-ops',
+    children: [
+      { label: '账户管理', key: 'accounts', icon: icon(() => h(PersonCircleOutline)) },
+      { label: '积分统计', key: 'credits', icon: icon(() => h(PieChartOutline)) },
+      { label: '签到台账', key: 'history', icon: icon(() => h(TimeOutline)) },
+      { label: '定时任务', key: 'schedule', icon: icon(() => h(CalendarClearOutline)) },
+    ],
+  },
+  {
+    type: 'group', label: '系统', key: 'g-system',
+    children: [
+      { label: '应用管理', key: 'apps', icon: icon(() => h(AppsOutline)) },
+      { label: '域配置', key: 'config', icon: icon(() => h(SettingsOutline)) },
+      { label: '体检', key: 'doctor', icon: icon(() => h(MedkitOutline)) },
+      { label: '设置', key: 'settings', icon: icon(() => h(OptionsOutline)) },
+    ],
+  },
 ]
 
 const active = computed(() => String(route.name ?? 'dashboard'))
@@ -38,6 +65,11 @@ const title = computed(() => String(route.meta.title ?? ''))
 // 而上面的 active 是从路由反推的——不接这个,除默认页外全都点不动。
 function onMenu(key: string) {
   router.push({ name: key })
+}
+
+function onCollapse(value: boolean) {
+  collapsed.value = value
+  settings.siderCollapsed = value
 }
 </script>
 
@@ -50,8 +82,8 @@ function onMenu(key: string) {
       :collapsed-width="64"
       :width="210"
       show-trigger
-      @collapse="collapsed = true"
-      @expand="collapsed = false"
+      @collapse="onCollapse(true)"
+      @expand="onCollapse(false)"
       :native-scrollbar="false"
       style="background: var(--ask-surface)"
     >
@@ -113,9 +145,5 @@ function onMenu(key: string) {
 .page-title {
   margin: 0;
   font-size: 20px;
-  font-weight: 700;
-}
-.page-body {
-  padding: 16px 28px 28px;
 }
 </style>

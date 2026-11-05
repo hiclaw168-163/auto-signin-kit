@@ -131,3 +131,24 @@ export interface AccountsInfo {
   window_days: number
   accounts: AccountRow[]
 }
+
+// SPEC-13 积分统计: 本地台账聚合(参考 workbuddy-switch 的积分统计,
+// 数据源是我们自己的 SQLite 台账而非官方接口)。
+export interface CreditTrendPoint {
+  day: string
+  credits: number
+}
+
+export interface CreditDomainRow {
+  domain: string
+  total: number
+  window_total: number
+  last_day: string | null
+}
+
+export interface CreditsStats {
+  window_days: number
+  trend: CreditTrendPoint[]
+  by_domain: CreditDomainRow[]
+  balances: Record<string, { total_credits: number; updated_at: string } | undefined>
+}
