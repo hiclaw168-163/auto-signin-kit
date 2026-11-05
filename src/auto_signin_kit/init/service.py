@@ -107,17 +107,17 @@ def _get_scheduler() -> Any:
 
 
 def _sync_profiles() -> dict[str, Any]:
-    """账户档案同步(落 ask_accounts): 复用管理台的采集编排。
+    """应用同步(落 ask_apps 主档 + ask_accounts 档案): 复用管理台的采集编排。
 
-    逻辑本体在 ui.apps_api(遍历注册表的 client_info 声明),init 在顶层
+    逻辑本体在 ui.apps_api(遍历注册表的 client_info/ready 声明),init 在顶层
     编排它属于允许的依赖方向(init > ui);失败不挡初始化,如实上报。
     """
     try:
-        from auto_signin_kit.ui.apps_api import sync_client_info
+        from auto_signin_kit.ui.apps_api import sync_apps
 
-        return sync_client_info()
+        return sync_apps()
     except Exception as exc:  # 档案同步失败不影响就绪判定
-        return {"result": "ERROR", "done": [], "failed": [{"error": str(exc)}]}
+        return {"result": "ERROR", "synced": [], "failed": [{"error": str(exc)}]}
 
 
 def _ensure_ui(start_ui: bool, interactive: bool, confirm: PromptConfirm) -> str:
@@ -168,7 +168,7 @@ def run_init(
         if not hard_fail else "skipped(环境未就绪)"
     )
 
-    profiles: dict[str, Any] = {"result": "SKIPPED", "done": [], "failed": []}
+    profiles: dict[str, Any] = {"result": "SKIPPED", "synced": [], "failed": []}
     if not hard_fail and enabled:
         profiles = _sync_profiles()
 

@@ -41,14 +41,35 @@ def app_state(app_code: str, conn: sqlite3.Connection | None = None) -> dict[str
 
 def ensure_app(app_code: str, region: str = "cn",
                conn: sqlite3.Connection | None = None) -> None:
-    """惰性补齐主档行(同 (app_code, region) 已存在则原样返回)。"""
+    """惰性补齐主档行;已存在的行若 region 与探测结论不符则就地纠正。
+
+    region 来源是同步时的本机探测(如 qoder 按数据目录名判 cn/intl),
+    比历史行可信——比如先在机器上登记过 CN 版、后来换成国际版客户端,
+    下次同步应把行迁到 intl 而不是留着错值(当前契约: 每应用一行;
+    真·双版本共存留给未来独立域,见 ask_apps.sql 头注释)。
+
+    语句顺序保证不撞 UNIQUE: 目标 region 行已存在则删除其他变体行;
+    否则先把旧行 UPDATE 到目标 region,再 INSERT OR IGNORE 兜底。
+    """
     own = conn is None
     conn = conn or connect()
     try:
         with conn:
-            conn.execute(
-                "INSERT OR IGNORE INTO ask_apps (app_code, region) VALUES (?, ?)",
-                (app_code, region))
+            hit = conn.execute(
+                "SELECT 1 FROM ask_apps WHERE app_code = ? AND region = ?",
+                (app_code, region)).fetchone()
+            if hit:
+                conn.execute(
+                    "DELETE FROM ask_apps WHERE app_code = ? AND region <> ?",
+                    (app_code, region))
+            else:
+                conn.execute(
+                    "UPDATE ask_apps SET region = ?,"
+                    " updated_at = strftime('%Y-%m-%d %H:%M:%S','now','localtime')"
+                    " WHERE app_code = ? AND region <> ?", (region, app_code, region))
+                conn.execute(
+                    "INSERT OR IGNORE INTO ask_apps (app_code, region) VALUES (?, ?)",
+                    (app_code, region))
     finally:
         if own:
             conn.close()

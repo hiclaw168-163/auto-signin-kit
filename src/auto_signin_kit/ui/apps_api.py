@@ -35,6 +35,7 @@ class AppCreate(BaseModel):
     display: str | None = None
     base_url: str
     daily_time: str = "09:05"
+    region: str = "cn"  # 版本区: cn / intl,落 ask_apps 主档
 
 
 def _app_config(name: str) -> dict[str, Any] | None:
@@ -110,6 +111,7 @@ def create_app(body: AppCreate) -> dict[str, Any]:
     except AutoSignInKitError as exc:
         raise HTTPException(422, str(exc)) from exc
     try:
+        store.ensure_app(body.name, body.region)  # 主档行: 版本区随建档落库
         _rebuild_and_exit()
     except Exception as exc:
         scaffolding.rollback(manifest)
@@ -197,35 +199,48 @@ def update_app(name: str, body: AppUpdate) -> dict[str, Any]:
             "message": "已保存: 下次运行 %s 命令时生效(YAML 注释已被重写移除)" % name}
 
 
-@router.post("/apps/client-info/sync")
-def sync_client_info() -> dict[str, Any]:
-    """同步各域客户端档案: 采集 → 落 ask_accounts.client_info。
+@router.post("/apps/sync")
+def sync_apps() -> dict[str, Any]:
+    """应用同步(新用户初始化第一步): 探测本机已装应用 → ask_apps 建主档。
 
-    采集走注册表声明(各域 schedule_meta.client_info,可选): 逐域调用,
-    单域失败如实进 failed,不中断其他域;采集结果合并本机 machine_info
-    (hostname/OS/MachineGuid 脱敏)。账户未登记的域自动补 default 户。
+    逐注册表域执行: ``ready()`` 探测安装/可用;``client_info()`` 采集档案
+    (可声明 ``region`` 键,如 qoder 按数据目录名区分 cn/intl)。已安装的
+    ``ensure_app`` 建主档行(含 region)→ ``ensure_account`` 补 default 户 →
+    档案落 ask_accounts(合并 machine_info);未安装的跳过、不建档。
+    单域失败如实进 failed,不中断其他域。即时生效,无重建。
     """
-    done: list[dict[str, Any]] = []
+    synced: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
     failed: list[dict[str, Any]] = []
     for name, meta in providers():
         collect = getattr(meta, "client_info", None)
-        if collect is None:
-            continue
         try:
-            info = collect()
+            info = collect() if collect is not None else None
         except Exception as exc:
             failed.append({"domain": name, "error": str(exc)})
             continue
-        if not info:
-            failed.append({"domain": name, "error": "客户端未安装/信息不可得"})
-            continue
         try:
-            store.ensure_account(name, "default")
-            store.set_account_client_info(name, "default",
-                                          {**machine_info(), **info})
+            ready = bool(meta.ready()) if hasattr(meta, "ready") else None
+        except Exception:
+            ready = None  # 探测器自身异常: 不据此判未安装,交给档案采集兜底
+        if ready is False or (ready is None and not info):
+            skipped.append({"domain": name, "reason": "未安装或客户端不可用"})
+            continue
+        region = "cn"
+        version = None
+        if isinstance(info, dict):
+            region = str(info.pop("region", "") or "cn")  # region 进主档,不入档案
+            version = info.get("version")
+        try:
+            store.ensure_app(name, region)
+            if info:
+                store.ensure_account(name, "default")
+                store.set_account_client_info(name, "default",
+                                              {**machine_info(), **info})
         except AutoSignInKitError as exc:
             failed.append({"domain": name, "error": str(exc)})
             continue
-        done.append({"domain": name, "info": info})
+        synced.append({"domain": name, "region": region,
+                       "profile": bool(info), "version": version})
     return {"result": "OK" if not failed else "PARTIAL",
-            "done": done, "failed": failed}
+            "synced": synced, "skipped": skipped, "failed": failed}

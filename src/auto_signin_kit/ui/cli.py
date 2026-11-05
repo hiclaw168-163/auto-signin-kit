@@ -31,20 +31,21 @@ def _run(fn, *args, **kwargs):
 
 @app.command("accounts-sync")
 def accounts_sync() -> None:
-    """同步各域账户档案(客户端版本/设备标识/登录身份)并展示账户总览。
+    """应用同步: 探测本机已装应用建主档(ask_apps),并同步账户档案与总览。
 
-    账户初始化的唯一入口: 首次运行会自动登记各域 default 账户;日常重跑
-    刷新档案快照。与前端「应用管理 → 同步客户端档案」按钮走同一份逻辑
-    (ui.apps_api.sync_client_info),一个给人点,一个给脚本/计划任务调用。
+    首次运行自动登记已装应用到应用管理(含版本区 region)与各域 default
+    账户;日常重跑刷新档案快照。与前端「应用管理 → 同步本机应用」按钮走
+    同一份逻辑(ui.apps_api.sync_apps),一个给人点,一个给脚本/计划任务调用。
     """
     from auto_signin_kit.core import store
     from auto_signin_kit.ui import apps_api
 
-    out = _run(apps_api.sync_client_info)
-    for item in out["done"]:
-        info = item["info"]
-        version = info.get("version") or "未知版本"
-        typer.echo("已同步 %-10s %s" % (item["domain"], version))
+    out = _run(apps_api.sync_apps)
+    for item in out["synced"]:
+        version = item.get("version") or "未知版本"
+        typer.echo("已同步 %-10s %s(%s)" % (item["domain"], version, item["region"]))
+    for item in out.get("skipped", []):
+        typer.echo("跳过  %-10s %s" % (item["domain"], item["reason"]))
     for item in out["failed"]:
         typer.echo("失败  %-10s %s" % (item["domain"], item["error"]))
     summary = store.accounts_summary(7)

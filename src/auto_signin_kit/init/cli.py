@@ -52,9 +52,10 @@ def _render(result: dict) -> None:  # type: ignore[type-arg]
     typer.echo("== Web 管理台 ==")
     typer.echo("  %s" % result["ui"])
     profiles = result.get("profiles", {})
-    typer.echo("== 账户档案 ==")
-    for item in profiles.get("done", []):
-        typer.echo("  ✓ %s" % item["domain"])
+    typer.echo("== 应用同步 ==")
+    for item in profiles.get("synced", []):
+        version = item.get("version") or "未知版本"
+        typer.echo("  ✓ %-10s %s(%s)" % (item["domain"], version, item.get("region", "cn")))
     for item in profiles.get("failed", []):
         typer.echo("  - %s: %s" % (item.get("domain", "?"), item.get("error", "")))
     if result["todo"]:

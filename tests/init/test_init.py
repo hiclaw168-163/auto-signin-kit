@@ -43,7 +43,7 @@ class TestRunInit:
         result = service.run_init(
             interactive=True,
             start_ui=False,
-            confirm=_fake_confirm({"启用 Qoder CN(qoder)的每日自动任务?": False}),
+            confirm=_fake_confirm({"启用 Qoder(qoder)的每日自动任务?": False}),
         )
         assert "qoder" in result["disabled"]
         assert "qoder" not in result["enabled"]

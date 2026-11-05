@@ -8,11 +8,11 @@ from __future__ import annotations
 
 from auto_signin_kit.core.config import load_domain_config_model
 from auto_signin_kit.core.ports.scheduler import ScheduleSpec
-from auto_signin_kit.domains.qoder.auth import client_info as _collect
 from auto_signin_kit.domains.qoder.auth import is_installed
+from auto_signin_kit.domains.qoder.client_info import client_info as _collect
 from auto_signin_kit.domains.qoder.schema import QoderDomainConfig
 
-DISPLAY_NAME = "Qoder CN"
+DISPLAY_NAME = "Qoder"
 
 #: 域档案契约(可选声明): 客户端信息采集;UI 同步账户档案时调用。
 client_info = _collect
@@ -36,6 +36,6 @@ SPECS: tuple[ScheduleSpec, ...] = (
         argv=("auto-signin-kit", "qoder", "auto", "--silent"),
         times=("10:05", "11:05", "15:05", "19:05", "23:05"),
         limit_minutes=5,
-        description="Qoder CN 每日 Credits 领取",
+        description="Qoder 每日 Credits 领取",
     ),
 )

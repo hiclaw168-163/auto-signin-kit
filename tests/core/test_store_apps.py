@@ -30,14 +30,23 @@ class TestAppState:
         assert len(rows) == 1  # UNIQUE(app_code, region) 挡重复,INSERT OR IGNORE 静默
 
     def test_ensure_app_region_variants(self):
-        """同 app_code 不同 region 各占一行(国内版/国际版变体的落点)。"""
+        """region 就地纠正: 同步探测结论比历史行可信,行迁移到新 region。
+
+        当前契约每应用一行(真·双版本共存走独立域,见 ask_apps.sql 头注释):
+        已有 cn 行、探测结论 intl 时,行迁到 intl 而不是留着错值或造第二行。
+        """
         store.ensure_app("qoder", "cn")
         store.ensure_app("qoder", "intl")
         with store.connect() as conn:
             rows = conn.execute(
-                "SELECT region FROM ask_apps WHERE app_code='qoder'"
-                " ORDER BY region").fetchall()
-        assert [r["region"] for r in rows] == ["cn", "intl"]
+                "SELECT region FROM ask_apps WHERE app_code='qoder'").fetchall()
+        assert [r["region"] for r in rows] == ["intl"]
+        # 再同步回 cn 也同样收敛到一行
+        store.ensure_app("qoder", "cn")
+        with store.connect() as conn:
+            rows = conn.execute(
+                "SELECT region FROM ask_apps WHERE app_code='qoder'").fetchall()
+        assert [r["region"] for r in rows] == ["cn"]
 
     def test_set_state_partial_update(self):
         store.ensure_app("trae")

@@ -128,33 +128,40 @@ class TestUpdateApp:
         assert _yaml(config_dir, "schedule") == "enabled_tasks: []\n"  # 不落盘
 
 
-class TestSyncClientInfo:
-    """客户端档案采集: 声明式逐域采集,单域失败不中断,合并 machine_info。"""
+class TestSyncApps:
+    """应用同步: 已装应用建档进 ask_apps(含 region)+ 账户档案,未装跳过。"""
 
-    def test_sync_collects_declared_domains(self, client, monkeypatch):
+    def test_sync_creates_app_rows_and_profiles(self, client, monkeypatch):
+        import types
+
         got, _config_dir = client
 
-        def make_meta(collect):
-            import types
-            return types.SimpleNamespace(client_info=collect)
-
         def good():
-            return {"version": "0.4.8", "device_id": "dev-123"}
+            return {"version": "0.4.8", "device_id": "dev-123", "region": "intl"}
 
         def boom():
             raise RuntimeError("探测失败")
 
-        fake = {"qoder": make_meta(good), "trae": make_meta(boom),
-                "doubao": None}  # doubao 未声明 → 不采集
+        fake = {"qoder": types.SimpleNamespace(client_info=good),
+                "trae": types.SimpleNamespace(client_info=boom),
+                "doubao": types.SimpleNamespace(client_info=lambda: None, ready=lambda: False),
+                "workbuddy": None}  # 未声明采集器、无 ready → 未安装处理
         monkeypatch.setattr("auto_signin_kit.ui.apps_api.providers",
                             lambda: iter(fake.items()))
-        out = got.post("/api/apps/client-info/sync").json()
+        out = got.post("/api/apps/sync").json()
         assert out["result"] == "PARTIAL"
-        assert out["done"][0]["domain"] == "qoder"
-        assert out["done"][0]["info"]["version"] == "0.4.8"
+        assert out["synced"][0]["domain"] == "qoder"
+        assert out["synced"][0]["region"] == "intl"  # region 进主档
+        assert out["synced"][0]["profile"] is True
         assert "探测失败" in out["failed"][0]["error"]
+        assert [s["domain"] for s in out["skipped"]] == ["doubao", "workbuddy"]
 
-        # 档案已落库: 关键维度为独立列,machine_info 合并进溢出 JSON
+        # ask_apps 主档行已建(应用同步的核心职责),region 按声明落库
+        from auto_signin_kit.core.store import apps as apps_store
+        row = apps_store.app_state("qoder")
+        assert row is not None and row["region"] == "intl"
+
+        # 账户档案已落库: 关键维度为独立列,machine_info 合并进溢出 JSON
         summary = got.get("/api/credits/summary").json()["accounts"]
         row = next(a for a in summary["accounts"] if a["domain"] == "qoder")
         assert row["device_id"] == "dev-123"
@@ -169,4 +176,4 @@ class TestSyncClientInfo:
         meta = types.SimpleNamespace(client_info=lambda: {"version": "1.0"})
         monkeypatch.setattr("auto_signin_kit.ui.apps_api.providers",
                             lambda: iter([("trae", meta)]))
-        assert got.post("/api/apps/client-info/sync").json()["result"] == "OK"
+        assert got.post("/api/apps/sync").json()["result"] == "OK"
