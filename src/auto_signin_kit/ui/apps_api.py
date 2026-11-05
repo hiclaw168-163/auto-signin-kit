@@ -59,7 +59,11 @@ def _schedule_times_by_domain() -> dict[str, list[str]]:
 
 @router.get("/apps")
 def list_apps() -> dict[str, Any]:
-    """注册表发现的应用清单(名称/类别/显示名/就绪探测/配置字段/调度时间)。"""
+    """注册表发现的应用清单(名称/类别/显示名/就绪探测/配置字段/调度时间/管理态)。
+
+    管理态来自 ask_apps(总开关/展示名覆盖/备注),行惰性补齐: 从未操作过
+    的应用按"启用 + 注册表展示名"呈现,不预先造行。
+    """
     times_by_domain = _schedule_times_by_domain()
     apps = []
     for name, meta in providers():
@@ -68,13 +72,16 @@ def list_apps() -> dict[str, Any]:
             ready = bool(meta.ready())
         except Exception:
             ready = None
+        state = store.app_state(name)
         apps.append({
             "name": name,
             "kind": getattr(meta, "KIND", None),
-            "display": getattr(meta, "DISPLAY_NAME", name),
+            "display": (state or {}).get("display") or getattr(meta, "DISPLAY_NAME", name),
             "ready": ready,
             "config": _app_config(name),
             "times": times_by_domain.get(name, []),
+            "enabled": bool((state or {}).get("enabled", 1)),
+            "note": (state or {}).get("note"),
         })
     return {"apps": apps, "generated_at": _now()}
 
@@ -129,6 +136,29 @@ def delete_app(name: str) -> dict[str, Any]:
     return {"result": "OK", "domain": name, "removed": removed,
             "message": "重建进行中: 服务将离线并自动回来。"
                        "已注册的系统定时任务请到调度页注销。"}
+
+
+class AppStateUpdate(BaseModel):
+    """PUT /apps/{name}/state 请求体: 应用管理态部分更新(None = 不改)。"""
+
+    enabled: bool | None = None
+    display: str | None = None
+    note: str | None = None
+
+
+@router.put("/apps/{name}/state")
+def update_app_state(name: str, body: AppStateUpdate) -> dict[str, Any]:
+    """更新应用管理态(总开关/展示名/备注);下次静默调度触发时生效。
+
+    停用语义: 静默(调度)触发整个域跳过(不执行、不落库);手动执行
+    永远放行。已注册的系统定时任务不注销——关开关比动 launchd 轻得多。
+    """
+    if name not in config_api.known_domains():
+        raise HTTPException(404, f"未知域: {name}")
+    row = store.set_app_state(name, enabled=body.enabled,
+                              display=body.display, note=body.note)
+    return {"result": "OK", "app": row,
+            "message": "已保存: 下次调度触发时生效(手动执行不受影响)"}
 
 
 class AppUpdate(BaseModel):
