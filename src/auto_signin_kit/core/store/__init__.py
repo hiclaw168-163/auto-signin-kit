@@ -29,6 +29,7 @@
 任何数据库错误都在本层静默吞掉。
 """
 
+from auto_signin_kit.core.store.apps import app_enabled, app_state, ensure_app, set_app_state
 from auto_signin_kit.core.store.connection import LEDGER_FILENAME, connect, db_path
 from auto_signin_kit.core.store.credits import (
     accounts_summary,
@@ -61,6 +62,8 @@ __all__ = [
     "SIGNIN_DOMAINS",
     "SIGNIN_DONE_RESULTS",
     "accounts_summary",
+    "app_enabled",
+    "app_state",
     "capacity_summary",
     "compact_history",
     "connect",
@@ -70,6 +73,7 @@ __all__ = [
     "db_path",
     "done_today",
     "ensure_account",
+    "ensure_app",
     "events",
     "failure_count_today",
     "overview_by_account",
@@ -79,5 +83,6 @@ __all__ = [
     "set_account_client_info",
     "set_account_enabled",
     "set_account_potential",
+    "set_app_state",
     "signed_today_by_domain",
 ]

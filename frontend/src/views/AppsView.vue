@@ -35,6 +35,20 @@ async function load() {
   }
 }
 
+const toggling = ref('')
+async function toggleApp(a: AppInfo, enabled: boolean) {
+  toggling.value = a.name
+  try {
+    const out = await appsApi.updateState(a.name, { enabled })
+    a.enabled = (out.app as { enabled: number }).enabled ? true : false
+    message.success(out.message)
+  } catch (e) {
+    message.error(String(e))
+  } finally {
+    toggling.value = ''
+  }
+}
+
 function kindTag(kind: string | null): { label: string; type: 'success' | 'info' | 'default' } {
   if (kind === 'web') return { label: '网页版签', type: 'info' }
   if (kind === 'client') return { label: '客户端签到', type: 'success' }
@@ -209,12 +223,12 @@ onMounted(load)
 
     <n-table size="small" :single-line="false" style="background: var(--ask-surface)">
       <thead>
-        <tr><th>应用</th><th>类别</th><th>就绪探测</th><th>每日时间</th><th>配置</th><th>操作</th></tr>
+        <tr><th>应用</th><th>类别</th><th>就绪探测</th><th>每日时间</th><th>配置</th><th>启用</th><th>操作</th></tr>
       </thead>
       <tbody>
         <tr v-for="a in apps" :key="a.name">
           <td>
-            <span style="font-weight: 600">{{ a.display }}</span>
+            <span style="font-weight: 600" :style="a.enabled ? '' : 'opacity: 0.5'">{{ a.display }}</span>
             <n-text depth="3" style="margin-left: 8px; font-size: 12px">{{ a.name }}</n-text>
           </td>
           <td>
@@ -241,6 +255,11 @@ onMounted(load)
               </n-space>
             </template>
             <n-text v-else depth="3" style="font-size: 12px">配置文件不存在</n-text>
+          </td>
+          <td>
+            <n-switch size="small" :value="a.enabled"
+                      :loading="toggling === a.name"
+                      @update:value="(v: boolean) => toggleApp(a, v)" />
           </td>
           <td>
             <n-space size="small">

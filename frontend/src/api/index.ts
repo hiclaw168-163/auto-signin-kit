@@ -68,6 +68,10 @@ export const appsApi = {
     get<AppConfigInfo>(`/api/apps/${encodeURIComponent(name)}/config`),
   update: (name: string, updates: Record<string, unknown>) =>
     put<AppUpdateResult>(`/api/apps/${encodeURIComponent(name)}`, { updates }),
+  // 应用管理态(ask_apps): 总开关/展示名/备注,部分更新,不触发重建
+  updateState: (name: string, body: { enabled?: boolean; display?: string; note?: string }) =>
+    put<{ result: string; app: Record<string, unknown>; message: string }>(
+      `/api/apps/${encodeURIComponent(name)}/state`, body),
   syncClientInfo: () =>
     post<{ result: string; done: { domain: string }[]; failed: { domain: string; error: string }[] }>(
       '/api/apps/client-info/sync', {}),

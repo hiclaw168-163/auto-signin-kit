@@ -16,7 +16,12 @@ from typing import Any
 from auto_signin_kit.core.dto import RunOutcome
 from auto_signin_kit.core.errors import AutoSignInKitError
 from auto_signin_kit.core.kit.accounts import account_enabled, resolve_account
-from auto_signin_kit.core.kit.actions import DEFAULT_ACCOUNT, skip_done_today, unknown_action_report
+from auto_signin_kit.core.kit.actions import (
+    DEFAULT_ACCOUNT,
+    app_enabled,
+    skip_done_today,
+    unknown_action_report,
+)
 from auto_signin_kit.core.logging import log_debug, result_log_path
 from auto_signin_kit.core.report import emit_result
 
@@ -127,7 +132,10 @@ class SigninDomain:
             self._emit({"result": "FAILED",
                         "report": str(exc)}, label, silent=silent)
             return exc.exit_code
-        # 停用账户只在静默(调度)路径跳过;显式 --account 手动跑永远放行
+        # 停用应用/停用账户只在静默(调度)路径跳过;显式手动跑永远放行
+        if silent and not app_enabled(self.name):
+            log_debug("%s: 应用已停用,调度触发跳过(不执行、不落库)" % self.name)
+            return 0
         if silent and not account_enabled(config, account):
             log_debug("%s/%s: 账户已停用,调度触发跳过(不执行、不落库)"
                       % (self.name, account))

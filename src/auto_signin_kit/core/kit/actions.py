@@ -10,10 +10,16 @@ from __future__ import annotations
 from collections.abc import Collection, Sequence
 
 from auto_signin_kit.core.logging import log_debug
+from auto_signin_kit.core.store import app_enabled as _app_enabled
 from auto_signin_kit.core.store import done_today
 
 #: 缺省账户: 单账户配置的等价户名(与 core.config.schema 对齐)。
 DEFAULT_ACCOUNT = "default"
+
+
+def app_enabled(domain: str) -> bool:
+    """应用总开关(ask_apps.enabled);从未操作过的应用视为启用。"""
+    return _app_enabled(domain)
 
 
 def unknown_action_report(action: str, known: Sequence[str]) -> str:

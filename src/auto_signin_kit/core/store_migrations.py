@@ -20,7 +20,7 @@ from auto_signin_kit.core.adapters.log_dir import project_root
 from auto_signin_kit.core.errors import AutoSignInKitError
 
 #: sql/ 目录里建表文件的装载顺序(与旧 _SCHEMA 的执行顺序一致)。
-_TABLE_SQL_FILES = ("ask_signin_runs.sql", "ask_schedule_changes.sql",
+_TABLE_SQL_FILES = ("ask_signin_runs.sql", "ask_schedule_changes.sql", "ask_apps.sql",
                     "ask_accounts.sql")
 
 
