@@ -1,9 +1,10 @@
 -- ask_schedule_changes: 调度变更审计(定时任务注册/注销动作记录)。
 -- 本文件是唯一 DDL 来源: 新库由 store_migrations._SCHEMA 执行,老库差异走迁移。
+-- 事件表列序习惯: 主键 → 时间 → 动作 → 涉及内容;列名避开数据库关键字。
 CREATE TABLE IF NOT EXISTS ask_schedule_changes (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     executed_at TEXT    NOT NULL,  -- 变更时间(本地无时区)
-    action      TEXT    NOT NULL,  -- install / uninstall
+    operation   TEXT    NOT NULL,  -- install / uninstall
     platform    TEXT,
     tasks       TEXT,              -- 本次变更涉及的任务与时间(JSON 数组)
     report      TEXT,

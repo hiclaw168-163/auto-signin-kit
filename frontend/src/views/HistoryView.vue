@@ -76,7 +76,7 @@ const columns = [
 
 const eventColumns = [
   { title: '时间', key: 'executed_at', width: 190 },
-  { title: '动作', key: 'action', width: 90, render: (e: EventRow) => e.action ?? '-' },
+  { title: '动作', key: 'operation', width: 90, render: (e: EventRow) => e.operation ?? '-' },
   { title: '来源', key: 'source', width: 90, render: (e: EventRow) => e.source ?? '-' },
   {
     title: '结果', key: 'result', width: 110,

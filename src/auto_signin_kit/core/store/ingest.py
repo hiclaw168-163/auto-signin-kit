@@ -50,7 +50,7 @@ def _insert_schedule_change(conn: sqlite3.Connection, record: dict) -> None:
     """
     executed_at = local_naive(record["ts"])
     conn.execute(
-        "INSERT INTO ask_schedule_changes (executed_at, action, platform,"
+        "INSERT INTO ask_schedule_changes (executed_at, operation, platform,"
         " tasks, report, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
         (
             executed_at,
@@ -80,13 +80,14 @@ def _insert_signin_run(conn: sqlite3.Connection, record: dict, payload: str) -> 
         " VALUES (?, ?, ?, ?)",
         (domain, account, executed_at, executed_at))
     conn.execute(
-        "INSERT INTO ask_signin_runs (executed_at, domain, action, source,"
-        " result, needs_attention, report, request, response, detail, account,"
+        "INSERT INTO ask_signin_runs (domain, account, executed_at, operation,"
+        " source, result, needs_attention, report, request, response, detail,"
         " created_at, updated_at)"
-        " VALUES (?, ?, ?, 'run', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        " VALUES (?, ?, ?, ?, 'run', ?, ?, ?, ?, ?, ?, ?, ?)",
         (
-            executed_at,
             domain,
+            account,
+            executed_at,
             record.get("action"),
             # 归一化到标准词表: 域内部细粒度码(大小写/别名)进库
             # 前收口成 10 词,查询与聚合才有统一口径
@@ -96,7 +97,6 @@ def _insert_signin_run(conn: sqlite3.Connection, record: dict, payload: str) -> 
             request,
             response,
             payload,
-            account,
             # 统一审计字段: 与 executed_at 同值(台账行只插不改)
             executed_at,
             executed_at,

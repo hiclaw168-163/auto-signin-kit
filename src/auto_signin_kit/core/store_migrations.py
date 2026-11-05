@@ -49,18 +49,32 @@ _SCHEMA = "\n".join(_load_sql(f) for f in _TABLE_SQL_FILES)
 _SCHEMA_AFTER_MIGRATE = (_load_sql("indexes.sql") + "\n"
                          + _load_sql("views.sql"))
 
-#: ask_accounts 的目标列序(重要字段在前,打开表先见重点;统一审计字段殿后)。
-_ACCOUNT_COLUMN_ORDER = ("id", "domain", "name", "device_id", "client_version",
-                         "uid", "daily_potential", "enabled", "install_path",
-                         "client_info", "info_synced_at",
-                         "created_at", "updated_at")
+#: ask_accounts 的目标列序(列序习惯: 主键 → 主体与开关 → 身份标识 → 积分
+#: 业务 → 客户端档案 → 统一审计字段;历史 ALTER 追加会打乱重点列位置)。
+_ACCOUNT_COLUMN_ORDER = ("id", "domain", "name", "enabled", "uid", "device_id",
+                         "client_version", "daily_potential", "install_path",
+                         "client_info", "info_synced_at", "created_at",
+                         "updated_at")
+
+#: ask_signin_runs 的目标列序(主键 → 业务主体 → 时间 → 动作状态 → 明细 → 审计)。
+_RUNS_COLUMN_ORDER = ("id", "domain", "account", "executed_at", "operation",
+                      "source", "result", "needs_attention", "report",
+                      "request", "response", "detail", "created_at",
+                      "updated_at")
+
+#: 列名规约: 避开数据库关键字(SQLite 官方关键字表里有 ACTION)——
+#: 两张表的 action 列统一改名 operation(2026-11-05)。
+_RENAME_MIGRATIONS = (
+    ("ask_signin_runs", "action", "operation"),
+    ("ask_schedule_changes", "action", "operation"),
+)
 
 #: 老库迁移: ALTER 加列后,把历史上靠 action 标记的回填行规整到 source 列;
 #: 再补 request/response 两列(请求参数与响应结果配对落库);
 #: created_at/updated_at 是全表统一审计字段,回填 executed_at(业务时序)。
 _MIGRATIONS = (
     ("source", "ALTER TABLE ask_signin_runs ADD COLUMN source TEXT NOT NULL DEFAULT 'run'",
-     "UPDATE ask_signin_runs SET source = 'backfill' WHERE action = 'backfill'"),
+     "UPDATE ask_signin_runs SET source = 'backfill' WHERE operation = 'backfill'"),
     ("request", "ALTER TABLE ask_signin_runs ADD COLUMN request TEXT",
      None),
     ("response", "ALTER TABLE ask_signin_runs ADD COLUMN response TEXT",
@@ -130,33 +144,42 @@ def _split_record(record: dict) -> tuple[str | None, str | None]:
     )
 
 
-def _reorder_ask_accounts(conn: sqlite3.Connection) -> None:
-    """ask_accounts 实际列序与目标不一致(历史 ALTER 追加导致重点列靠后)
-    时整表重建搬数据;一致则跳过(幂等)。
+def _reorder_table(conn: sqlite3.Connection, table: str,
+                   target_order: tuple[str, ...], ddl: str) -> None:
+    """表实际列序与目标不一致(历史 ALTER 追加/目标重排导致)时整表重建搬数据;
+    一致则跳过(幂等)。
 
     SQLite 不支持调整列序,只能改名→按目标 DDL 重建→按名列拷贝→删旧。
     AUTOINCREMENT 的 sqlite_sequence 随显式 id 插入与 RENAME 自动跟随,
-    重建不丢自增计数;UNIQUE(domain,name) 由目标 DDL 原样带上。
-    前置条件: created_at/updated_at 已补列且无 NULL(见 :func:`_migrate`),
-    否则 NOT NULL 约束会让搬数据失败。
+    重建不丢自增计数;UNIQUE 约束由目标 DDL 原样带上。前置条件: 目标 DDL
+    的 NOT NULL 列都不能有 NULL(调用方先补列回填,见 :func:`_migrate`)。
     """
     actual = tuple(
-        row["name"] for row in conn.execute("PRAGMA table_info(ask_accounts)"))
-    if actual == _ACCOUNT_COLUMN_ORDER:
+        row["name"] for row in conn.execute("PRAGMA table_info(%s)" % table))
+    if actual == target_order:
         return
-    column_list = ", ".join(_ACCOUNT_COLUMN_ORDER)
+    column_list = ", ".join(target_order)
     with conn:  # 整表重建单事务: 中断则旧表还在,下次连接重来
-        conn.execute("ALTER TABLE ask_accounts RENAME TO ask_accounts_old")
-        conn.execute(_ASK_ACCOUNTS_DDL)  # 旧表已改名,IF NOT EXISTS 直接建新
-        # S608 豁免: 列名来自模块级目标序常量,无外部输入(列清单不可参数化)
+        conn.execute("ALTER TABLE %s RENAME TO %s_old" % (table, table))
+        conn.execute(ddl)  # 旧表已改名,IF NOT EXISTS 直接建新
+        # S608 豁免: 表/列名来自模块级目标序常量,无外部输入(列清单不可参数化)
         conn.execute(
-            "INSERT INTO ask_accounts (%s) SELECT %s FROM ask_accounts_old"  # noqa: S608
-            % (column_list, column_list))
-        conn.execute("DROP TABLE ask_accounts_old")
+            "INSERT INTO %s (%s) SELECT %s FROM %s_old"  # noqa: S608
+            % (table, column_list, column_list, table))
+        conn.execute("DROP TABLE %s_old" % table)
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
     """老库补列/改名 + 存量行规整(全部幂等): CREATE TABLE IF NOT EXISTS 不会动已有表。"""
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(ask_signin_runs)")}
+    # 列名规约: action 是 SQLite 关键字,统一改名 operation(RENAME 自动更新
+    # 引用该列的索引/触发器定义;两表都是先改名,后面补列重建按新名)
+    for table, old, new in _RENAME_MIGRATIONS:
+        tcols = {row["name"] for row in conn.execute("PRAGMA table_info(%s)" % table)}
+        if old in tcols and new not in tcols:
+            with conn:
+                conn.execute("ALTER TABLE %s RENAME COLUMN %s TO %s"
+                             % (table, old, new))
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(ask_signin_runs)")}
     # ts → executed_at: 字段名见名知义(值不变,仍是 ISO8601 时间戳);
     # RENAME COLUMN 会自动更新引用该列的索引定义
@@ -189,7 +212,6 @@ def _migrate(conn: sqlite3.Connection) -> None:
                  "'%Y-%m-%d %H:%M:%S','now','localtime') WHERE created_at IS NULL")
     conn.execute("UPDATE ask_accounts SET updated_at = strftime("
                  "'%Y-%m-%d %H:%M:%S','now','localtime') WHERE updated_at IS NULL")
-    _reorder_ask_accounts(conn)
     # signin_runs 补列(含统一审计字段),补上的列立即做一次性回填
     # (只在新补时跑一次: source 的回填有语义,反复跑会翻转既有行)
     for name, add_sql, backfill_sql in _MIGRATIONS:
@@ -198,6 +220,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
                 conn.execute(add_sql)
                 if backfill_sql:
                     conn.execute(backfill_sql)
+    # 列序重建(必须在补列之后: 按名列拷贝要求旧表已有全部目标列)
+    _reorder_table(conn, "ask_accounts", _ACCOUNT_COLUMN_ORDER, _ASK_ACCOUNTS_DDL)
+    _reorder_table(conn, "ask_signin_runs", _RUNS_COLUMN_ORDER,
+                   _load_sql("ask_signin_runs.sql"))
     # 存量行规整(幂等): 时区抹平 + 旧结果词收敛;放在视图重建之前,
     # 视图的 date() 才能按"本地裸时间"正确取日期
     for sql in _ROW_NORMALIZE_SQL:

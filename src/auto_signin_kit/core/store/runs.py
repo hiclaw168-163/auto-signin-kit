@@ -3,7 +3,7 @@
 查询口径约定(两版本文档均在此):
 - ``source`` = **数据哪来的**——``run`` 正常执行 / ``backfill`` 回填;
   "只看真实执行" ``WHERE source='run'``,一条 SQL 的事;
-- ``action`` = **干了什么**——正常执行是当时的命令,回填行统一 ``backfill``。
+- ``operation`` = **干了什么**——正常执行是当时的命令,回填行统一 ``backfill``。
 
 不建更多表的理由: 连签天数、积分累计这类"统计"都存在 ``detail`` 的完整事件
 JSON 里(SQLite 内置 json_extract 可查),存派生数据只会引入两份真相——
@@ -201,7 +201,7 @@ def events(
     limit: int = 50,
 ) -> list[SigninRunRow]:
     """按条件查 ``ask_signin_runs`` 明细,最新在前;``source`` 过滤 run/backfill。"""
-    sql = ("SELECT executed_at, domain, account, action, source, result,"
+    sql = ("SELECT executed_at, domain, account, operation, source, result,"
            " needs_attention, report, request, response"
            " FROM ask_signin_runs WHERE 1=1")
     params: list[Any] = []

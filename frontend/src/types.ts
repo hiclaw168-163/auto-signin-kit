@@ -93,7 +93,7 @@ export interface ScheduleOpResult {
 export interface EventRow {
   executed_at: string
   domain: string
-  action?: string
+  operation?: string
   source?: string
   result: string
   needs_attention: number

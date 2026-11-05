@@ -26,9 +26,10 @@ class SigninRunRow(TypedDict, total=False):
     """``ask_signin_runs`` 行(签到运行台账,一行一次运行)。"""
 
     id: int
-    executed_at: str
     domain: str
-    action: str | None
+    account: str | None
+    executed_at: str
+    operation: str | None
     source: str
     result: str
     needs_attention: int
@@ -46,7 +47,7 @@ class ScheduleChangeRow(TypedDict, total=False):
 
     id: int
     executed_at: str
-    action: str
+    operation: str
     platform: str | None
     tasks: str | None
     report: str | None
@@ -60,11 +61,11 @@ class AccountRow(TypedDict, total=False):
     id: int
     domain: str
     name: str
+    enabled: int
+    uid: str | None
     device_id: str | None
     client_version: str | None
-    uid: str | None
     daily_potential: int | None
-    enabled: int
     install_path: str | None
     client_info: str | None
     info_synced_at: str | None

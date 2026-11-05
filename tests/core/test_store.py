@@ -24,7 +24,7 @@ def _insert_backfill(ts: str, domain: str = "trae", result: str = "CLAIMED") -> 
     try:
         with conn:
             conn.execute(
-                "INSERT INTO ask_signin_runs (executed_at, domain, action, source,"
+                "INSERT INTO ask_signin_runs (executed_at, domain, operation, source,"
                 " result, needs_attention, report, detail)"
                 " VALUES (?, ?, 'backfill', 'backfill', ?, 0, 'x', '{}')",
                 (ts, domain, result))
@@ -39,7 +39,7 @@ class TestRecordAndQuery:
         assert len(rows) == 1
         assert rows[0]["result"] == "CLAIMED"
         assert rows[0]["source"] == "run"  # 正常执行,规范标识
-        assert rows[0]["action"] == "auto"
+        assert rows[0]["operation"] == "auto"
 
     def test_source_filter_separates_run_and_backfill(self):
         store.record_payload(json.dumps(_record(), ensure_ascii=False))
@@ -120,7 +120,7 @@ class TestRecordAndQuery:
         assert store.record_payload(payload) is True
         conn = store.connect()
         try:
-            rows = conn.execute("SELECT action, tasks FROM ask_schedule_changes").fetchall()
+            rows = conn.execute("SELECT operation, tasks FROM ask_schedule_changes").fetchall()
         finally:
             conn.close()
         assert len(rows) == 1
@@ -406,7 +406,7 @@ class TestCreditsAndAccounts:
         conn = store.connect()  # 触发列序重建迁移
         try:
             order = [r["name"] for r in conn.execute("PRAGMA table_info(ask_accounts)")]
-            assert order[0:4] == ["id", "domain", "name", "device_id"]  # 重点在前
+            assert order[0:4] == ["id", "domain", "name", "enabled"]  # 主体与开关在前
             row = conn.execute("SELECT * FROM ask_accounts").fetchone()
             assert row["device_id"] == "dev-9" and row["daily_potential"] == 200
             seq = conn.execute(
