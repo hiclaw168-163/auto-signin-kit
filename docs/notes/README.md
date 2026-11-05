@@ -15,6 +15,8 @@
 | [NOTE-01-workbuddy域接口取证.md](NOTE-01-workbuddy域接口取证.md) | WorkBuddy 桌面端凭据链(sym-v1 信封)+ 签到与成长中心接口契约、易错语义、可靠性约定、定时调度依据 | [SPEC-03-workbuddy域](../superpowers/specs/SPEC-03-workbuddy域.md) |
 | [NOTE-02-qoder积分面分析.md](NOTE-02-qoder积分面分析.md) | Qoder CN 客户端 asar/运行时/webview 缓存全量扫描:证明积分入口只有 campaigns 一条链路;附凭据解密、设备风控头与命令面取证 | [SPEC-04-qoder域](../superpowers/specs/SPEC-04-qoder域.md) |
 | [NOTE-03-trae签到接口逆向.md](NOTE-03-trae签到接口逆向.md) | Trae CN 签到两条 POST + SS_AES 凭据信封的六步证据链 | [SPEC-05-trae域](../superpowers/specs/SPEC-05-trae域.md) |
+| [NOTE-04-豆包签到接口逆向.md](NOTE-04-豆包签到接口逆向.md) | 豆包 PC 客户端签到接口逆向 + CDP 兜底链路 + 2026-11-03 服务端故障排查实录(决定性实验方法) | [SPEC-08-doubao域](../superpowers/specs/SPEC-08-doubao域.md) |
+| [NOTE-05-qoder国际版取证.md](NOTE-05-qoder国际版取证.md) | Qoder 国际版(mac)取证:每日 100 Credits 活动需完整设备风控头才下发(Cosy-Machine* 系列,mac 版 runtime-info 实测可用);"看不到≠没有"的静默过滤教训 | [SPEC-04-qoder域](../superpowers/specs/SPEC-04-qoder域.md) |
 
 新增取证文档接续 `NOTE-` 编号并同步本表。取证方法可跨域复用时(NOTE-02 末尾就
 写了给 trae 域复用的方法),在文档末尾显式写出,不要让人重新踩一遍。
