@@ -17,7 +17,8 @@ CREATE TABLE IF NOT EXISTS ask_apps (
     region      TEXT    NOT NULL DEFAULT 'cn',  -- 版本区: cn / intl(国内版/国际版)
     enabled     INTEGER NOT NULL DEFAULT 1,  -- 应用总开关(压在账户级 enabled 之上)
     app_name    TEXT,              -- 应用显示名(NULL = 用注册表 DISPLAY_NAME)
-    app_desc    TEXT,              -- 应用描述/备注(UI 可编辑)
+    app_desc    TEXT,              -- 应用描述/备注(NULL = 用注册表 DESCRIPTION/声明 desc)
+    source      TEXT    NOT NULL DEFAULT 'auto',  -- 行来源: auto(同步扫描) / manual(用户新建)
     -- 统一审计字段(所有表必备): 行惰性补齐创建,更新时由写层维护
     created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S','now','localtime')),
     updated_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S','now','localtime')),

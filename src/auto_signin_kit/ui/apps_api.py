@@ -36,6 +36,7 @@ class AppCreate(BaseModel):
     name: str
     kind: str = "web"
     display: str | None = None
+    desc: str | None = None
     base_url: str
     daily_time: str = "09:05"
     region: str = "cn"  # 版本区: cn / intl,落 ask_apps 主档
@@ -87,17 +88,20 @@ def list_apps() -> dict[str, Any]:
         except Exception:
             ready = None
         state = store.app_state(name)
+        desc_default = getattr(meta, "DESCRIPTION", None)
         apps.append({
             "name": name,
             "kind": getattr(meta, "KIND", None),
             "display": (state or {}).get("app_name") or getattr(meta, "DISPLAY_NAME", name),
             "app_name": (state or {}).get("app_name"),  # 覆盖名原文(null = 未覆盖)
+            "desc": (state or {}).get("app_desc") or desc_default,  # 生效描述
+            "app_desc": (state or {}).get("app_desc"),  # 覆盖描述原文(null = 未覆盖)
             "ready": ready,
             "config": _app_config(name),
             "times": times_by_domain.get(name, []),
             "enabled": bool((state or {}).get("enabled", 1)),
             "region": (state or {}).get("region") or "cn",
-            "app_desc": (state or {}).get("app_desc"),
+            "source": (state or {}).get("source") or "auto",
             "declarative": False,
         })
     for decl in _declarative_apps():  # 声明式应用: 一份 YAML 一个应用
@@ -108,15 +112,17 @@ def list_apps() -> dict[str, Any]:
             ready = None
         apps.append({
             "name": decl.app_code,
-            "kind": "web",
+            "kind": decl.kind,
             "display": (state or {}).get("app_name") or decl.display,
             "app_name": (state or {}).get("app_name"),
+            "desc": (state or {}).get("app_desc") or decl.desc or None,
+            "app_desc": (state or {}).get("app_desc"),
             "ready": ready,
             "config": web_apps.raw_declaration(decl.app_code),
             "times": times_by_domain.get(decl.app_code, []),
             "enabled": bool((state or {}).get("enabled", 1)),
             "region": (state or {}).get("region") or decl.region,
-            "app_desc": (state or {}).get("app_desc"),
+            "source": (state or {}).get("source") or "auto",
             "declarative": True,
         })
     return {"apps": apps, "generated_at": _now()}
@@ -134,16 +140,66 @@ def _rebuild_and_exit() -> None:
     daemon.request_shutdown()
 
 
+def _create_client_declaration(body: AppCreate) -> None:
+    """客户端签到新建 = 写一份声明 YAML,走 web_signin 引擎,零代码桩。
+
+    生成的 YAML 是桩(auth 的目录/cookie 名留空,claim 路径占位): 引擎
+    加载合法,就绪探测如实为 False,运行时显式报"请编辑声明"——不做
+    静默兜底,填好真实参数才可跑。
+    """
+    from auto_signin_kit.core.errors import ConfigError
+
+    declaration = {
+        "app_code": body.name,
+        "region": body.region,
+        "display": body.display or body.name,
+        "kind": "client",
+        "desc": body.desc or "",
+        "base_url": body.base_url,
+        "auth": {"kind": "chromium_cookies", "files": [], "cookie_names": []},
+        "claim": {"method": "POST", "path": "/"},
+        "schedule": {"times": [body.daily_time]},
+    }
+    try:
+        web_apps.save_declaration(body.name, declaration)
+    except ConfigError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+def _delete_declaration(app_code: str) -> None:
+    """删除一份声明 YAML(新建失败回滚用;不存在不动)。"""
+    (web_apps.apps_dir() / f"{app_code}.yaml").unlink(missing_ok=True)
+
+
 @router.post("/apps")
 def create_app(body: AppCreate) -> dict[str, Any]:
-    """生成域骨架并后台重建生效;响应返回后本服务会短暂离线。"""
+    """生成域骨架(网页版签)或声明 YAML(客户端签到)并后台重建生效;
+    响应返回后本服务会短暂离线。
+    """
+    if body.kind == "client":
+        _create_client_declaration(body)
+        try:
+            store.ensure_app(body.name, body.region, app_name=body.display,
+                             app_desc=body.desc, source="manual")
+            _rebuild_and_exit()
+        except Exception as exc:
+            _delete_declaration(body.name)
+            raise HTTPException(500, "重建进程拉起失败,已回滚: %s" % exc) from exc
+        return {
+            "result": "OK",
+            "domain": body.name,
+            "message": "重建进行中(约 1 分钟): 服务将离线并自动回来,完成后新应用"
+                       "出现在列表;客户端签到参数是桩,请编辑"
+                       " config/apps/%s.yaml 填数据目录/cookie 名/接口路径。" % body.name,
+        }
     try:
         manifest = scaffolding.create_domain(
             body.name, body.kind, body.display, body.base_url, body.daily_time)
     except AutoSignInKitError as exc:
         raise HTTPException(422, str(exc)) from exc
     try:
-        store.ensure_app(body.name, body.region)  # 主档行: 版本区随建档落库
+        store.ensure_app(body.name, body.region, app_name=body.display,
+                         app_desc=body.desc, source="manual")  # 主档行随建档落库
         _rebuild_and_exit()
     except Exception as exc:
         scaffolding.rollback(manifest)
@@ -274,9 +330,13 @@ def sync_apps() -> dict[str, Any]:
     failed: list[dict[str, Any]] = []
 
     def ensure(self_name: str, region: str, info: dict[str, Any] | None,
-               *, want_account: bool) -> None:
-        """主档 + default 户 + 档案;声明式应用无 client_info 采集仍建账户。"""
-        store.ensure_app(self_name, region)
+               *, want_account: bool, app_name: str | None = None,
+               app_desc: str | None = None) -> None:
+        """主档 + default 户 + 档案;声明式应用无 client_info 采集仍建账户。
+
+        app_name/app_desc 是档案默认值: ensure_app 只补空,用户覆盖过的不动。
+        """
+        store.ensure_app(self_name, region, app_name=app_name, app_desc=app_desc)
         if want_account:
             store.ensure_account(self_name, "default")
         if info:
@@ -303,7 +363,9 @@ def sync_apps() -> dict[str, Any]:
             region = str(info.pop("region", "") or "cn")  # region 进主档,不入档案
             version = info.get("version")
         try:
-            ensure(name, region, info, want_account=bool(info))
+            ensure(name, region, info, want_account=bool(info),
+                   app_name=getattr(meta, "DISPLAY_NAME", None),
+                   app_desc=getattr(meta, "DESCRIPTION", None))
         except AutoSignInKitError as exc:
             failed.append({"domain": name, "error": str(exc)})
             continue
@@ -318,7 +380,8 @@ def sync_apps() -> dict[str, Any]:
             skipped.append({"domain": decl.app_code, "reason": "登录态未就绪"})
             continue
         try:
-            ensure(decl.app_code, decl.region, None, want_account=True)
+            ensure(decl.app_code, decl.region, None, want_account=True,
+                   app_name=decl.display, app_desc=decl.desc or None)
         except AutoSignInKitError as exc:
             failed.append({"domain": decl.app_code, "error": str(exc)})
             continue

@@ -13,6 +13,10 @@ from auto_signin_kit.domains.qoder.client_info import client_info as _collect
 from auto_signin_kit.domains.qoder.schema import QoderDomainConfig
 
 DISPLAY_NAME = "Qoder"
+#: 域类别(web=网页版签 / client=客户端签到);UI 类别列与同步档案用。
+KIND = "client"
+#: 应用描述(同步时自动补 ask_apps.app_desc,只补空)。
+DESCRIPTION = "Qoder 桌面端每日签到(本地凭据解锁 + 风控头)"
 
 #: 域档案契约(可选声明): 客户端信息采集;UI 同步账户档案时调用。
 client_info = _collect

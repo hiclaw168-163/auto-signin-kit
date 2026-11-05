@@ -60,8 +60,8 @@ export const jobApi = {
 // 配置编辑(getConfig/update)只写 YAML,不触发重建,下次命令运行时生效。
 export const appsApi = {
   list: () => get<AppsInfo>('/api/apps'),
-  create: (body: { name: string; kind: string; display?: string; base_url: string;
-                    daily_time: string; region?: string }) =>
+  create: (body: { name: string; kind: string; display?: string; desc?: string;
+                    base_url: string; daily_time: string; region?: string }) =>
     post<AppCreateResult>('/api/apps', body),
   remove: (name: string) =>
     del<AppCreateResult>(`/api/apps/${encodeURIComponent(name)}`),

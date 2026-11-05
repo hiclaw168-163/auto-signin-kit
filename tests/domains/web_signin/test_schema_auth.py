@@ -183,3 +183,163 @@ class TestPlainAuth:
         assert authkit.ready(decl) is False
         self.write_creds(tmp_path, {"data": {"token": "tk-1"}})
         assert authkit.ready(decl) is True
+
+
+class TestKindAndDesc:
+    """应用类别(kind)与描述(desc): 客户端类声明式应用的一等字段。"""
+
+    def test_defaults(self):
+        decl = make_decl()
+        assert decl.kind == "web" and decl.desc == ""
+
+    def test_client_kind_accepted(self):
+        decl = make_decl(kind="client")
+        assert decl.kind == "client"
+
+    def test_unknown_kind_rejected(self):
+        with pytest.raises(ValidationError, match="kind"):
+            make_decl(kind="desktop")
+
+    def test_desc_passthrough(self):
+        assert make_decl(desc="客户端每日签到").desc == "客户端每日签到"
+
+
+#%% ---------------- chromium_cookies 适配器 ----------------
+
+import hashlib  # noqa: E402
+import sqlite3  # noqa: E402
+
+from auto_signin_kit.domains.web_signin import chromium  # noqa: E402
+
+#: 与 _mac_key 同参数派生的测试密钥(monkeypatch 掉 Keychain 读取)。
+_CHROMIUM_KEY = hashlib.pbkdf2_hmac("sha1", b"test-pass", b"saltysalt", 1003,
+                                    dklen=16)
+
+
+def _enc_cookie(value: str, *, key: bytes = _CHROMIUM_KEY) -> bytes:
+    """按标准 Chromium os_crypt(mac 分支)造一条加密 cookie 值(测试夹具)。"""
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
+    data = value.encode("utf-8")
+    pad = 16 - len(data) % 16
+    enc = Cipher(algorithms.AES(key), modes.CBC(chromium._CBC_IV)).encryptor()
+    return b"v10" + enc.update(data + bytes([pad]) * pad) + enc.finalize()
+
+
+def _make_client_dir(tmp_path, cookies: dict[str, str], *, host: str = ".demo.cn",
+                     profile: str = "Default", root_name: str = "client") -> str:
+    """一个假客户端数据目录: <root>/<profile>/Cookies sqlite。"""
+    root = tmp_path / root_name
+    db = root / profile / "Cookies"
+    db.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(db))
+    try:
+        conn.execute("create table cookies (host_key text, name text,"
+                     " encrypted_value blob)")
+        for name, value in cookies.items():
+            conn.execute("insert into cookies values (?, ?, ?)",
+                         (host, name, sqlite3.Binary(_enc_cookie(value))))
+        conn.commit()
+    finally:
+        conn.close()
+    return str(root)
+
+
+def _chromium_decl(tmp_path, **auth_overrides) -> AppDeclaration:
+    if "files" not in auth_overrides:
+        auth_overrides["files"] = [str(tmp_path / "client")]
+    return make_decl(kind="client", auth={
+        "kind": "chromium_cookies", "files": [],
+        "cookie_names": ["sessionid", "uid"], "keychain_service": "Demo Safe Storage",
+        **auth_overrides})
+
+
+class TestChromiumCookies:
+    """客户端 Chromium Cookie 库适配器(mac 分支实测;win 分支见 mock 用例)。"""
+
+    def _patch_key(self, monkeypatch):
+        monkeypatch.setattr(chromium, "_mac_key", lambda service: _CHROMIUM_KEY)
+
+    def test_resolve_builds_cookie_header(self, tmp_path, monkeypatch):
+        self._patch_key(monkeypatch)
+        _make_client_dir(tmp_path, {"sessionid": "s-1", "uid": "u-1"})
+        decl = _chromium_decl(tmp_path, headers={"X-Static": "1"})
+        cred = authkit.resolve(decl, None)
+        assert cred.token is None
+        assert cred.headers["Cookie"] == "sessionid=s-1; uid=u-1"
+        assert cred.headers["X-Static"] == "1"  # auth.headers 静态追加生效
+        assert "Cookies" in cred.source
+
+    def test_value_prefix_stripped(self, tmp_path, monkeypatch):
+        """应用层值前缀(豆包式 32 字节)可配置剥离。"""
+        self._patch_key(monkeypatch)
+        root = _make_client_dir(tmp_path, {"sessionid": "s-1", "uid": "u-1"})
+        # 重写库: 值前置 32 字节应用层头
+        import sqlite3 as sq
+
+        db = next((tmp_path / "client").rglob("Cookies"))
+        conn = sq.connect(str(db))
+        junk = "x" * 32
+        for name, value in (("sessionid", junk + "s-1"), ("uid", junk + "u-1")):
+            conn.execute("update cookies set encrypted_value=? where name=?",
+                         (sqlite3.Binary(_enc_cookie(value)), name))
+        conn.commit()
+        conn.close()
+        decl = _chromium_decl(root, files=[root], value_prefix_bytes=32)
+        assert "sessionid=s-1" in authkit.resolve(decl, None).headers["Cookie"]
+
+    def test_missing_cookie_is_auth_broken(self, tmp_path, monkeypatch):
+        self._patch_key(monkeypatch)
+        _make_client_dir(tmp_path, {"sessionid": "s-1"})  # 缺 uid
+        with pytest.raises(authkit.AuthBrokenError, match="uid"):
+            authkit.resolve(_chromium_decl(tmp_path), None)
+
+    def test_absent_dir_is_no_auth(self, tmp_path, monkeypatch):
+        self._patch_key(monkeypatch)
+        with pytest.raises(authkit.NoAuthError):
+            authkit.resolve(_chromium_decl(tmp_path), None)
+
+    def test_stub_declaration_errors_are_explicit(self):
+        """新建生成的桩声明(files/cookie_names 空)在运行时显式报错,不静默。"""
+        decl = _chromium_decl(None, files=[], keychain_service="")
+        with pytest.raises(authkit.NoAuthError, match="files 未声明"):
+            authkit.resolve(decl, None)
+        assert authkit.ready(decl) is False  # 桩声明就绪探测如实为 False
+        out, code = authkit.doctor(decl, None)
+        assert out["result"] == "NO_AUTH" and code == 2
+
+    def test_host_domain_filter(self, tmp_path, monkeypatch):
+        self._patch_key(monkeypatch)
+        _make_client_dir(tmp_path, {"sessionid": "s-1", "uid": "u-1"})
+        # host 不含过滤子串: 收不到任何行 → 缺 cookie 报错
+        decl = _chromium_decl(tmp_path, cookie_domain="other.com")
+        with pytest.raises(authkit.AuthBrokenError):
+            authkit.resolve(decl, None)
+
+    def test_ready_and_doctor(self, tmp_path, monkeypatch):
+        self._patch_key(monkeypatch)
+        decl = _chromium_decl(tmp_path)
+        assert authkit.ready(decl) is False
+        _make_client_dir(tmp_path, {"sessionid": "s-1", "uid": "u-1"})
+        assert authkit.ready(decl) is True
+        out, code = authkit.doctor(decl, None)
+        assert out["result"] == "OK" and code == 0
+        assert set(out["cookies"]) == {"sessionid", "uid"}
+
+    def test_doctor_reports_no_auth(self, tmp_path, monkeypatch):
+        self._patch_key(monkeypatch)
+        out, code = authkit.doctor(_chromium_decl(tmp_path), None)
+        assert out["result"] == "NO_AUTH" and code == 2
+
+    def test_named_account_auth_dir_override(self, tmp_path, monkeypatch):
+        """具名账户 auth_dir 显式数据目录(多开客户端各一份)。"""
+        self._patch_key(monkeypatch)
+        from auto_signin_kit.core.config.schema import AccountRef
+
+        _make_client_dir(tmp_path, {"sessionid": "s-1", "uid": "u-1"})
+        _make_client_dir(tmp_path, {"sessionid": "s-2", "uid": "u-2"},
+                         root_name="client2")
+        decl = _chromium_decl(tmp_path, files=[str(tmp_path / "client")])
+        ref = AccountRef(name="second", auth_dir=str(tmp_path / "client2"))
+        cookie = authkit.resolve(decl, ref, skip_env=True).headers["Cookie"]
+        assert cookie == "sessionid=s-2; uid=u-2"  # 只收显式目录那一份

@@ -29,6 +29,39 @@ class TestAppState:
             rows = conn.execute("SELECT * FROM ask_apps WHERE app_code='trae'").fetchall()
         assert len(rows) == 1  # UNIQUE(app_code, region) 挡重复,INSERT OR IGNORE 静默
 
+    def test_ensure_app_records_source_and_profiles(self):
+        """来源与档案默认值在建行时落库: manual 标记用户手动新建。"""
+        store.ensure_app("demoapp", "cn", app_name="Demo", app_desc="说明",
+                         source="manual")
+        row = store.app_state("demoapp")
+        assert row["source"] == "manual"
+        assert row["app_name"] == "Demo" and row["app_desc"] == "说明"
+
+    def test_ensure_app_profiles_fill_if_empty_only(self):
+        """档案默认值只补空: 空串/NULL 都算未填,用户填过非空值不被同步翻掉。"""
+        store.ensure_app("demoapp", "cn")  # 先建空行(无档案默认值)
+        store.ensure_app("demoapp", "cn", app_name="Demo", app_desc="D")
+        row = store.app_state("demoapp")
+        assert row["app_name"] == "Demo" and row["app_desc"] == "D"
+        # 用户覆盖 → 再同步也不覆盖
+        store.set_app_state("demoapp", app_name="我的名字")
+        store.ensure_app("demoapp", "cn", app_name="Demo")
+        assert store.app_state("demoapp")["app_name"] == "我的名字"
+        # 历史空串行(UI 显式清空过的)也按未填补齐
+        store.set_app_state("demoapp", app_name="")  # 显式清空
+        store.ensure_app("demoapp", "cn", app_name="Demo")
+        assert store.app_state("demoapp")["app_name"] == "Demo"
+
+    def test_ensure_app_source_never_flipped(self):
+        """来源只在建行时落值: manual 行再被自动同步扫到仍是 manual。"""
+        store.ensure_app("demoapp", "cn", source="manual")
+        store.ensure_app("demoapp", "cn", source="auto")
+        assert store.app_state("demoapp")["source"] == "manual"
+
+    def test_ensure_app_default_source_is_auto(self):
+        store.ensure_app("demoapp")
+        assert store.app_state("demoapp")["source"] == "auto"
+
     def test_ensure_app_region_variants(self):
         """region 就地纠正: 同步探测结论比历史行可信,行迁移到新 region。
 
@@ -120,7 +153,8 @@ class TestLegacyMigration:
             assert row["app_desc"] == "旧备注"        # note → app_desc
             assert row["region"] == "cn"           # 补列回填
             assert row["enabled"] == 0             # 开关值原样保留
+            assert row["source"] == "auto"         # 补列回填(来源列引入前的行)
             cols = [r["name"] for r in
                     conn.execute("PRAGMA table_info(ask_apps)")]
         assert cols == ["id", "app_code", "region", "enabled", "app_name",
-                        "app_desc", "created_at", "updated_at"]
+                        "app_desc", "source", "created_at", "updated_at"]

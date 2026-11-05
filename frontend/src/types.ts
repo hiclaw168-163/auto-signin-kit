@@ -4,14 +4,17 @@
 // SPEC-11 应用管理: 注册表发现的应用(名称/类别/显示名/就绪探测/配置/调度时间)。
 export interface AppInfo {
   name: string
-  kind: string | null // web | client | null(未声明 KIND 的域)
+  kind: string | null // web(网页版签) | client(客户端签到) | null(未声明 KIND 的域)
   display: string // 生效显示名: ask_apps.app_name 覆盖,缺省用注册表 DISPLAY_NAME
   app_name: string | null // 显示名覆盖原文(null = 未覆盖,用注册表名)
+  desc: string | null // 生效描述: ask_apps.app_desc 覆盖,缺省用注册表 DESCRIPTION/声明 desc
+  app_desc: string | null // 描述覆盖原文(null = 未覆盖)
   ready: boolean | null
   config: Record<string, unknown> | null // 域 YAML 字段视图;null = 配置文件不存在
   times: string[] // 该域全部定时任务的触发时间(已套 schedule.yaml 覆盖)
   enabled: boolean // 应用总开关(ask_apps;从未操作过 = true)
   region: string // 版本区: cn / intl(国内版/国际版,未来应用变体各占一行)
+  source: string // 行来源: auto(同步扫描) / manual(用户新建)
   app_desc: string | null // 应用描述/备注(ask_apps.app_desc)
 }
 

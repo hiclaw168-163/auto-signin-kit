@@ -62,9 +62,9 @@ _RUNS_COLUMN_ORDER = ("id", "domain", "account_name", "executed_at", "operation"
                       "request", "response", "detail", "created_at",
                       "updated_at")
 
-#: ask_apps 的目标列序(主键 → 业务主体 → 开关 → 展示描述 → 审计)。
+#: ask_apps 的目标列序(主键 → 业务主体 → 开关 → 展示描述与来源 → 审计)。
 _APP_COLUMN_ORDER = ("id", "app_code", "region", "enabled", "app_name",
-                     "app_desc", "created_at", "updated_at")
+                     "app_desc", "source", "created_at", "updated_at")
 
 #: 列名规约: 避开数据库关键字——SQLite 官方关键字表里有 ACTION,
 #: MySQL 官方关键字表里有 ACTION/ACCOUNT;ask_apps 业务键统一 app_ 前缀
@@ -238,6 +238,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
         with conn:
             conn.execute("ALTER TABLE ask_apps ADD COLUMN region"
                          " TEXT NOT NULL DEFAULT 'cn'")
+    # ask_apps.source: 行来源(自动同步扫描 / 用户手动新建);存量行回填 'auto'
+    # (来源列引入前的行绝大多数来自同步扫描,如实按多数口径回填)
+    if apps_columns and "source" not in apps_columns:
+        with conn:
+            conn.execute("ALTER TABLE ask_apps ADD COLUMN source"
+                         " TEXT NOT NULL DEFAULT 'auto'")
     # 列序重建(必须在补列之后: 按名列拷贝要求旧表已有全部目标列)
     _reorder_table(conn, "ask_apps", _APP_COLUMN_ORDER, _load_sql("ask_apps.sql"))
     _reorder_table(conn, "ask_accounts", _ACCOUNT_COLUMN_ORDER, _ASK_ACCOUNTS_DDL)

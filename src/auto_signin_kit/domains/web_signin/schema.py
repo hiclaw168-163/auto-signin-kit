@@ -35,13 +35,19 @@ class AuthDecl(BaseModel):
     - ``plain``: 普通 JSON 令牌文件——``files`` 为候选文件 glob(~ 展开),
       ``token_json_path`` 从文件 JSON 里点路径取令牌(**plain 必填**);
     - ``ss_aes``: Trae 桌面端 SS_AES 加密信封——``files`` 为客户端数据目录
-      (缺省按平台默认探测 Trae CN/Trae),信封解密与设备头由适配器承担。
+      (缺省按平台默认探测 Trae CN/Trae),信封解密与设备头由适配器承担;
+    - ``chromium_cookies``: 客户端 Chromium 数据目录解会话 Cookie——
+      ``files`` 为数据目录候选(**必填**),``cookie_names`` 为必需 cookie
+      名(**必填**),``cookie_domain`` 做 host 过滤,``value_prefix_bytes``
+      剥应用层值前缀(如豆包 32,标准 Chromium 为 0),macOS 另需
+      ``keychain_service``(Keychain 条目名)。
     """
 
     model_config = {"extra": "forbid"}
 
     kind: str = Field(pattern=r"^[a-z][a-z0-9_]{0,31}$")
-    #: 凭据候选: plain=文件 glob;ss_aes=数据目录;空列表 = 适配器平台默认。
+    #: 凭据候选: plain=文件 glob;ss_aes/chromium_cookies=数据目录;空列表 =
+    #: 适配器平台默认(仅 ss_aes 有默认,chromium_cookies 必须显式声明)。
     files: list[str] = Field(default_factory=list)
     #: 环境变量令牌(可选): 仅 default 账户消费——具名账户用显式路径,
     #: 混用会拿 A 户令牌签 B 户的到(沿用 trae 域的隔离口径)。
@@ -54,6 +60,14 @@ class AuthDecl(BaseModel):
     token_header: TokenHeader | None = None
     #: 适配器产出的额外头之上的静态追加(如 X-User-Region)。
     headers: dict[str, str] = Field(default_factory=dict)
+    #: chromium_cookies: 必需的 cookie 名(缺任一 = 登录态不完整)。
+    cookie_names: list[str] = Field(default_factory=list)
+    #: chromium_cookies: host 过滤子串(如 "doubao.com";空 = 不过滤)。
+    cookie_domain: str = ""
+    #: chromium_cookies: cookie 值的应用层前缀字节数(豆包=32;标准为 0)。
+    value_prefix_bytes: int = Field(default=0, ge=0, le=128)
+    #: chromium_cookies: macOS Keychain 条目名(<service> Safe Storage 的 service)。
+    keychain_service: str = ""
 
 
 class RequestDecl(BaseModel):
@@ -126,6 +140,10 @@ class AppDeclaration(BaseModel):
     app_code: str = Field(pattern=APP_CODE_PATTERN)
     region: str = Field(default="cn", pattern=r"^(cn|intl)$")
     display: str = Field(min_length=1)
+    #: 应用类别: web(网页版签) / client(客户端签到)——UI 类别列与同步档案用。
+    kind: str = Field(default="web", pattern=r"^(web|client)$")
+    #: 应用描述(可选): 同步时自动补进 ask_apps.app_desc(只补空,不覆盖)。
+    desc: str = ""
     base_url: str = Field(pattern=r"^https?://")
     ready_noun: str = "签到"
     #: 单请求超时(秒)。

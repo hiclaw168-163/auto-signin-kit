@@ -266,7 +266,15 @@ def _ss_aes_module() -> Any:
     return ss_aes
 
 
+def _chromium_module() -> Any:
+    """延迟导入: chromium_cookies 客户端凭据适配器(kind 命中时加载)。"""
+    from auto_signin_kit.domains.web_signin import chromium
+
+    return chromium
+
+
 ADAPTERS: dict[str, Any] = {
     "plain": PlainAdapter(),
     "ss_aes": _ss_aes_module(),
+    "chromium_cookies": _chromium_module(),
 }

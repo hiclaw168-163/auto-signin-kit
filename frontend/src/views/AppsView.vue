@@ -21,6 +21,7 @@ const form = reactive({
   name: '',
   kind: 'web',
   display: '',
+  desc: '',
   base_url: '',
   daily_time: '09:05',
   region: 'cn',
@@ -81,7 +82,8 @@ async function create() {
   }
   working.value = true
   try {
-    const out = await appsApi.create({ ...form, display: form.display || undefined })
+    const out = await appsApi.create({ ...form, display: form.display || undefined,
+                                       desc: form.desc || undefined })
     message.info(out.message)
     creating.value = false
     await pollUntilBack()
@@ -255,7 +257,8 @@ onMounted(load)
     <n-table size="small" :single-line="false" style="background: var(--ask-surface)">
       <thead>
         <tr>
-          <th>应用编码</th><th>应用名称</th><th>类别</th><th>就绪探测</th>
+          <th>应用编码</th><th>应用名称</th><th>描述</th><th>类别</th><th>版本区</th>
+          <th>就绪探测</th><th>来源</th>
           <th>每日时间</th><th>配置</th><th>启用</th><th>操作</th>
         </tr>
       </thead>
@@ -263,23 +266,30 @@ onMounted(load)
         <tr v-for="a in apps" :key="a.name">
           <td>
             <code style="font-weight: 600" :style="a.enabled ? '' : 'opacity: 0.5'">{{ a.name }}</code>
-            <n-tag size="tiny" :bordered="false" style="margin-left: 8px"
-                   :type="a.region === 'intl' ? 'warning' : 'default'">
-              {{ regionLabel(a.region) }}
-            </n-tag>
           </td>
           <td>
             <span style="font-weight: 600">{{ a.display }}</span>
-            <div v-if="a.app_desc">
-              <n-text depth="3" style="font-size: 12px">{{ a.app_desc }}</n-text>
-            </div>
+          </td>
+          <td style="max-width: 220px">
+            <n-text v-if="a.desc" depth="2" style="font-size: 12px">{{ a.desc }}</n-text>
+            <n-text v-else depth="3" style="font-size: 12px">—</n-text>
           </td>
           <td>
             <n-tag :type="kindTag(a.kind).type" size="small">{{ kindTag(a.kind).label }}</n-tag>
           </td>
           <td>
+            <n-tag :type="a.region === 'intl' ? 'warning' : 'default'" size="small">
+              {{ regionLabel(a.region) }}
+            </n-tag>
+          </td>
+          <td>
             <n-tag :type="a.ready === false ? 'warning' : a.ready ? 'success' : 'default'" size="small">
               {{ a.ready === false ? '客户端未就绪' : a.ready ? '就绪' : '未声明' }}
+            </n-tag>
+          </td>
+          <td>
+            <n-tag :type="a.source === 'manual' ? 'info' : 'default'" size="small" :bordered="false">
+              {{ a.source === 'manual' ? '手动新建' : '自动同步' }}
             </n-tag>
           </td>
           <td>
@@ -309,7 +319,7 @@ onMounted(load)
           </td>
         </tr>
         <tr v-if="!apps.length && !loading">
-          <td colspan="8" style="text-align: center">
+          <td colspan="11" style="text-align: center">
             <n-text depth="3">还没有应用,点"新建应用"开始</n-text>
           </td>
         </tr>
@@ -336,6 +346,10 @@ onMounted(load)
         </n-form-item>
         <n-form-item label="应用名称">
           <n-input v-model:value="form.display" placeholder="界面上显示的名字,缺省用应用编码" />
+        </n-form-item>
+        <n-form-item label="描述">
+          <n-input v-model:value="form.desc" type="textarea" :rows="2"
+                   placeholder="应用用途/备注,同步与列表展示用" />
         </n-form-item>
         <n-form-item label="接口宿主" required>
           <n-input v-model:value="form.base_url" placeholder="https://..." />

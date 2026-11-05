@@ -17,6 +17,11 @@ from auto_signin_kit.core.ports.scheduler import ScheduleSpec
 from auto_signin_kit.domains.web_signin.apps import all_apps_safe
 
 DISPLAY_NAME = "Web 应用(声明式)"
+#: 域类别(web=网页版签 / client=客户端签到);引擎自身是 web 形态,各声明
+#: 应用以 YAML 的 ``kind`` 字段为准(UI 列表走声明值,不走这里)。
+KIND = "web"
+#: 应用描述(同步时自动补 ask_apps.app_desc,只补空)。
+DESCRIPTION = "声明式应用签到引擎(一份 YAML 接入一个应用)"
 
 
 def _task_name(app_code: str) -> str:

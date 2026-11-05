@@ -20,6 +20,10 @@ from auto_signin_kit.domains.workbuddy.runtime import is_installed
 from auto_signin_kit.domains.workbuddy.schema import WorkbuddyDomainConfig
 
 DISPLAY_NAME = "WorkBuddy"
+#: 域类别(web=网页版签 / client=客户端签到);UI 类别列与同步档案用。
+KIND = "client"
+#: 应用描述(同步时自动补 ask_apps.app_desc,只补空)。
+DESCRIPTION = "WorkBuddy 客户端每日签到与成长任务"
 
 #: 域档案契约(可选声明): 客户端信息采集;UI 同步账户档案时调用。
 client_info = _collect

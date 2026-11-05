@@ -24,14 +24,20 @@ scaffolding 新建域时两边都查重(`scaffolding.service.validate`)。
 | `app_code` | ✓ | `^[a-z][a-z0-9_]{1,31}$`,**必须与文件名一致** |
 | `region` | | `cn` / `intl`(默认 `cn`),落 ask_apps 主档 |
 | `display` | ✓ | 展示名 |
+| `kind` | | `web`(网页版签,默认)/ `client`(客户端签到)——UI 类别列与同步档案 |
+| `desc` | | 应用描述: 同步时自动补进 ask_apps.app_desc(**只补空**,用户覆盖过的不动) |
 | `base_url` | ✓ | `https?://…` |
-| `auth.kind` | ✓ | 适配器: `plain`(JSON 令牌文件)/ `ss_aes`(Trae 信封) |
-| `auth.files` | | 凭据候选: plain=文件 glob;ss_aes=数据目录(空=平台默认) |
+| `auth.kind` | ✓ | 适配器: `plain`(JSON 令牌文件)/ `ss_aes`(Trae 信封)/ `chromium_cookies`(客户端 Chromium Cookie 库) |
+| `auth.files` | | 凭据候选: plain=文件 glob;ss_aes=数据目录(空=平台默认);chromium_cookies=客户端数据目录(空=桩声明,运行时显式报错) |
 | `auth.env` | | 环境变量令牌(**仅 default 账户消费**,具名账户隔离) |
 | `auth.token_json_path` | plain✓ | 令牌在文件 JSON 里的点路径 |
 | `auth.expires_json_path` | | 有效期字段点路径 |
 | `auth.token_header` | | `{name, prefix}` → `{name}: {prefix}{token}` |
 | `auth.headers` | | 适配器产出之上的静态追加头 |
+| `auth.cookie_names` | chromium✓ | 必需 cookie 名(缺任一 = 登录态不完整) |
+| `auth.cookie_domain` | | host 过滤子串(空 = 不过滤) |
+| `auth.value_prefix_bytes` | | cookie 值应用层前缀字节数(豆包式=32,标准=0) |
+| `auth.keychain_service` | mac✓ | Keychain 条目名(`<App> Safe Storage` 的 service) |
 | `headers` | | 全局静态头(所有请求;优先级低于凭据头) |
 | `business_codes` | | 业务码→结果标签,只允许 `AUTH_REJECTED/FORBIDDEN/ERROR` |
 | `code_path` / `code_ok` | | 业务码字段点路径(默认 `code`)/ 成功值(默认 0) |
@@ -61,7 +67,18 @@ scaffolding 新建域时两边都查重(`scaffolding.service.validate`)。
 登录态形态真实地有两种以上(AGENTS 规则 5),故设适配器注册表
 (`authkit.ADAPTERS`,kind → 模块): 契约 = `resolve/doctor/ready` 三函数。
 现有: `plain`(JSON 令牌文件)、`ss_aes`(Trae SS_AES 信封,密码学实现随
-引擎走)。**OS 差异只进 core/adapters**(`STD-05`),适配器不写平台分支。
+引擎走)、`chromium_cookies`(客户端 Chromium Cookie 库: Windows 走
+DPAPI+AES-GCM,macOS 走 Keychain+AES-CBC 经 `core/adapters/mac_keychain`,
+cookie 值的应用层前缀可配置剥离)。豆包客户端的 mac 加密是魔改 os_crypt,
+不在其能力内——doubao 域走 CDP 兜底不迁声明式。**OS 差异只进
+core/adapters**(`STD-05`),适配器不写平台分支。
+
+## 客户端类应用(`kind: client`)
+
+客户端签到与网页版签的请求流程同构,差异只在凭据来源,因此**共用本引擎**,
+不另建引擎域: YAML 声明 `kind: client` + `auth.kind: chromium_cookies` 即可。
+UI「新建应用」选客户端签到时直接生成声明 YAML 桩(目录/cookie 名留空,
+就绪探测如实 False,运行时显式报"请编辑声明"),不再生成代码域。
 
 ## 调度与应用同步
 
@@ -71,7 +88,9 @@ scaffolding 新建域时两边都查重(`scaffolding.service.validate`)。
   全库口径 `@账户` + `+i 分钟`错峰;
 - 新增/修改声明后重跑 `auto-signin-kit schedule install`;
 - 应用同步(`POST /api/apps/sync`): 声明式应用就绪 = `authkit.ready`
-  (不解锁凭据),同步建 ask_apps 主档 + default 户。
+  (不解锁凭据),同步建 ask_apps 主档 + default 户,并把 `display`/`desc`
+  补进 `app_name`/`app_desc`(**只补空**);`source` 列区分行来源:
+  `auto`(同步扫描)/ `manual`(UI 新建),建行时落值不翻转。
 
 ## 命令面
 

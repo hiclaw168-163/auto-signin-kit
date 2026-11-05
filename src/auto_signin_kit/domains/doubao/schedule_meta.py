@@ -12,6 +12,10 @@ from auto_signin_kit.domains.doubao.client_info import client_info as _collect
 from auto_signin_kit.domains.doubao.schema import DoubaoDomainConfig
 
 DISPLAY_NAME = "豆包"
+#: 域类别(web=网页版签 / client=客户端签到);UI 类别列与同步档案用。
+KIND = "client"
+#: 应用描述(同步时自动补 ask_apps.app_desc,只补空)。
+DESCRIPTION = "豆包客户端每日签到(Cookie/CDP 取登录态 + AGW 网关)"
 
 #: 无客户端就绪探测: doubao 走 CDP 驱动浏览器,浏览器不在运行时由域自身
 #: 如实报 NO_AUTH,注册不做前置拦截。

@@ -21,7 +21,8 @@ from typing import Any
 from auto_signin_kit.core.errors import AutoSignInKitError
 from auto_signin_kit.core.store.connection import connect
 
-_ROW_COLS = "id, app_code, region, enabled, app_name, app_desc, created_at, updated_at"
+_ROW_COLS = ("id, app_code, region, enabled, app_name, app_desc, source,"
+             " created_at, updated_at")
 
 
 def app_state(app_code: str, conn: sqlite3.Connection | None = None) -> dict[str, Any] | None:
@@ -40,13 +41,21 @@ def app_state(app_code: str, conn: sqlite3.Connection | None = None) -> dict[str
 
 
 def ensure_app(app_code: str, region: str = "cn",
-               conn: sqlite3.Connection | None = None) -> None:
+               conn: sqlite3.Connection | None = None, *,
+               app_name: str | None = None, app_desc: str | None = None,
+               source: str = "auto") -> None:
     """惰性补齐主档行;已存在的行若 region 与探测结论不符则就地纠正。
 
     region 来源是同步时的本机探测(如 qoder 按数据目录名判 cn/intl),
     比历史行可信——比如先在机器上登记过 CN 版、后来换成国际版客户端,
     下次同步应把行迁到 intl 而不是留着错值(当前契约: 每应用一行;
     真·双版本共存留给未来独立域,见 ask_apps.sql 头注释)。
+
+    ``app_name``/``app_desc`` 是注册表/声明的档案默认值(同步传入):
+    **只补空,不覆盖**——空串与 NULL 都算未填(UI 显式清空 = 回落注册表
+    展示名,与"未自定义"同义),用户填过非空值的不动。
+    ``source`` 是行来源(auto=同步扫描 / manual=用户新建),只在建行时
+    落值,已有行的来源不翻转。
 
     语句顺序保证不撞 UNIQUE: 目标 region 行已存在则删除其他变体行;
     否则先把旧行 UPDATE 到目标 region,再 INSERT OR IGNORE 兜底。
@@ -68,8 +77,18 @@ def ensure_app(app_code: str, region: str = "cn",
                     " updated_at = strftime('%Y-%m-%d %H:%M:%S','now','localtime')"
                     " WHERE app_code = ? AND region <> ?", (region, app_code, region))
                 conn.execute(
-                    "INSERT OR IGNORE INTO ask_apps (app_code, region) VALUES (?, ?)",
-                    (app_code, region))
+                    "INSERT OR IGNORE INTO ask_apps"
+                    " (app_code, region, app_name, app_desc, source)"
+                    " VALUES (?, ?, ?, ?, ?)",
+                    (app_code, region, app_name, app_desc, source))
+            # 档案默认值只补空: 空串/NULL 都算未填,用户填过非空值的不动
+            for column, value in (("app_name", app_name), ("app_desc", app_desc)):
+                if value:
+                    conn.execute(
+                        # S608 豁免: 列名来自上面的固定字段白名单,无外部输入
+                        "UPDATE ask_apps SET %s = ? WHERE app_code = ?"  # noqa: S608
+                        " AND region = ? AND IFNULL(%s, '') = ''" % (column, column),
+                        (value, app_code, region))
     finally:
         if own:
             conn.close()
