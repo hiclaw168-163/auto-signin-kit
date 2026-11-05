@@ -11,6 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from auto_signin_kit.core.dto import RunOutcome
 from auto_signin_kit.core.errors import AutoSignInKitError
 from auto_signin_kit.core.httpclient import NO_NETWORK
 from auto_signin_kit.core.kit.accounts import account_ref
@@ -59,7 +60,7 @@ def _sweep_rewards(api: DoubaoApi, config: DoubaoDomainConfig) -> dict[str, Any]
 
 
 def _checkin(api: DoubaoApi, config: DoubaoDomainConfig, *,
-             dry_run: bool) -> tuple[dict[str, Any], int]:
+             dry_run: bool) -> tuple[RunOutcome, int]:
     """签到 + 任务奖励清扫;幂等接口,重复运行返回已签状态。"""
     if dry_run:
         scode, body, err = api.landing_page(config.campaign_code)
@@ -129,7 +130,7 @@ def _checkin(api: DoubaoApi, config: DoubaoDomainConfig, *,
     return out, 0
 
 
-def _status(api: DoubaoApi, config: DoubaoDomainConfig) -> tuple[dict[str, Any], int]:
+def _status(api: DoubaoApi, config: DoubaoDomainConfig) -> tuple[RunOutcome, int]:
     """活动详情查询(只读): 活动是否在期 + 面板是否可用。"""
     scode, body, err = api.campaign_detail(config.campaign_code)
     payload = body if isinstance(body, dict) else {}

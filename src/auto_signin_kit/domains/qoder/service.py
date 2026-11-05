@@ -11,6 +11,7 @@ import time
 from datetime import datetime
 from typing import Any
 
+from auto_signin_kit.core.dto import RunOutcome
 from auto_signin_kit.core.httpclient import Budget
 from auto_signin_kit.core.kit.accounts import account_ref
 from auto_signin_kit.core.kit.domain import DomainError, SigninDomain
@@ -109,7 +110,7 @@ def _simplify_amount(values: list) -> Any:
     return sum(present) if present else None
 
 
-def claim_all(api: Api, campaigns: list[dict], budget: Budget) -> dict:
+def claim_all(api: Api, campaigns: list[dict], budget: Budget) -> RunOutcome:
     """逐个领取已分类的可领取项;任一 401/403 直接终止(换凭据才有意义)。"""
     total: Any = None
     keys: list[str] = []
@@ -165,7 +166,7 @@ def _snapshot(campaigns: list[dict]) -> list[dict]:
     ]
 
 
-def _claim_picked(api: Api, picked: list[dict], budget: Budget, dry_run: bool) -> dict:
+def _claim_picked(api: Api, picked: list[dict], budget: Budget, dry_run: bool) -> RunOutcome:
     keys = "、".join(_campaign_key(c) for c in picked)
     amount = _simplify_amount([_benefit_amount(c) for c in picked])
     if dry_run:
@@ -185,7 +186,8 @@ def _auth_reports() -> dict[int, str]:
                  "（CN 版/国际版），可用 QODER_BASE_URL 覆盖后重试"}
 
 
-def claim_once(api: Api, budget: Budget, *, retry: bool = True, dry_run: bool = False) -> dict:
+def claim_once(api: Api, budget: Budget, *, retry: bool = True,
+               dry_run: bool = False) -> RunOutcome:
     """查询 → 分类 → 领取/汇报。结果: CLAIMED/ALREADY/PENDING/INACTIVE/DRY_RUN。"""
     code, payload, err = api.campaigns(budget=budget, retry=retry)
     transport = transport_error_dto(code, payload, err, auth_reports=_auth_reports())
@@ -219,7 +221,7 @@ def claim_once(api: Api, budget: Budget, *, retry: bool = True, dry_run: bool = 
             "report": "当前没有可领取的 Credits 活动（活动可能已结束）"}
 
 
-def run_status(api: Api, budget: Budget) -> tuple[dict, int]:
+def run_status(api: Api, budget: Budget) -> tuple[RunOutcome, int]:
     """只查活动列表不领取;输出每个活动的状态快照。"""
     code, payload, err = api.campaigns(budget=budget, retry=True)
     transport = transport_error_dto(code, payload, err, auth_reports=_auth_reports())

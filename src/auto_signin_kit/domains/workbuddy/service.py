@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from auto_signin_kit.core.dto import RunOutcome
 from auto_signin_kit.core.errors import AutoSignInKitError
 from auto_signin_kit.core.httpclient import Budget
 from auto_signin_kit.core.kit.accounts import (
@@ -103,7 +104,7 @@ def load_credentials(*, auth_file: str | None = None) -> tuple[dict | None, dict
                       "needs_attention": True}
 
 
-def run_doctor(session: dict, budget: Budget) -> dict:
+def run_doctor(session: dict, budget: Budget) -> RunOutcome:
     """离线体检: 校验凭据格式与解密运行时能力;不解密 token、不联网。"""
     _validate_session(session)
     kind = _token_format(session["auth"]["accessToken"])

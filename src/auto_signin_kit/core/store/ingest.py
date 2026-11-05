@@ -44,12 +44,16 @@ def record_payload(payload: str) -> bool:
 
 
 def _insert_schedule_change(conn: sqlite3.Connection, record: dict) -> None:
-    """调度变更审计行: 注册/注销动作与涉及的任务时间。"""
+    """调度变更审计行: 注册/注销动作与涉及的任务时间。
+
+    统一审计字段: 审计行只插不改,created_at/updated_at 与 executed_at 同值。
+    """
+    executed_at = local_naive(record["ts"])
     conn.execute(
         "INSERT INTO ask_schedule_changes (executed_at, action, platform,"
-        " tasks, report) VALUES (?, ?, ?, ?, ?)",
+        " tasks, report, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
         (
-            local_naive(record["ts"]),
+            executed_at,
             str(record.get("action") or "unknown"),
             record.get("platform"),
             json.dumps(
@@ -57,6 +61,8 @@ def _insert_schedule_change(conn: sqlite3.Connection, record: dict) -> None:
                 ensure_ascii=False,
             ),
             record.get("report"),
+            executed_at,
+            executed_at,
         ),
     )
 
@@ -68,15 +74,18 @@ def _insert_signin_run(conn: sqlite3.Connection, record: dict, payload: str) -> 
     # 账户归属: 域回传 account 则用之,否则落每域默认户 'default';
     # 首次出现的 (domain, account) 自动进账户维表(积分业务的主体维度)
     account = str(record.get("account") or "default")
+    executed_at = local_naive(record["ts"])
     conn.execute(
-        "INSERT OR IGNORE INTO ask_accounts (domain, name) VALUES (?, ?)",
-        (domain, account))
+        "INSERT OR IGNORE INTO ask_accounts (domain, name, created_at, updated_at)"
+        " VALUES (?, ?, ?, ?)",
+        (domain, account, executed_at, executed_at))
     conn.execute(
         "INSERT INTO ask_signin_runs (executed_at, domain, action, source,"
-        " result, needs_attention, report, request, response, detail, account)"
-        " VALUES (?, ?, ?, 'run', ?, ?, ?, ?, ?, ?, ?)",
+        " result, needs_attention, report, request, response, detail, account,"
+        " created_at, updated_at)"
+        " VALUES (?, ?, ?, 'run', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
-            local_naive(record["ts"]),
+            executed_at,
             domain,
             record.get("action"),
             # 归一化到标准词表: 域内部细粒度码(大小写/别名)进库
@@ -88,5 +97,8 @@ def _insert_signin_run(conn: sqlite3.Connection, record: dict, payload: str) -> 
             response,
             payload,
             account,
+            # 统一审计字段: 与 executed_at 同值(台账行只插不改)
+            executed_at,
+            executed_at,
         ),
     )

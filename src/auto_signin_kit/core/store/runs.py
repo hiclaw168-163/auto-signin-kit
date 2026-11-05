@@ -16,6 +16,7 @@ import json
 from datetime import date, timedelta
 from typing import Any
 
+from auto_signin_kit.core.dto import DailyCheckinRow, SigninRunRow
 from auto_signin_kit.core.report import RESULT_OK, normalize_result
 from auto_signin_kit.core.store.connection import connect
 
@@ -30,7 +31,7 @@ SIGNIN_DONE_RESULTS = ("CLAIMED", "ALREADY")
 def daily_status(days: int = 7, *, domain: str | None = None,
                  source: str | None = None,
                  result: str | None = None,
-                 account: str | None = None) -> list[dict[str, Any]]:
+                 account: str | None = None) -> list[DailyCheckinRow]:
     """最近 N 天每天每域每账户的最终状态(读 ``ask_daily_checkins`` 视图),新的一天在前。"""
     conn = connect()
     try:
@@ -198,7 +199,7 @@ def events(
     result: str | None = None,
     account: str | None = None,
     limit: int = 50,
-) -> list[dict[str, Any]]:
+) -> list[SigninRunRow]:
     """按条件查 ``ask_signin_runs`` 明细,最新在前;``source`` 过滤 run/backfill。"""
     sql = ("SELECT executed_at, domain, account, action, source, result,"
            " needs_attention, report, request, response"
@@ -252,7 +253,7 @@ def done_today(domain: str, account: str = "default") -> bool:
     return row is not None
 
 
-def signed_today_by_domain() -> dict[str, dict[str, Any]]:
+def signed_today_by_domain() -> dict[str, SigninRunRow]:
     """每域当天(source=run)最新一行签到成功行(CLAIMED/ALREADY)。
 
     总览"今日已签"的判定与展示用,与 :func:`done_today`(调度跳过)同口径;

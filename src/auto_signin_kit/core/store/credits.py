@@ -101,6 +101,8 @@ def _update_account(domain: str, name: str, **fields: Any) -> None:
     """
     if not fields or any(k not in _ACCOUNT_FIELDS for k in fields):
         raise AutoSignInKitError("非法的账户更新字段: %s" % sorted(fields))
+    # updated_at 统一审计字段: 账户行任何更新都自动带上,调用方不用传
+    fields = {**fields, "updated_at": local_naive_now()}
     sets = ", ".join("%s = ?" % k for k in fields)
     conn = connect()
     try:

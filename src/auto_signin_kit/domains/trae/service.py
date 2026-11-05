@@ -14,6 +14,7 @@ import json
 import time
 from typing import Any
 
+from auto_signin_kit.core.dto import RunOutcome
 from auto_signin_kit.core.httpclient import Budget
 from auto_signin_kit.core.kit.accounts import account_ref
 from auto_signin_kit.core.kit.domain import DomainError, SigninDomain
@@ -37,14 +38,14 @@ def _body(payload: Any) -> dict:
     return payload if isinstance(payload, dict) else {}
 
 
-def _transport_errors(code: int, payload: Any, err: str | None) -> dict | None:
+def _transport_errors(code: int, payload: Any, err: str | None) -> RunOutcome | None:
     """HTTP/伪状态层统一映射;业务 code(1001 等)不在这里处理。"""
     return transport_error_dto(code, payload, err, auth_reports={
         401: "登录态被服务端拒绝（HTTP 401），请打开 Trae CN 桌面端重新登录",
     })
 
 
-def _business_error(code: int, payload: dict) -> dict | None:
+def _business_error(code: int, payload: dict) -> RunOutcome | None:
     """业务码层映射;0=成功,1001=认证被拒,9074=活动限流,其余如实上报。"""
     if code == 0:
         return None
@@ -56,7 +57,7 @@ def _business_error(code: int, payload: dict) -> dict | None:
             "report": "业务失败 code=%s：%s" % (code, _short(payload.get("message")) or "无消息")}
 
 
-def check_status(api: Api, budget: Budget) -> dict:
+def check_status(api: Api, budget: Budget) -> RunOutcome:
     """查询并规整签到状态(不做修改)。"""
     code, payload, err = api.status(budget=budget)
     transport = _transport_errors(code, payload, err)
@@ -80,7 +81,7 @@ def check_status(api: Api, budget: Budget) -> dict:
     }
 
 
-def claim_once(api: Api, budget: Budget, *, dry_run: bool = False) -> dict:
+def claim_once(api: Api, budget: Budget, *, dry_run: bool = False) -> RunOutcome:
     """status → (未签时)claim。结果: CLAIMED/ALREADY/DRY_RUN/AUTH_REJECTED/...。"""
     probe = check_status(api, budget)
     if probe.get("result") != "OK":
@@ -140,7 +141,7 @@ def claim_once(api: Api, budget: Budget, *, dry_run: bool = False) -> dict:
                       "稍后用 `trae status` 复查确认"}
 
 
-def _claimed(credits: Any, extra: Any) -> dict:
+def _claimed(credits: Any, extra: Any) -> RunOutcome:
     """CLAIMED 结果的统一形状(claim 回显与 status 复查两条路共用)。"""
     summary = "领取成功：今日 %s Credits" % ("" if credits is None else credits)
     if extra:
@@ -149,7 +150,7 @@ def _claimed(credits: Any, extra: Any) -> dict:
             "extra_credits": extra or None, "report": summary}
 
 
-def run_claim(api: Api, budget: Budget, *, dry_run: bool = False) -> tuple[dict, int]:
+def run_claim(api: Api, budget: Budget, *, dry_run: bool = False) -> tuple[RunOutcome, int]:
     """auto 主流程;退出码 0=成功或幂等,1=失败,2=不可用。"""
     out = claim_once(api, budget, dry_run=dry_run)
     if api.token_expires_at:
@@ -158,7 +159,7 @@ def run_claim(api: Api, budget: Budget, *, dry_run: bool = False) -> tuple[dict,
     return out, code
 
 
-def run_status(api: Api, budget: Budget) -> tuple[dict, int]:
+def run_status(api: Api, budget: Budget) -> tuple[RunOutcome, int]:
     """只查不领;结果 OK/AUTH_REJECTED/... 。"""
     out = check_status(api, budget)
     if api.token_expires_at:

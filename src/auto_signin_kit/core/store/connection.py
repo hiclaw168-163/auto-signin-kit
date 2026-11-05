@@ -16,13 +16,18 @@ from auto_signin_kit.core.store_migrations import (
     _migrate,
 )
 
-#: 台账文件名(运行时数据目录,与日志分居;同样被 .gitignore 排除)。
+#: 台账文件名(运行时数据目录下的 database/ 子目录,与 pid/清单等杂项分居;
+#: 同样被 .gitignore 排除——data/ 整目录不入库)。
 LEDGER_FILENAME = "auto-signin-kit.db"
+DB_SUBDIR = "database"
 
 
 def db_path() -> Any:
-    """台账文件路径: 运行时数据目录(尊重 ``AUTO_SIGNIN_KIT_DATA_DIR``)。"""
-    return default_data_dir() / LEDGER_FILENAME
+    """台账文件路径: 运行时数据目录的 ``database/`` 子目录
+    (尊重 ``AUTO_SIGNIN_KIT_DATA_DIR``;目录不存在时惰性创建)。"""
+    path = default_data_dir() / DB_SUBDIR / LEDGER_FILENAME
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def connect() -> sqlite3.Connection:

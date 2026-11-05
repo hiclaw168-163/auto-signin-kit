@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from auto_signin_kit.core.dto import RunOutcome
 from auto_signin_kit.core.errors import AutoSignInKitError
 from auto_signin_kit.core.kit.accounts import account_enabled, resolve_account
 from auto_signin_kit.core.kit.actions import DEFAULT_ACCOUNT, skip_done_today, unknown_action_report
@@ -79,11 +80,11 @@ class SigninDomain:
         """
         raise NotImplementedError("子类必须实现 claim()")
 
-    def status(self, api: Any, config: Any) -> tuple[dict, int]:
+    def status(self, api: Any, config: Any) -> tuple[RunOutcome, int]:
         """只查状态,不修改;返回 (结果 DTO, 退出码)。"""
         raise NotImplementedError("子类必须实现 status()")
 
-    def doctor(self, config: Any, *, account: str = DEFAULT_ACCOUNT) -> tuple[dict, int]:
+    def doctor(self, config: Any, *, account: str = DEFAULT_ACCOUNT) -> tuple[RunOutcome, int]:
         """离线体检(不联网);``account`` 指定体检哪个账户的凭据。默认未实现桩。"""
         return {"result": "ERROR",
                 "report": "体检未实现: 请在 %s 域的 doctor() 钩子补齐" % self.name,
@@ -95,7 +96,7 @@ class SigninDomain:
         """silent 模式日志路径;`<NAME>_SIGNIN_LOG` 环境变量覆盖。"""
         return result_log_path(self.name, env_var="%s_SIGNIN_LOG" % self.name.upper())
 
-    def _emit(self, out: dict, label: str, *, silent: bool,
+    def _emit(self, out: RunOutcome, label: str, *, silent: bool,
               account: str | None = None) -> None:
         from auto_signin_kit.core.httpclient import last_request
 
