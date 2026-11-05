@@ -17,7 +17,10 @@ build/
 logs/
 
 # 运行时数据(SQLite 台账等可变状态,默认在项目 data/ 下,见 core/adapters/log_dir.py)
-data/
+# 注意用 data/* 而非 data/: 目录级忽略会让 git 不再下钻,子级例外写法失效
+data/*
+# 例外: data/sql/ 是台账 DDL 唯一来源(store_migrations 装载执行),必须进版本库
+!data/sql/
 
 # 本机覆盖配置: 含本机路径/容器名等差异,禁止入库(见 docs/standards/STD-02)
 config/domains/*.local.yaml

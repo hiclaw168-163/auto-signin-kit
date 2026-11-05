@@ -3,10 +3,11 @@
 职责: 表/索引/视图 DDL、老库补列改名、存量行规整(时区抹平/结果词收敛/
 request-response 回填)。store.py 只管读写,这里只管"库长什么样、怎么升级"。
 
-**DDL 唯一来源是仓库根的 ``sql/`` 目录**(按表分文件 + indexes.sql +
-views.sql),本模块只负责装载与按序执行——建表语句不在 Python 里写第二份,
-两边漂移是红线。装载锚点是 :func:`project_root`(editable 安装时即仓库根,
-与 logs/、data/ 的定位同机制)。
+**DDL 唯一来源是仓库根的 ``data/sql/`` 目录**(按表分文件 + indexes.sql +
+views.sql;目录本身被 data/ 的 gitignore 规则排除,但 sql/ 例外进版本库),
+本模块只负责装载与按序执行——建表语句不在 Python 里写第二份,两边漂移是
+红线。装载锚点是 :func:`project_root`(editable 安装时即仓库根,与 logs/、
+data/ 的定位同机制)。
 """
 
 from __future__ import annotations
@@ -24,13 +25,13 @@ _TABLE_SQL_FILES = ("ask_signin_runs.sql", "ask_schedule_changes.sql",
 
 
 def _load_sql(filename: str) -> str:
-    """从仓库根 ``sql/`` 读一份 DDL;定位失败显式报错(不做静默兜底)。"""
+    """从仓库根 ``data/sql/`` 读一份 DDL;定位失败显式报错(不做静默兜底)。"""
     root = project_root()
     if root is None:
         raise AutoSignInKitError(
-            "sql/ 目录定位失败: 非 editable 安装下 project_root 不可得,"
+            "data/sql/ 目录定位失败: 非 editable 安装下 project_root 不可得,"
             "请用 uv tool install --editable 安装")
-    path = root / "sql" / filename
+    path = root / "data" / "sql" / filename
     if not path.is_file():
         raise AutoSignInKitError("DDL 文件缺失: %s" % path)
     return path.read_text(encoding="utf-8")
