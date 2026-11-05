@@ -26,7 +26,7 @@ MIN_LIMIT_MINUTES = {
     "WorkBuddyGrowthPoll": 5,
     "WorkBuddyActiveCheck": 5,
     "QoderDailyCredits": 5,
-    "WebSigninTraeCn": 5,
+    "ClientSigninTraeCn": 5,
     "DoubaoDailyCheckin": 5,
 }
 
@@ -165,15 +165,15 @@ class TestServiceOrchestration:
 
     def test_times_and_limit_come_from_config(self):
         """调度时间由配置决定——改时间改 YAML 即可,不必动代码。"""
-        config = _Config(tasks={"WebSigninTraeCn": _Override(("03:07",), 9)})
+        config = _Config(tasks={"ClientSigninTraeCn": _Override(("03:07",), 9)})
         trae = next(t for t in service.select_tasks(config, None)
-                    if t.name == "WebSigninTraeCn")
+                    if t.name == "ClientSigninTraeCn")
         assert trae.times == ("03:07",)
         assert trae.limit_minutes == 9
 
     def test_unlisted_task_keeps_default_times(self):
         """只改一个任务时,其余任务沿用清单默认值,不必抄整张表。"""
-        config = _Config(tasks={"WebSigninTraeCn": _Override(("03:07",))})
+        config = _Config(tasks={"ClientSigninTraeCn": _Override(("03:07",))})
         picked = service.select_tasks(config, None)
         qoder = next(t for t in picked if t.name == "QoderDailyCredits")
         default = next(t for t in TASKS if t.name == "QoderDailyCredits")
@@ -182,9 +182,9 @@ class TestServiceOrchestration:
 
     def test_enabled_tasks_narrows_selection(self):
         scheduler = FakeScheduler()
-        assert service.run_action("install", _Config(enabled=["WebSigninTraeCn"]),
+        assert service.run_action("install", _Config(enabled=["ClientSigninTraeCn"]),
                                   scheduler=scheduler, probe=_noop_probe) == 0
-        assert scheduler.installed == {"WebSigninTraeCn"}
+        assert scheduler.installed == {"ClientSigninTraeCn"}
 
 
 class TestPresenceGate:
@@ -201,7 +201,7 @@ class TestPresenceGate:
         code = service.run_action("install", _Config(), scheduler=scheduler, probe=probe)
         assert code == 1
         assert scheduler.installed == {
-            "QoderDailyCredits", "WebSigninTraeCn", "DoubaoDailyCheckin"}
+            "QoderDailyCredits", "ClientSigninTraeCn", "DoubaoDailyCheckin"}
         assert not scheduler.calls or all(
             not name.startswith("WorkBuddy") for _, name in scheduler.calls)
 
@@ -239,7 +239,7 @@ class TestPresenceGate:
         assert failed == []
         assert len(ready) == len(TASKS)
         # 顺序 = schedule_meta 注册表顺序(entry-point 名字母序,稳定)
-        assert calls == ["doubao_cn", "qoder", "web_signin", "workbuddy_cn"]
+        assert calls == ["client_signin", "doubao_cn", "qoder", "workbuddy_cn"]
 
     def test_unknown_domain_passes_gate(self):
         """未登记探测的域(未来新域)照常注册,不挡路。"""
@@ -251,14 +251,14 @@ class TestPresenceGate:
         """cli 不注入 probe 时走真实探测;打桩后未就绪的域不注册。"""
         monkeypatch.setattr(service, "get_scheduler", lambda: FakeScheduler())
         monkeypatch.setattr(service, "_default_probe",
-                            lambda domain: "未检测到" if domain == "web_signin" else None)
+                            lambda domain: "未检测到" if domain == "client_signin" else None)
         from auto_signin_kit.domains.schedule.cli import app as cli_app
 
-        result = runner.invoke(cli_app, ["install", "--domain", "web_signin"])
+        result = runner.invoke(cli_app, ["install", "--domain", "client_signin"])
         assert result.exit_code == 1
         payload = json.loads(capsys.readouterr().out or result.output)
         assert payload["result"] == "FAILED"
-        assert payload["failed"][0]["name"] == "WebSigninTraeCn"
+        assert payload["failed"][0]["name"] == "ClientSigninTraeCn"
 
 
 class TestCli:
@@ -276,7 +276,7 @@ class TestCli:
         assert json.loads(result.output)["result"] == "OK"
 
     def test_status_uses_injected_scheduler(self, monkeypatch):
-        installed = {"WebSigninTraeCn"}
+        installed = {"ClientSigninTraeCn"}
         monkeypatch.setattr(service, "get_scheduler", lambda: FakeScheduler(installed))
         result = runner.invoke(app, ["status"])
         assert result.exit_code == 0

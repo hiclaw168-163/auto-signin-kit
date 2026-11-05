@@ -4,6 +4,9 @@ import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import { appsApi } from '../api'
 import type { AppInfo } from '../types'
+// 标签文案只从常量表取(与后端 core/declarative/constants.py 镜像),不再各写各的
+import { BASE_URL_HINT, FIELD_LABELS, KIND_LABELS, KIND_SHORT_LABELS,
+         REGION_LABELS, SOURCE_LABELS } from '../constants'
 
 // 应用管理(SPEC-11): 新建触发脚手架生成+后台重建(服务会短暂离线并自动回来,
 // 前端轮询恢复);编辑收敛为单一入口(弹窗内含基本信息/参数配置两个页签,删除
@@ -25,6 +28,7 @@ const form = reactive({
   base_url: '',
   daily_time: '09:05',
   region: 'cn',
+  credits_refresh_time: '00:00',
 })
 
 async function load() {
@@ -53,13 +57,17 @@ async function toggleApp(a: AppInfo, enabled: boolean) {
 }
 
 function regionLabel(region: string): string {
-  return region === 'intl' ? '国际版' : '国内版'
+  return REGION_LABELS[region] ?? region
 }
 
 function kindTag(kind: string | null): { label: string; type: 'success' | 'info' | 'default' } {
-  if (kind === 'web') return { label: '网页版签', type: 'info' }
-  if (kind === 'client') return { label: '客户端签到', type: 'success' }
+  if (kind === 'web') return { label: KIND_SHORT_LABELS.web, type: 'info' }
+  if (kind === 'client') return { label: KIND_SHORT_LABELS.client, type: 'success' }
   return { label: '未分类', type: 'default' }
+}
+
+function sourceLabel(source: string): string {
+  return SOURCE_LABELS[source] ?? source
 }
 
 // 配置摘要: 标量字段拼成 key=value;复杂字段只报个数,完整编辑走弹窗
@@ -146,8 +154,8 @@ const editName = ref('')
 const editLoading = ref(false)
 const savingEdit = ref(false)
 const editFields = ref<FieldRow[]>([])
-const editProfile = reactive({ app_name: '', app_desc: '' })
-const profileOrig = reactive({ app_name: '', app_desc: '' }) // 打开时快照,判主档是否有改动
+const editProfile = reactive({ app_name: '', app_desc: '', credits_refresh_time: '00:00' })
+const profileOrig = reactive({ app_name: '', app_desc: '', credits_refresh_time: '' }) // 打开时快照,判主档是否有改动
 const editTab = ref('profile')
 
 function isScalar(v: unknown): boolean {
@@ -158,8 +166,10 @@ async function openEdit(app: AppInfo) {
   editName.value = app.name
   editProfile.app_name = app.app_name ?? ''
   editProfile.app_desc = app.app_desc ?? ''
+  editProfile.credits_refresh_time = app.credits_refresh || '00:00'
   profileOrig.app_name = editProfile.app_name
   profileOrig.app_desc = editProfile.app_desc
+  profileOrig.credits_refresh_time = editProfile.credits_refresh_time
   editTab.value = 'profile'
   editLoading.value = true
   editing.value = true
@@ -182,6 +192,7 @@ async function saveEdit() {
   // 主档 diff: 空串 = 显式清空(回落注册表展示名);接口语义: None 是不改
   const profileChanged = editProfile.app_name !== profileOrig.app_name
     || editProfile.app_desc !== profileOrig.app_desc
+    || editProfile.credits_refresh_time !== profileOrig.credits_refresh_time
   const updates: Record<string, unknown> = {}
   for (const f of editFields.value) {
     if (!isScalar(f.original) || f.value === f.original) continue
@@ -198,6 +209,7 @@ async function saveEdit() {
       const out = await appsApi.updateState(editName.value, {
         app_name: editProfile.app_name,
         app_desc: editProfile.app_desc,
+        credits_refresh_time: editProfile.credits_refresh_time,
       })
       message.success(out.message)
     }
@@ -247,21 +259,23 @@ onMounted(load)
     </n-space>
 
     <n-alert type="info" :show-icon="false">
-      新建应用会生成标准域骨架(引用 core 内核)并自动注册生效;生成的签到逻辑是桩,
-      请到 <code>src/auto_signin_kit/domains/&lt;域名&gt;/service.py</code> 填写签到逻辑,
-      并处理对应契约测试的 xfail 标记。调度注册在
+      应用列表以 <code>ask_apps</code> 主档为准(编码=全库关联键)。新建「客户端签到」生成
+      声明 YAML,由 <code>client_signin</code> 引擎执行(填好凭据参数即可跑);
+      「网页版签」生成标准域骨架,签到逻辑到
+      <code>src/auto_signin_kit/domains/&lt;域名&gt;/service.py</code> 填写。调度注册在
       <n-button text type="primary" @click="router.push({ name: 'schedule' })">定时任务</n-button>
       页操作。
     </n-alert>
 
-    <n-table size="small" :single-line="false" style="background: var(--ask-surface)">
-      <thead>
-        <tr>
-          <th>应用编码</th><th>应用名称</th><th>描述</th><th>类别</th><th>版本区</th>
-          <th>就绪探测</th><th>来源</th>
-          <th>每日时间</th><th>配置</th><th>启用</th><th>操作</th>
-        </tr>
-      </thead>
+    <div class="table-wrap">
+      <n-table size="small" :single-line="false" style="background: var(--ask-surface)">
+        <thead>
+          <tr>
+            <th>应用编码</th><th>应用名称</th><th>描述</th><th>类别</th><th>版本区</th>
+            <th>积分刷新</th><th>就绪探测</th><th>来源</th>
+            <th>每日时间</th><th>配置</th><th>启用</th><th>操作</th>
+          </tr>
+        </thead>
       <tbody>
         <tr v-for="a in apps" :key="a.name">
           <td>
@@ -283,13 +297,16 @@ onMounted(load)
             </n-tag>
           </td>
           <td>
+            <n-text style="font-size: 12px">{{ a.credits_refresh || '00:00' }}</n-text>
+          </td>
+          <td>
             <n-tag :type="a.ready === false ? 'warning' : a.ready ? 'success' : 'default'" size="small">
               {{ a.ready === false ? '客户端未就绪' : a.ready ? '就绪' : '未声明' }}
             </n-tag>
           </td>
           <td>
             <n-tag :type="a.source === 'manual' ? 'info' : 'default'" size="small" :bordered="false">
-              {{ a.source === 'manual' ? '手动新建' : '自动同步' }}
+              {{ sourceLabel(a.source) }}
             </n-tag>
           </td>
           <td>
@@ -319,12 +336,13 @@ onMounted(load)
           </td>
         </tr>
         <tr v-if="!apps.length && !loading">
-          <td colspan="11" style="text-align: center">
+          <td colspan="12" style="text-align: center">
             <n-text depth="3">还没有应用,点"新建应用"开始</n-text>
           </td>
         </tr>
       </tbody>
-    </n-table>
+      </n-table>
+    </div>
 
     <n-modal v-model:show="creating" preset="card" title="新建应用" style="max-width: 520px">
       <n-form label-placement="left" label-width="92">
@@ -334,8 +352,8 @@ onMounted(load)
         </n-form-item>
         <n-form-item label="签到类型" required>
           <n-radio-group v-model:value="form.kind">
-            <n-radio value="web">网页版签(HTTP 接口)</n-radio>
-            <n-radio value="client">客户端签到(本地客户端/CDP)</n-radio>
+            <n-radio value="web">{{ KIND_LABELS.web }}</n-radio>
+            <n-radio value="client">{{ KIND_LABELS.client }}</n-radio>
           </n-radio-group>
         </n-form-item>
         <n-form-item label="版本区">
@@ -351,12 +369,20 @@ onMounted(load)
           <n-input v-model:value="form.desc" type="textarea" :rows="2"
                    placeholder="应用用途/备注,同步与列表展示用" />
         </n-form-item>
-        <n-form-item label="接口宿主" required>
+        <n-form-item label="接口地址" required>
           <n-input v-model:value="form.base_url" placeholder="https://..." />
+          <n-text depth="3" style="font-size: 12px; margin-top: 4px">{{ BASE_URL_HINT }}</n-text>
         </n-form-item>
         <n-form-item label="每日时间">
           <n-time-picker v-model:formatted-value="form.daily_time" format="HH:mm"
                          value-format="HH:mm" />
+        </n-form-item>
+        <n-form-item label="积分刷新">
+          <n-time-picker v-model:formatted-value="form.credits_refresh_time" format="HH:mm"
+                         value-format="HH:mm" />
+          <n-text depth="3" style="font-size: 12px; margin-top: 4px">
+            过了这个时刻才算进入"新一天的积分周期"(多数应用 00:00;Qoder 是 10:00)
+          </n-text>
         </n-form-item>
       </n-form>
       <template #footer>
@@ -387,6 +413,13 @@ onMounted(load)
                 <n-input v-model:value="editProfile.app_desc" type="textarea"
                          :rows="2" placeholder="应用用途/备注" />
               </n-form-item>
+              <n-form-item label="积分刷新">
+                <n-time-picker v-model:formatted-value="editProfile.credits_refresh_time"
+                               format="HH:mm" value-format="HH:mm" />
+                <n-text depth="3" style="font-size: 12px; margin-top: 4px">
+                  过了这个时刻才算进入"新一天的积分周期"(多数应用 00:00;Qoder 是 10:00)
+                </n-text>
+              </n-form-item>
             </n-form>
           </n-tab-pane>
           <n-tab-pane name="config" tab="参数配置">
@@ -397,15 +430,19 @@ onMounted(load)
               页用文本编辑。
             </n-alert>
             <n-form label-placement="left" label-width="150">
-              <n-form-item v-for="f in editFields" :key="f.key" :label="f.key">
+              <n-form-item v-for="f in editFields" :key="f.key"
+                           :label="FIELD_LABELS[f.key] || f.key">
                 <n-input-number v-if="typeof f.original === 'number'"
                                 v-model:value="f.value as number | null"
                                 style="width: 100%" />
                 <n-switch v-else-if="typeof f.original === 'boolean'"
                           v-model:value="f.value as boolean" />
-                <n-input v-else-if="isScalar(f.original)"
-                         v-model:value="f.value as string | null"
-                         :placeholder="f.original === null ? '留空 = 未设置(null)' : ''" />
+                <template v-else-if="isScalar(f.original)">
+                  <n-input v-model:value="f.value as string | null"
+                           :placeholder="f.original === null ? '留空 = 未设置(null)' : ''" />
+                  <n-text v-if="f.key === 'base_url'" depth="3"
+                          style="font-size: 12px; margin-top: 4px">{{ BASE_URL_HINT }}</n-text>
+                </template>
                 <n-text v-else depth="3" style="font-size: 12px">
                   复杂字段(列表/映射),请到「配置」页用 YAML 编辑
                 </n-text>
@@ -434,3 +471,13 @@ onMounted(load)
     </n-modal>
   </n-space>
 </template>
+
+<style scoped>
+/* 表格容器: 明确边界 + 横向滚动,列多时不挤压遮挡右侧数据 */
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--ask-border, #efeff5);
+  border-radius: 8px;
+  background: var(--ask-surface, #fff);
+}
+</style>

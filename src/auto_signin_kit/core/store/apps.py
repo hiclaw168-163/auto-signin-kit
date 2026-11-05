@@ -21,8 +21,8 @@ from typing import Any
 from auto_signin_kit.core.errors import AutoSignInKitError
 from auto_signin_kit.core.store.connection import connect
 
-_ROW_COLS = ("id, app_code, app_name, app_desc, kind, region, enabled, source,"
-             " created_at, updated_at")
+_ROW_COLS = ("id, app_code, app_name, app_desc, kind, region,"
+             " credits_refresh_time, enabled, source, created_at, updated_at")
 
 
 def app_state(app_code: str, conn: sqlite3.Connection | None = None) -> dict[str, Any] | None:
@@ -43,7 +43,8 @@ def app_state(app_code: str, conn: sqlite3.Connection | None = None) -> dict[str
 def ensure_app(app_code: str, region: str = "cn",
                conn: sqlite3.Connection | None = None, *,
                app_name: str | None = None, app_desc: str | None = None,
-               kind: str | None = None, source: str = "auto") -> None:
+               kind: str | None = None, source: str = "auto",
+               credits_refresh_time: str | None = None) -> None:
     """惰性补齐主档行;已存在的行若 region 与探测结论不符则就地纠正。
 
     region 来源是同步时的本机探测(如 qoder 按数据目录名判 cn/intl),
@@ -51,11 +52,11 @@ def ensure_app(app_code: str, region: str = "cn",
     下次同步应把行迁到 intl 而不是留着错值(当前契约: 每应用一行;
     真·双版本共存留给未来独立域,见 ask_apps.sql 头注释)。
 
-    ``app_name``/``app_desc``/``kind`` 是注册表/声明的档案默认值(同步
-    传入): **只补空,不覆盖**——空串与 NULL 都算未填(UI 显式清空 = 回落
-    注册表展示名,与"未自定义"同义),用户填过非空值的不动。
-    ``source`` 是行来源(auto=同步扫描 / manual=用户新建),只在建行时
-    落值,已有行的来源不翻转。
+    ``app_name``/``app_desc``/``kind``/``credits_refresh_time`` 是注册表/
+    声明的档案默认值(同步传入): **只补空,不覆盖**——空串与 NULL 都算
+    未填(UI 显式清空 = 回落注册表展示名,与"未自定义"同义),用户填过
+    非空值的不动。``source`` 是行来源(auto=同步扫描 / manual=用户新建),
+    只在建行时落值,已有行的来源不翻转。
 
     语句顺序保证不撞 UNIQUE: 目标 region 行已存在则删除其他变体行;
     否则先把旧行 UPDATE 到目标 region,再 INSERT OR IGNORE 兜底。
@@ -78,12 +79,15 @@ def ensure_app(app_code: str, region: str = "cn",
                     " WHERE app_code = ? AND region <> ?", (region, app_code, region))
                 conn.execute(
                     "INSERT OR IGNORE INTO ask_apps"
-                    " (app_code, region, app_name, app_desc, kind, source)"
-                    " VALUES (?, ?, ?, ?, ?, ?)",
-                    (app_code, region, app_name, app_desc, kind, source))
+                    " (app_code, region, app_name, app_desc, kind,"
+                    " credits_refresh_time, source)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (app_code, region, app_name, app_desc, kind,
+                     credits_refresh_time, source))
             # 档案默认值只补空: 空串/NULL 都算未填,用户填过非空值的不动
             for column, value in (("app_name", app_name), ("app_desc", app_desc),
-                                  ("kind", kind)):
+                                  ("kind", kind),
+                                  ("credits_refresh_time", credits_refresh_time)):
                 if value:
                     conn.execute(
                         # S608 豁免: 列名来自上面的固定字段白名单,无外部输入
@@ -103,11 +107,13 @@ def app_enabled(app_code: str) -> bool:
 
 def set_app_state(app_code: str, *, enabled: bool | None = None,
                   app_name: str | None = None, app_desc: str | None = None,
+                  credits_refresh_time: str | None = None,
                   region: str = "cn") -> dict[str, Any]:
     """更新主档字段(部分更新);行不存在先补齐,返回更新后的整行。
 
-    ``app_name``/``app_desc`` 传 None 表示不改;要清空传空串(显式动作)。
-    ``region`` 定位行(当前每应用一行,固定默认 cn;未来国际版是独立行)。
+    ``app_name``/``app_desc``/``credits_refresh_time`` 传 None 表示不改;
+    要清空传空串(显式动作)。``region`` 定位行(当前每应用一行,固定默认
+    cn;未来国际版是独立行)。
     """
     sets = ["updated_at = strftime('%Y-%m-%d %H:%M:%S','now','localtime')"]
     params: list[Any] = []
@@ -120,6 +126,9 @@ def set_app_state(app_code: str, *, enabled: bool | None = None,
     if app_desc is not None:
         sets.append("app_desc = ?")
         params.append(app_desc)
+    if credits_refresh_time is not None:
+        sets.append("credits_refresh_time = ?")
+        params.append(credits_refresh_time)
     conn: sqlite3.Connection | None = None
     try:
         conn = connect()

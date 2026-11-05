@@ -16,13 +16,13 @@ from pydantic import BaseModel
 from auto_signin_kit.core import store
 from auto_signin_kit.core.adapters.device_info import machine_info
 from auto_signin_kit.core.config import load_domain_config_model
+from auto_signin_kit.core.declarative import apps as decl_apps
+from auto_signin_kit.core.declarative import authkit
+from auto_signin_kit.core.declarative.schema import AppDeclaration
 from auto_signin_kit.core.errors import AutoSignInKitError
 from auto_signin_kit.domains.schedule import service as schedule_service
 from auto_signin_kit.domains.schedule.data import app_label, providers
 from auto_signin_kit.domains.schedule.schema import ScheduleDomainConfig
-from auto_signin_kit.domains.web_signin import apps as web_apps
-from auto_signin_kit.domains.web_signin import authkit
-from auto_signin_kit.domains.web_signin.schema import AppDeclaration
 from auto_signin_kit.scaffolding import service as scaffolding
 from auto_signin_kit.scaffolding.rebuild import spawn_rebuild
 from auto_signin_kit.ui import config_api, daemon
@@ -30,7 +30,7 @@ from auto_signin_kit.ui import config_api, daemon
 router = APIRouter()
 
 #: 引擎/基础设施域是代码形态不是应用,不进应用列表与主档(ask_apps 只存应用)。
-_ENGINE_DOMAINS = ("web_signin", "schedule")
+_ENGINE_DOMAINS = ("web_signin", "client_signin", "schedule")
 
 
 class AppCreate(BaseModel):
@@ -43,6 +43,7 @@ class AppCreate(BaseModel):
     base_url: str
     daily_time: str = "09:05"
     region: str = "cn"  # 版本区: cn / intl,落 ask_apps 主档
+    credits_refresh_time: str = "00:00"  # 积分刷新时刻 HH:MM,落主档+声明
 
 
 def _app_config(name: str) -> dict[str, Any] | None:
@@ -56,11 +57,7 @@ def _app_config(name: str) -> dict[str, Any] | None:
 
 
 def _schedule_times_by_domain() -> dict[str, list[str]]:
-    """应用标签 → 全部任务的触发时间(已套 schedule.yaml 的任务覆盖)。
-
-    分组键是 :func:`app_label` 而非域名: web_signin 引擎的任务按 ``--app``
-    归到应用编码,与台账/主档的关联键保持一致。
-    """
+    """应用标签 → 全部任务的触发时间(已套 schedule.yaml 的任务覆盖);按 --app 归到应用编码。"""
     config = load_domain_config_model("schedule", ScheduleDomainConfig,
                                       merge_local=True)
     out: dict[str, list[str]] = {}
@@ -71,17 +68,12 @@ def _schedule_times_by_domain() -> dict[str, list[str]]:
 
 def _declarative_apps() -> list[AppDeclaration]:
     """全部有效声明;坏文件不进列表(all_apps_safe 内部已给 stderr 警告)。"""
-    return web_apps.all_apps_safe()[0]
+    return decl_apps.all_apps_safe()[0]
 
 
 @router.get("/apps")
 def list_apps() -> dict[str, Any]:
-    """注册表发现的应用清单(编码/类别/显示名/就绪探测/配置字段/调度时间/主档)。
-
-    主档来自 ask_apps(总开关/版本区/显示名覆盖/描述),行惰性补齐: 从未
-    操作过的应用按"启用 + 注册表展示名"呈现,不预先造行。关联键:
-    应用的 app_code = 台账各表的 domain 列值。
-    """
+    """注册表发现的应用清单;档案列以 ask_apps 主档为准(关联键 app_code = 台账 domain 列)。"""
     times_by_domain = _schedule_times_by_domain()
     apps = []
     for name, meta in providers():
@@ -106,6 +98,9 @@ def list_apps() -> dict[str, Any]:
             "times": times_by_domain.get(name, []),
             "enabled": bool((state or {}).get("enabled", 1)),
             "region": (state or {}).get("region") or "cn",
+            "credits_refresh": ((state or {}).get("credits_refresh_time")
+                                or getattr(meta, "CREDITS_REFRESH_TIME", None)
+                                or "00:00"),
             "source": (state or {}).get("source") or "auto",
             "declarative": False,
         })
@@ -123,10 +118,12 @@ def list_apps() -> dict[str, Any]:
             "desc": (state or {}).get("app_desc") or decl.desc or None,
             "app_desc": (state or {}).get("app_desc"),
             "ready": ready,
-            "config": web_apps.raw_declaration(decl.app_code),
+            "config": decl_apps.raw_declaration(decl.app_code),
             "times": times_by_domain.get(decl.app_code, []),
             "enabled": bool((state or {}).get("enabled", 1)),
             "region": (state or {}).get("region") or decl.region,
+            "credits_refresh": ((state or {}).get("credits_refresh_time")
+                                or decl.credits_refresh_time),
             "source": (state or {}).get("source") or "auto",
             "declarative": True,
         })
@@ -146,7 +143,7 @@ def _rebuild_and_exit() -> None:
 
 
 def _create_client_declaration(body: AppCreate) -> None:
-    """客户端签到新建 = 写一份声明 YAML,走 web_signin 引擎,零代码桩。
+    """客户端签到新建 = 写一份声明 YAML,走 client_signin 引擎,零代码桩。
 
     生成的 YAML 是桩(auth 的目录/cookie 名留空,claim 路径占位): 引擎
     加载合法,就绪探测如实为 False,运行时显式报"请编辑声明"——不做
@@ -161,31 +158,36 @@ def _create_client_declaration(body: AppCreate) -> None:
         "kind": "client",
         "desc": body.desc or "",
         "base_url": body.base_url,
+        "credits_refresh_time": body.credits_refresh_time,
         "auth": {"kind": "chromium_cookies", "files": [], "cookie_names": []},
         "claim": {"method": "POST", "path": "/"},
         "schedule": {"times": [body.daily_time]},
     }
     try:
-        web_apps.save_declaration(body.name, declaration)
+        decl_apps.save_declaration(body.name, declaration)
     except ConfigError as exc:
         raise HTTPException(422, str(exc)) from exc
 
 
 def _delete_declaration(app_code: str) -> None:
     """删除一份声明 YAML(新建失败回滚用;不存在不动)。"""
-    (web_apps.apps_dir() / f"{app_code}.yaml").unlink(missing_ok=True)
+    (decl_apps.apps_dir() / f"{app_code}.yaml").unlink(missing_ok=True)
 
 
 @router.post("/apps")
 def create_app(body: AppCreate) -> dict[str, Any]:
-    """生成域骨架(网页版签)或声明 YAML(客户端签到)并后台重建生效;
-    响应返回后本服务会短暂离线。
-    """
+    """生成域骨架(网页版签)或声明 YAML(客户端签到)并后台重建生效;响应返回后服务会短暂离线。"""
+    from auto_signin_kit.core.declarative.constants import valid_refresh_time
+
+    if not valid_refresh_time(body.credits_refresh_time):
+        raise HTTPException(422, "积分刷新时间必须是 HH:MM(00:00~23:59): %r"
+                            % body.credits_refresh_time)
     if body.kind == "client":
         _create_client_declaration(body)
         try:
             store.ensure_app(body.name, body.region, app_name=body.display,
-                             app_desc=body.desc, kind=body.kind, source="manual")
+                             app_desc=body.desc, kind=body.kind, source="manual",
+                             credits_refresh_time=body.credits_refresh_time)
             _rebuild_and_exit()
         except Exception as exc:
             _delete_declaration(body.name)
@@ -205,7 +207,8 @@ def create_app(body: AppCreate) -> dict[str, Any]:
     try:
         store.ensure_app(body.name, body.region, app_name=body.display,
                          app_desc=body.desc, kind=body.kind,
-                         source="manual")  # 主档行随建档落库
+                         source="manual",  # 主档行随建档落库
+                         credits_refresh_time=body.credits_refresh_time)
         _rebuild_and_exit()
     except Exception as exc:
         scaffolding.rollback(manifest)
@@ -243,6 +246,7 @@ class AppStateUpdate(BaseModel):
     enabled: bool | None = None
     app_name: str | None = None
     app_desc: str | None = None
+    credits_refresh_time: str | None = None
 
 
 def _is_known_app(name: str) -> bool:
@@ -265,8 +269,15 @@ def update_app_state(name: str, body: AppStateUpdate) -> dict[str, Any]:
     """
     if not _is_known_app(name):
         raise HTTPException(404, f"未知域: {name}")
+    from auto_signin_kit.core.declarative.constants import valid_refresh_time
+
+    if (body.credits_refresh_time is not None
+            and not valid_refresh_time(body.credits_refresh_time)):
+        raise HTTPException(422, "积分刷新时间必须是 HH:MM 形状: %r"
+                            % body.credits_refresh_time)
     row = store.set_app_state(name, enabled=body.enabled,
-                              app_name=body.app_name, app_desc=body.app_desc)
+                              app_name=body.app_name, app_desc=body.app_desc,
+                              credits_refresh_time=body.credits_refresh_time)
     return {"result": "OK", "app": row,
             "message": "已保存: 下次调度触发时生效(手动执行不受影响)"}
 
@@ -281,7 +292,7 @@ class AppUpdate(BaseModel):
 def get_app_config(name: str) -> dict[str, Any]:
     """应用配置的字段视图(表单化编辑取数;纯读取不落盘)。"""
     if _is_declarative(name):
-        return {"domain": name, "fields": web_apps.raw_declaration(name)}
+        return {"domain": name, "fields": decl_apps.raw_declaration(name)}
     if name not in config_api.known_domains():
         raise HTTPException(404, f"未知域: {name}")
     return {"domain": name, "fields": config_api.load_data(name)}
@@ -303,13 +314,13 @@ def update_app(name: str, body: AppUpdate) -> dict[str, Any]:
     if _is_declarative(name):
         from auto_signin_kit.core.errors import ConfigError
 
-        merged = config_api.deep_merge(web_apps.raw_declaration(name), body.updates)
+        merged = config_api.deep_merge(decl_apps.raw_declaration(name), body.updates)
         try:
-            path = web_apps.save_declaration(name, merged)
+            path = decl_apps.save_declaration(name, merged)
         except ConfigError as exc:
             raise HTTPException(422, str(exc)) from exc
         return {"ok": True, "path": str(path),
-                "message": "已保存: 下次运行 web_signin 命令时生效(YAML 注释已被重写移除)"}
+                "message": "已保存: 下次运行所属引擎命令时生效(YAML 注释已被重写移除)"}
     data = config_api.load_data(name)
     merged = config_api.deep_merge(data, body.updates)
     config_api.validate_data(name, merged)
@@ -322,14 +333,9 @@ def update_app(name: str, body: AppUpdate) -> dict[str, Any]:
 def sync_apps() -> dict[str, Any]:
     """应用同步(新用户初始化第一步): 探测本机已装应用 → ask_apps 建主档。
 
-    逐注册表域执行: ``ready()`` 探测安装/可用;``client_info()`` 采集档案
-    (可声明 ``region`` 键,如 qoder 按数据目录名区分 cn/intl)。已安装的
-    ``ensure_app`` 建主档行(含 region)→ ``ensure_account`` 补 default 户 →
-    档案落 ask_accounts(合并 machine_info);未安装的跳过、不建档。
-    单域失败如实进 failed,不中断其他域。即时生效,无重建。
-
-    声明式应用(config/apps/*.yaml)走同一套主档: 就绪 = 登录态探测
-    (authkit.ready,不解锁凭据),region 取声明值,无 client_info 采集。
+    逐注册表域 ``ready()`` 探测 + ``client_info()`` 采集档案,``ensure_app``
+    建主档行 → ``ensure_account`` 补 default 户;未安装跳过,单域失败如实进
+    failed 不中断。声明式应用走同一套主档(就绪 = authkit 登录态探测)。
     """
     synced: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
@@ -337,13 +343,11 @@ def sync_apps() -> dict[str, Any]:
 
     def ensure(self_name: str, region: str, info: dict[str, Any] | None,
                *, want_account: bool, app_name: str | None = None,
-               app_desc: str | None = None, kind: str | None = None) -> None:
-        """主档 + default 户 + 档案;声明式应用无 client_info 采集仍建账户。
-
-        app_name/app_desc/kind 是档案默认值: ensure_app 只补空,用户覆盖过的不动。
-        """
+               app_desc: str | None = None, kind: str | None = None,
+               credits_refresh: str | None = None) -> None:
+        """主档 + default 户 + 档案;app_name/app_desc/kind 只补空(用户覆盖过的不动)。"""
         store.ensure_app(self_name, region, app_name=app_name, app_desc=app_desc,
-                         kind=kind)
+                         kind=kind, credits_refresh_time=credits_refresh)
         if want_account:
             store.ensure_account(self_name, "default")
         if info:
@@ -375,7 +379,8 @@ def sync_apps() -> dict[str, Any]:
             ensure(name, region, info, want_account=bool(info),
                    app_name=getattr(meta, "DISPLAY_NAME", None),
                    app_desc=getattr(meta, "DESCRIPTION", None),
-                   kind=getattr(meta, "KIND", None))
+                   kind=getattr(meta, "KIND", None),
+                   credits_refresh=getattr(meta, "CREDITS_REFRESH_TIME", None))
         except AutoSignInKitError as exc:
             failed.append({"domain": name, "error": str(exc)})
             continue
@@ -392,7 +397,7 @@ def sync_apps() -> dict[str, Any]:
         try:
             ensure(decl.app_code, decl.region, None, want_account=True,
                    app_name=decl.display, app_desc=decl.desc or None,
-                   kind=decl.kind)
+                   kind=decl.kind, credits_refresh=decl.credits_refresh_time)
         except AutoSignInKitError as exc:
             failed.append({"domain": decl.app_code, "error": str(exc)})
             continue

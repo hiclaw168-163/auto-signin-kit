@@ -12,8 +12,11 @@
 --     域名加后缀(如 qoder_intl),本表各占一行
 --   * 域的存在性跟代码走(注册表 + 域 YAML),本表只承载管理态与档案,
 --     行由调用方惰性补齐;列表展示的档案字段(app_name/app_desc/kind/
---     region/source)全部以本表为准,注册表/声明只是补空的默认值来源
--- 列序习惯: 主键 → 编码 → 展示档案 → 类别与版本区 → 开关 → 来源 → 审计。
+--     region/credits_refresh_time/source)全部以本表为准,注册表/声明只是
+--     补空的默认值来源
+--   * credits_refresh_time 积分刷新时刻: 过了该时刻才算进入"新一天"
+--     (done_today 调度跳过、"今日已签"提示按它算窗口起点)
+-- 列序习惯: 主键 → 编码 → 展示档案 → 类别与版本区 → 积分刷新 → 开关 → 来源 → 审计。
 CREATE TABLE IF NOT EXISTS ask_apps (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     app_code    TEXT    NOT NULL,  -- 应用编码: 注册表域名,全库关联键(国内版带 _cn 后缀)
@@ -21,6 +24,7 @@ CREATE TABLE IF NOT EXISTS ask_apps (
     app_desc    TEXT,              -- 应用描述/备注(NULL/空 = 用注册表 DESCRIPTION/声明 desc)
     kind        TEXT,              -- 类别: web(网页版签) / client(客户端签到)(NULL = 未登记)
     region      TEXT    NOT NULL DEFAULT 'cn',  -- 版本区: cn / intl(国内版/国际版)
+    credits_refresh_time TEXT,     -- 积分刷新时刻 HH:MM(NULL/空 = 00:00;Qoder 是 10:00,调度/提示按它判天)
     enabled     INTEGER NOT NULL DEFAULT 1,  -- 应用总开关(压在账户级 enabled 之上)
     source      TEXT    NOT NULL DEFAULT 'auto',  -- 行来源: auto(同步扫描) / manual(用户新建)
     -- 统一审计字段(所有表必备): 行惰性补齐创建,更新时由写层维护

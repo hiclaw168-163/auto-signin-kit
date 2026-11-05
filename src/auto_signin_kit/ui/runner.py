@@ -95,16 +95,24 @@ class _Runner:
         self._jobs: OrderedDict[str, Job] = OrderedDict()
         self._lock = threading.Lock()
 
-    def submit(self, domain: str, action: str, account: str | None = None) -> Job:
+    def submit(self, domain: str, action: str, account: str | None = None,
+               engine: str | None = None) -> Job:
         """登记并异步启动一个 job;同域同动作同账户在跑则抛 :class:`DomainBusyError`。
 
         ``account``(SPEC-12 P3): 指定账户手动触发,子进程带 ``--account``;
         不同账户可以并发(各自独立凭据与台账行),同账户同动作才互斥。
+        ``engine``: 声明式应用没有自己的域命令,经引擎 CLI 运行
+        (``client_signin run --app <code>`` / ``web_signin ...``),动作
+        ``auto`` 映射为引擎的 ``run`` 命令;常规域传 None。
         """
         timeout = ACTIONS.get(action)
         if timeout is None:
             raise ValueError("不允许的动作: %s(可用: %s)" % (action, "、".join(ACTIONS)))
-        argv = ("auto-signin-kit", domain, action)
+        if engine:
+            argv = ("auto-signin-kit", engine, "run" if action == "auto" else action,
+                    "--app", domain)
+        else:
+            argv = ("auto-signin-kit", domain, action)
         if account:
             argv = (*argv, "--account", account)
         with self._lock:

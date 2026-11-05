@@ -62,9 +62,10 @@ _RUNS_COLUMN_ORDER = ("id", "domain", "account_name", "executed_at", "operation"
                       "request", "response", "detail", "created_at",
                       "updated_at")
 
-#: ask_apps 的目标列序(主键 → 编码 → 展示档案 → 类别与版本区 → 开关 → 来源 → 审计)。
+#: ask_apps 的目标列序(主键 → 编码 → 展示档案 → 类别与版本区 → 刷新 → 开关 → 来源 → 审计)。
 _APP_COLUMN_ORDER = ("id", "app_code", "app_name", "app_desc", "kind",
-                     "region", "enabled", "source", "created_at", "updated_at")
+                     "region", "credits_refresh_time", "enabled", "source",
+                     "created_at", "updated_at")
 
 #: 国内版 app_code 统一 _cn 后缀(2026-11-05 命名规约,见 ask_apps.sql 头注释):
 #: 全库关联键三表一起迁移;国际版应用保持裸名(qoder)。
@@ -273,6 +274,20 @@ def _migrate(conn: sqlite3.Connection) -> None:
         with conn:
             conn.execute(
                 "DELETE FROM ask_apps WHERE app_code IN ('web_signin', 'schedule')")
+    # ask_apps.credits_refresh_time: 积分刷新时刻(HH:MM)——个别应用(Qoder)
+    # 过 10:00 才能领当日积分,调度跳过与"今日已签"提示按它判天,不能一律
+    # 按自然日 0 点。存量行一次性回填(qoder=10:00,其余=默认 00:00);
+    # 同时按凭据来源口径把 trae_cn 的类别规整为 client(2026-11-06 起分类
+    # 标准 = 凭据来源,trae 凭据来自桌面端本地存储)。
+    if apps_columns and "credits_refresh_time" not in apps_columns:
+        with conn:
+            conn.execute("ALTER TABLE ask_apps ADD COLUMN credits_refresh_time TEXT")
+            conn.execute(
+                "UPDATE ask_apps SET credits_refresh_time = CASE"
+                " WHEN app_code = 'qoder' THEN '10:00' ELSE '00:00' END"
+                " WHERE credits_refresh_time IS NULL")
+            conn.execute(
+                "UPDATE ask_apps SET kind = 'client' WHERE app_code = 'trae_cn'")
     # 列序重建(必须在补列之后: 按名列拷贝要求旧表已有全部目标列)
     _reorder_table(conn, "ask_apps", _APP_COLUMN_ORDER, _load_sql("ask_apps.sql"))
     _reorder_table(conn, "ask_accounts", _ACCOUNT_COLUMN_ORDER, _ASK_ACCOUNTS_DDL)

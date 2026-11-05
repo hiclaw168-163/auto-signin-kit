@@ -1,9 +1,13 @@
-# Trae CN 声明式应用(web_signin 引擎);规范见 docs/standards/STD-07-声明式应用接入.md
-# 调用协议与凭据解锁原 domains/trae 域取证结论(NOTE-03): claim 必须带
-# x-device-id 等设备头,缺头回业务码 9004;9074 是活动期限流,退避重试。
+# Trae CN 声明式应用(client_signin 引擎);规范见 docs/standards/STD-07-声明式应用接入.md
+# 类别按凭据来源口径: 凭据从 Trae 桌面端本地存储解锁(ss_aes),归客户端签到;
+# 签到动作是 HTTP 接口。调用协议与凭据解锁原 domains/trae 域取证结论(NOTE-03):
+# claim 必须带 x-device-id 等设备头,缺头回业务码 9004;9074 是活动期限流,退避重试。
 app_code: trae_cn
 region: cn
 display: Trae CN
+desc: Trae 国内版每日签到领积分(桌面端令牌 + HTTP 接口,声明式接入)
+kind: client                # 客户端签到(凭据来自本地客户端)
+credits_refresh_time: "00:00"
 base_url: https://api.trae.cn
 budget_seconds: 240
 

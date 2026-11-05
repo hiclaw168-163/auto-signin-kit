@@ -154,8 +154,12 @@ class TestLegacyMigration:
             assert row["region"] == "cn"           # 补列回填
             assert row["enabled"] == 0             # 开关值原样保留
             assert row["source"] == "auto"         # 补列回填(来源列引入前的行)
-            assert row["kind"] is None             # 补列(NULL = 未登记)
+            # kind: 补列时 NULL;trae_cn 是存量应用,类别迁移时按凭据来源
+            # 口径一次性规整为 client(凭据来自 Trae 桌面端本地存储)
+            assert row["kind"] == "client"
+            assert row["credits_refresh_time"] == "00:00"  # 积分刷新: 一次性回填默认值
             cols = [r["name"] for r in
                     conn.execute("PRAGMA table_info(ask_apps)")]
         assert cols == ["id", "app_code", "app_name", "app_desc", "kind",
-                        "region", "enabled", "source", "created_at", "updated_at"]
+                        "region", "credits_refresh_time", "enabled", "source",
+                        "created_at", "updated_at"]

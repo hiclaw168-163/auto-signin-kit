@@ -557,3 +557,61 @@ class TestCreditsStats:
             "total_credits": 3100}, ensure_ascii=False))
         stats = store.credits_stats(days=7)
         assert stats["balances"]["trae"]["total_credits"] == 3100  # 取最新
+
+
+class TestCreditsRefreshWindow:
+    """积分刷新窗口(signin_day_start): 业务判天按应用刷新时刻,不再一律自然日。
+
+    Qoder 过 10:00 才能领当日积分: 今天 0~10 点的成功行仍属于昨天那个
+    积分周期,"今天已签/调度跳过"必须从昨天 10:00 起算;默认 00:00 = 自然日。
+    """
+
+    def _freeze_now(self, monkeypatch, *args: int) -> datetime:
+        """把 store.runs 的 datetime.now() 钉死(积分窗口跨天逻辑可测)。"""
+        from auto_signin_kit.core.store import runs as runs_mod
+
+        fixed = datetime(*args)
+
+        class _FixedDatetime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return fixed if tz is None else fixed.astimezone(tz)
+
+        monkeypatch.setattr(runs_mod, "datetime", _FixedDatetime)
+        return fixed
+
+    def test_day_start_defaults_to_midnight(self):
+        assert store.signin_day_start("doubao_cn") == \
+            datetime.now().strftime("%Y-%m-%d 00:00:00")  # 主档无行 → 自然日
+
+    def test_day_start_before_refresh_falls_back_to_yesterday(self, monkeypatch):
+        store.ensure_app("qoder", "cn", credits_refresh_time="10:00")
+        self._freeze_now(monkeypatch, 2026, 11, 6, 9, 0)   # 今天 09:00(未到刷新时刻)
+        assert store.signin_day_start("qoder") == "2026-11-05 10:00:00"
+        self._freeze_now(monkeypatch, 2026, 11, 6, 11, 0)  # 过了刷新时刻
+        assert store.signin_day_start("qoder") == "2026-11-06 10:00:00"
+
+    def test_bad_shape_falls_back_to_midnight(self):
+        store.ensure_app("weird_app", "cn", credits_refresh_time="oops")
+        assert store.signin_day_start("weird_app") == \
+            datetime.now().strftime("%Y-%m-%d 00:00:00")
+
+    def test_done_today_uses_refresh_window(self, monkeypatch):
+        store.ensure_app("qoder", "cn", credits_refresh_time="10:00")
+        store.record_payload(json.dumps(_record(
+            domain="qoder", ts="2026-11-05T15:00:00+08:00"), ensure_ascii=False))
+        self._freeze_now(monkeypatch, 2026, 11, 6, 9, 0)
+        assert store.done_today("qoder") is True    # 昨天 15:00 ∈ [昨天10:00, 今天10:00)
+        self._freeze_now(monkeypatch, 2026, 11, 6, 11, 0)
+        assert store.done_today("qoder") is False   # 过了今天 10:00: 昨天行过期
+
+    def test_signed_today_by_domain_uses_refresh_window(self, monkeypatch):
+        store.ensure_app("qoder", "cn", credits_refresh_time="10:00")
+        store.ensure_app("doubao_cn", "cn", credits_refresh_time="00:00")
+        for domain in ("qoder", "doubao_cn"):
+            store.record_payload(json.dumps(_record(
+                domain=domain, ts="2026-11-05T15:00:00+08:00"), ensure_ascii=False))
+        self._freeze_now(monkeypatch, 2026, 11, 6, 9, 0)
+        signed = store.signed_today_by_domain()
+        assert "qoder" in signed        # 同一时刻的行,窗口不同结论不同
+        assert "doubao_cn" not in signed

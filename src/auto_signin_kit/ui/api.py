@@ -225,11 +225,22 @@ def run_task(domain: str, action: str = Query("auto"),
     """手动触发一个动作(auto/doctor),立即返回 job;前端轮询 /jobs/{id}。
 
     ``account``(SPEC-12 P3): 指定账户触发,子进程带 ``--account``。
+    声明式应用没有自己的域命令,按其 kind 路由到所属引擎
+    (client_signin / web_signin)经 ``run --app`` 运行。
     """
-    if domain not in _known_domains():
+    from auto_signin_kit.ui.apps_api import _is_declarative
+
+    engine: str | None = None
+    if _is_declarative(domain):
+        from auto_signin_kit.core.declarative import apps as decl_apps
+
+        decl = next(d for d in decl_apps.all_apps_safe()[0]
+                    if d.app_code == domain)
+        engine = ("client_signin" if decl.kind == "client" else "web_signin")
+    elif domain not in _known_domains():
         raise HTTPException(404, "未知域: %s" % domain)
     try:
-        job = runner.runner.submit(domain, action, account=account)
+        job = runner.runner.submit(domain, action, account=account, engine=engine)
     except runner.DomainBusyError as exc:
         raise HTTPException(409, str(exc)) from exc
     except ValueError as exc:

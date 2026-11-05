@@ -8,10 +8,10 @@ from datetime import datetime, timedelta
 import pytest
 from pydantic import ValidationError
 
+from auto_signin_kit.core.declarative import apps as apps_m
+from auto_signin_kit.core.declarative import authkit
+from auto_signin_kit.core.declarative.schema import AppDeclaration
 from auto_signin_kit.core.errors import ConfigError, ConfigMissingError
-from auto_signin_kit.domains.web_signin import apps as apps_m
-from auto_signin_kit.domains.web_signin import authkit
-from auto_signin_kit.domains.web_signin.schema import AppDeclaration
 
 #: 最小合法声明(plain 认证);测试按需覆盖字段。
 BASE_DECL = {
@@ -204,12 +204,27 @@ class TestKindAndDesc:
         assert make_decl(desc="客户端每日签到").desc == "客户端每日签到"
 
 
+class TestCreditsRefreshTime:
+    """积分刷新时刻(HH:MM): 判"新一天积分周期"的每应用配置(Qoder 是 10:00)。"""
+
+    def test_default_is_midnight(self):
+        assert make_decl().credits_refresh_time == "00:00"
+
+    def test_valid_shape_accepted(self):
+        assert make_decl(credits_refresh_time="10:00").credits_refresh_time == "10:00"
+
+    def test_bad_shape_rejected(self):
+        for bad in ("25:00", "1000", "9:00", "abc", "10:60"):
+            with pytest.raises(ValidationError):
+                make_decl(credits_refresh_time=bad)
+
+
 #%% ---------------- chromium_cookies 适配器 ----------------
 
 import hashlib  # noqa: E402
 import sqlite3  # noqa: E402
 
-from auto_signin_kit.domains.web_signin import chromium  # noqa: E402
+from auto_signin_kit.core.declarative import chromium_cookies as chromium  # noqa: E402
 
 #: 与 _mac_key 同参数派生的测试密钥(monkeypatch 掉 Keychain 读取)。
 _CHROMIUM_KEY = hashlib.pbkdf2_hmac("sha1", b"test-pass", b"saltysalt", 1003,

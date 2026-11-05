@@ -13,11 +13,12 @@ JSON 里(SQLite 内置 json_extract 可查),存派生数据只会引入两份真
 from __future__ import annotations
 
 import json
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from auto_signin_kit.core.dto import DailyCheckinRow, SigninRunRow
 from auto_signin_kit.core.report import RESULT_OK, normalize_result
+from auto_signin_kit.core.store.apps import app_state
 from auto_signin_kit.core.store.connection import connect
 
 
@@ -38,6 +39,32 @@ def signin_domains() -> tuple[str, ...]:
 
 #: 算"当天已成功签到"的结果词(签到语义的成功;ACTIVE/OK 是相邻语义,不算)。
 SIGNIN_DONE_RESULTS = ("CLAIMED", "ALREADY")
+
+
+def signin_day_start(domain: str, *, now: datetime | None = None) -> str:
+    """本域当前积分周期("签到日")的起点,本地无时区 'YYYY-MM-DD HH:MM:SS'。
+
+    以 ``ask_apps.credits_refresh_time`` 为界(见 ask_apps.sql): 默认
+    00:00 = 自然日 0 点;Qoder 这类过 10:00 才刷新积分的应用,今天
+    0~10 点的运行仍属于昨天那个积分周期,"今天已签"必须从**昨天
+    10:00** 起算——调度跳过(done_today)与总览"今日已签"按同一窗口。
+    主档无行/未登记/形状不对回落 00:00(不静默猜别的值)。
+
+    注意: ``ask_daily_checkins`` 视图与台账页仍按自然日展示(给"人"看的
+    日历口径),只有调度跳过/今日已签这类**业务判断**用积分周期窗口。
+    """
+    state = app_state(domain)
+    hhmm = str((state or {}).get("credits_refresh_time") or "00:00")
+    try:
+        hour, minute = (int(part) for part in hhmm.split(":", 1))
+        hour, minute = min(hour, 23), min(minute, 59)
+    except ValueError:
+        hour = minute = 0
+    now = now or datetime.now()
+    start = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if start > now:  # 还没到今天的刷新时刻: 当前周期从昨天那个时刻起算
+        start -= timedelta(days=1)
+    return start.strftime("%Y-%m-%d %H:%M:%S")
 
 
 def daily_status(days: int = 7, *, domain: str | None = None,
@@ -245,21 +272,21 @@ def events(
 
 
 def done_today(domain: str, account: str = "default") -> bool:
-    """该域该账户今天(source=run)是否已有成功签到行;调度兜底跳过判断用。
+    """该域该账户当前积分周期内是否已有成功签到行;调度兜底跳过判断用。
 
     账户维度(SPEC-12): 按 (domain, account) 判,A 账户已签不影响 B 账户执行。
-    时间口径与 ``ask_daily_checkins`` 视图一致: ``executed_at`` 存带时区的
-    ISO 时间戳,左侧 ``date(executed_at, 'localtime')`` 取其**本地**日期
-    (裸 date() 会转 UTC,凌晨 0~8 点的运行会被算到昨天);右侧
-    ``date('now', 'localtime')`` 得到今天本地日期。
+    "今天"按积分周期窗口算(:func:`signin_day_start`,Qoder 这类 10:00 刷新
+    的应用从昨天 10:00 起算),时间窗起点与 ``executed_at`` 同为本地无时区
+    'YYYY-MM-DD HH:MM:SS' 形状,字符串序即时间序。
     """
     conn = connect()
     try:
         row = conn.execute(
             "SELECT 1 FROM ask_signin_runs WHERE domain = ? AND account_name = ?"
             " AND source = 'run' AND result IN (?, ?)"
-            " AND date(executed_at) = date('now', 'localtime')"
-            " LIMIT 1", (domain, account, *SIGNIN_DONE_RESULTS)).fetchone()
+            " AND executed_at >= ?"
+            " LIMIT 1", (domain, account, *SIGNIN_DONE_RESULTS,
+                         signin_day_start(domain))).fetchone()
     finally:
         conn.close()
     return row is not None
@@ -268,7 +295,8 @@ def done_today(domain: str, account: str = "default") -> bool:
 def signed_today_by_domain() -> dict[str, SigninRunRow]:
     """每域当天(source=run)最新一行签到成功行(CLAIMED/ALREADY)。
 
-    总览"今日已签"的判定与展示用,与 :func:`done_today`(调度跳过)同口径;
+    总览"今日已签"的判定与展示用,与 :func:`done_today`(调度跳过)同口径
+    (积分周期窗口,见 :func:`signin_day_start`);
     取行而不止判存在,是域卡片要显示成功行的 report。status/doctor 等
     只读探测同样落台账(result=OK/UNKNOWN),"当天最后一行"会被它们占据——
     不能拿 ``ask_daily_checkins`` 视图最后一行当签到状态(2026-11-05 实测
@@ -277,18 +305,24 @@ def signed_today_by_domain() -> dict[str, SigninRunRow]:
     """
     conn = connect()
     try:
+        # 近 48h 粗筛再按各域积分周期窗口精筛(SQLite 没法逐域参数化窗口)
+        floor = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d %H:%M:%S")
         rows = conn.execute(
             "SELECT domain, account_name, result, needs_attention, report, executed_at"
             " FROM ask_signin_runs"
             " WHERE source = 'run' AND result IN (?, ?)"
-            "   AND date(executed_at) = date('now', 'localtime')"
-            " ORDER BY executed_at DESC, id DESC", SIGNIN_DONE_RESULTS).fetchall()
+            "   AND executed_at >= ?"
+            " ORDER BY executed_at DESC, id DESC",
+            (*SIGNIN_DONE_RESULTS, floor)).fetchall()
     finally:
         conn.close()
     latest: dict[str, dict[str, Any]] = {}
+    starts: dict[str, str] = {}
     for row in rows:
-        if row["domain"] not in latest:
-            latest[row["domain"]] = dict(row)
+        domain = row["domain"]
+        start = starts.setdefault(domain, signin_day_start(domain))
+        if domain not in latest and row["executed_at"] >= start:
+            latest[domain] = dict(row)
     return latest
 
 
@@ -298,15 +332,16 @@ def failure_count_today(domain: str, account: str = "default",
 
     降噪用(见 ``core.report`` 的 repeat_today): 调用方在**本条落库前**查询,
     返回值不含本条;>0 说明同样的失败今天已经报过,重复置 needs_attention
-    只是刷屏。失败行 = needs_attention=1 的 run 行。
+    只是刷屏。失败行 = needs_attention=1 的 run 行;窗口同签到业务口径
+    (:func:`signin_day_start`),不是自然日。
     """
     conn = connect()
     try:
         sql = ("SELECT COUNT(*) FROM ask_signin_runs"
                " WHERE domain = ? AND account_name = ? AND source = 'run'"
                " AND needs_attention = 1"
-               " AND date(executed_at) = date('now', 'localtime')")
-        params: list[Any] = [domain, account]
+               " AND executed_at >= ?")
+        params: list[Any] = [domain, account, signin_day_start(domain)]
         if result:
             sql += " AND result = ?"
             params.append(normalize_result(result))

@@ -43,14 +43,23 @@ known_domains = _known_domains
 def _schema_cls(domain: str) -> type[DomainConfig]:
     """域名 → 该域的 pydantic 配置类;无 schema 的域不可经 UI 编辑。
 
+    扩展应用(doubao_cn/workbuddy_cn/qoder)物理上挂在 client_signin 引擎
+    的 ``apps/`` 子包下,配置类位置分两段尝试: 先顶层域,再引擎扩展包。
+
     只认**本模块定义**的配置类(排除 import 进来的基类如 BudgetedConfig,
     它在 vars() 里先于具体类出现,按顺序取会误命中导致全域字段被当 extra
     拒绝——2026-11-03 实测踩坑);同类多个时取定义最靠后的(最具体)。
     """
-    try:
-        module = importlib.import_module(f"auto_signin_kit.domains.{domain}.schema")
-    except ModuleNotFoundError as exc:
-        raise HTTPException(404, f"未知域: {domain}") from exc
+    module = None
+    for path in (f"auto_signin_kit.domains.{domain}.schema",
+                 f"auto_signin_kit.domains.client_signin.apps.{domain}.schema"):
+        try:
+            module = importlib.import_module(path)
+            break
+        except ModuleNotFoundError:
+            continue
+    if module is None:
+        raise HTTPException(404, f"未知域: {domain}")
     defined = [obj for obj in vars(module).values()
                if isinstance(obj, type) and issubclass(obj, DomainConfig)
                and obj is not DomainConfig and obj.__module__ == module.__name__]

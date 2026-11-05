@@ -12,11 +12,12 @@ import json
 import pytest
 import yaml
 
+from auto_signin_kit.core.declarative import apps as apps_m
+from auto_signin_kit.core.declarative import executor
+from auto_signin_kit.core.declarative.authkit import Credential
+from auto_signin_kit.core.declarative.executor import Executor
 from auto_signin_kit.core.httpclient import Budget
-from auto_signin_kit.domains.web_signin import apps as apps_m
-from auto_signin_kit.domains.web_signin import executor, service
-from auto_signin_kit.domains.web_signin.authkit import Credential
-from auto_signin_kit.domains.web_signin.executor import Executor
+from auto_signin_kit.domains.web_signin import service
 from auto_signin_kit.domains.web_signin.schedule_meta import _shift_time, _specs
 from tests.domains.web_signin.test_schema_auth import BASE_DECL, make_decl
 

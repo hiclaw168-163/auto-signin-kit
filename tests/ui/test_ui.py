@@ -212,7 +212,8 @@ class TestRunRoutes:
         assert client.post("/api/run/doubao_cn", params={"action": "install"}).status_code == 422
 
     def test_run_busy_409(self, client, monkeypatch):
-        def busy(domain: str, action: str, account: str | None = None) -> None:
+        def busy(domain: str, action: str, account: str | None = None,
+                 *, engine: str | None = None) -> None:
             raise runner_mod.DomainBusyError("doubao_cn auto 已在运行")
 
         monkeypatch.setattr(runner_mod.runner, "submit", busy)
@@ -221,7 +222,7 @@ class TestRunRoutes:
     def test_run_returns_job_and_poll(self, client, monkeypatch):
         from auto_signin_kit.ui.runner import Job
 
-        def fake_submit(domain: str, action: str,
+        def fake_submit(domain: str, action: str, engine: str | None = None,
                         account: str | None = None) -> Job:
             job = Job(id="abc123", domain=domain, action=action,
                       argv=("auto-signin-kit", domain, action), started_at="t",
@@ -243,7 +244,8 @@ class TestRunRoutes:
         """SPEC-12 P3: /api/run 透传 account 到 runner.submit。"""
         got: dict[str, Any] = {}
 
-        def fake_submit(domain: str, action: str, account: str | None = None):
+        def fake_submit(domain: str, action: str, engine: str | None = None,
+                        account: str | None = None):
             got["account"] = account
             from auto_signin_kit.ui.runner import Job
 
@@ -256,6 +258,31 @@ class TestRunRoutes:
         monkeypatch.setattr(runner_mod.runner, "submit", fake_submit)
         client.post("/api/run/workbuddy_cn", params={"account": "main"})
         assert got["account"] == "main"
+
+    def test_run_routes_declarative_app_to_engine(self, client, monkeypatch):
+        """声明式应用没有自己的域命令: 按 kind 路由到所属引擎的 run --app。"""
+        got: dict[str, Any] = {}
+
+        def fake_submit(domain: str, action: str, engine: str | None = None,
+                        account: str | None = None):
+            got["engine"] = engine
+            from auto_signin_kit.ui.runner import Job
+
+            job = Job(id="decl1", domain=domain, action=action, argv=(),
+                      started_at="t", status="ok")
+            runner_mod.runner._jobs[job.id] = job
+            return job
+
+        def fake_decls():
+            from tests.domains.web_signin.test_schema_auth import make_decl
+
+            return [make_decl(app_code="trae_cn", kind="client")]
+
+        monkeypatch.setattr(runner_mod.runner, "submit", fake_submit)
+        monkeypatch.setattr("auto_signin_kit.ui.apps_api._declarative_apps", fake_decls)
+        resp = client.post("/api/run/trae_cn")
+        assert resp.status_code == 200
+        assert got["engine"] == "client_signin"
 
 
 # ---------------------------------------------------------------- runner 本体

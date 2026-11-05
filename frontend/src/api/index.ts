@@ -61,7 +61,8 @@ export const jobApi = {
 export const appsApi = {
   list: () => get<AppsInfo>('/api/apps'),
   create: (body: { name: string; kind: string; display?: string; desc?: string;
-                    base_url: string; daily_time: string; region?: string }) =>
+                    base_url: string; daily_time: string; region?: string;
+                    credits_refresh_time?: string }) =>
     post<AppCreateResult>('/api/apps', body),
   remove: (name: string) =>
     del<AppCreateResult>(`/api/apps/${encodeURIComponent(name)}`),
@@ -69,8 +70,9 @@ export const appsApi = {
     get<AppConfigInfo>(`/api/apps/${encodeURIComponent(name)}/config`),
   update: (name: string, updates: Record<string, unknown>) =>
     put<AppUpdateResult>(`/api/apps/${encodeURIComponent(name)}`, { updates }),
-  // 应用主档(ask_apps): 总开关/显示名/描述,部分更新,不触发重建
-  updateState: (name: string, body: { enabled?: boolean; app_name?: string; app_desc?: string }) =>
+  // 应用主档(ask_apps): 总开关/显示名/描述/积分刷新时间,部分更新,不触发重建
+  updateState: (name: string, body: { enabled?: boolean; app_name?: string;
+                                      app_desc?: string; credits_refresh_time?: string }) =>
     put<{ result: string; app: Record<string, unknown>; message: string }>(
       `/api/apps/${encodeURIComponent(name)}/state`, body),
   // 应用同步: 探测本机已装应用 → ask_apps 建主档(含 region)+ 账户档案

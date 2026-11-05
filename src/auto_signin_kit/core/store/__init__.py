@@ -53,6 +53,7 @@ from auto_signin_kit.core.store.runs import (
     overview_by_account,
     overview_stats,
     signed_today_by_domain,
+    signin_day_start,
     signin_domains,
 )
 
@@ -84,5 +85,6 @@ __all__ = [
     "set_account_potential",
     "set_app_state",
     "signed_today_by_domain",
+    "signin_day_start",
     "signin_domains",
 ]

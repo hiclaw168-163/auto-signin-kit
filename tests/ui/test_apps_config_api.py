@@ -38,7 +38,7 @@ class TestGetAppConfig:
     def test_schema_cls_prefers_class_defined_in_module(self):
         """回归: _schema_cls 不能误取 import 进来的基类 BudgetedConfig——
         否则具体域字段(base_url 等)全被当 extra 拒绝。"""
-        from auto_signin_kit.domains.doubao_cn.schema import DoubaoDomainConfig
+        from auto_signin_kit.domains.client_signin.apps.doubao_cn.schema import DoubaoDomainConfig
         from auto_signin_kit.ui.config_api import _schema_cls
 
         assert _schema_cls("doubao_cn") is DoubaoDomainConfig
@@ -96,7 +96,7 @@ class TestUpdateApp:
         """写回的 YAML 必须能被域 schema 校验读回(与 CLI 同一条链路闭环)。"""
         import yaml as yaml_m
 
-        from auto_signin_kit.domains.doubao_cn.schema import DoubaoDomainConfig
+        from auto_signin_kit.domains.client_signin.apps.doubao_cn.schema import DoubaoDomainConfig
 
         got, config_dir = client
         assert got.put("/api/apps/doubao_cn", json={

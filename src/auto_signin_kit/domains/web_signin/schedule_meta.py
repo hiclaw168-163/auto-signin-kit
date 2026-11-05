@@ -7,21 +7,25 @@
   触发时间整体 +i 分钟错峰,与全库口径一致;
 - 坏 YAML 在 import 期只警告不炸(:func:`all_apps_safe`),真实运行时
   会严格报错;``schedule install`` 前用 ``web_signin list`` 看全貌。
+- 只接管 ``kind: web`` 的声明;``kind: client`` 由 client_signin 引擎
+  的 schedule_meta 同构接管。
 """
 
 from __future__ import annotations
 
 from dataclasses import replace
 
+from auto_signin_kit.core.declarative.apps import all_apps_safe
 from auto_signin_kit.core.ports.scheduler import ScheduleSpec
-from auto_signin_kit.domains.web_signin.apps import all_apps_safe
 
 DISPLAY_NAME = "Web 应用(声明式)"
-#: 域类别(web=网页版签 / client=客户端签到);引擎自身是 web 形态,各声明
-#: 应用以 YAML 的 ``kind`` 字段为准(UI 列表走声明值,不走这里)。
+#: 域类别(凭据来源口径);引擎只接管 kind=web 的声明(客户端凭据归
+#: client_signin 引擎),UI 列表走声明值,不走这里。
 KIND = "web"
 #: 应用描述(同步时自动补 ask_apps.app_desc,只补空)。
-DESCRIPTION = "声明式应用签到引擎(一份 YAML 接入一个应用)"
+DESCRIPTION = "网页版签引擎(令牌文件/环境变量凭据,一份 YAML 接入一个应用)"
+#: 积分刷新时刻: 声明式应用按声明值落库(见 AppDeclaration),引擎常量供兜底。
+CREDITS_REFRESH_TIME = "00:00"
 
 
 def _task_name(app_code: str) -> str:
@@ -44,6 +48,8 @@ def _specs() -> tuple[ScheduleSpec, ...]:
     """每应用一个基础任务(default 户)+ 每具名账户一个错峰实例。"""
     out: list[ScheduleSpec] = []
     for decl in all_apps_safe()[0]:
+        if decl.kind != KIND:
+            continue  # 客户端凭据的声明由 client_signin 引擎接管
         argv = ("auto-signin-kit", "web_signin", "run", "--app", decl.app_code, "--silent")
         base = ScheduleSpec(
             name=_task_name(decl.app_code),
@@ -77,8 +83,7 @@ def app_label(spec: ScheduleSpec) -> str:
 
 def ready() -> bool:
     """就绪探测(应用同步用): 任一声明应用登录态就绪即 True。"""
-    from auto_signin_kit.domains.web_signin import authkit
-    from auto_signin_kit.domains.web_signin.schema import AppDeclaration
+    from auto_signin_kit.core.declarative import authkit
 
     return any(authkit.ready(decl) for decl in all_apps_safe()[0]
-               if isinstance(decl, AppDeclaration))
+               if decl.kind == KIND)

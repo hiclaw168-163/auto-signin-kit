@@ -146,4 +146,8 @@ function onCollapse(value: boolean) {
   margin: 0;
   font-size: 20px;
 }
+/* 内容区留白: 不留白时表格直接贴着侧栏/窗口边(既无边界又遮数据) */
+.page-body {
+  padding: 8px 28px 28px;
+}
 </style>
