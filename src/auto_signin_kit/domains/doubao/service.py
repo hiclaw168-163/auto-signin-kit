@@ -13,6 +13,7 @@ from typing import Any
 
 from auto_signin_kit.core.errors import AutoSignInKitError
 from auto_signin_kit.core.httpclient import NO_NETWORK
+from auto_signin_kit.core.kit.accounts import account_ref
 from auto_signin_kit.core.kit.domain import DomainError, SigninDomain
 from auto_signin_kit.core.logging import result_log_path
 from auto_signin_kit.core.report import make_result
@@ -150,11 +151,18 @@ class DoubaoDomain(SigninDomain):
         return result_log_path(self.name, env_var="AUTO_SIGNIN_KIT_LOG_DIR")
 
     def build(self, config: Any, *, once: bool = False,
-              dry_run: bool = False) -> DoubaoApi:
-        """Cookie 解密 → DoubaoApi;``once``= 网络错误不重试。"""
+              dry_run: bool = False, account: str = "") -> DoubaoApi:
+        """Cookie 解密 → DoubaoApi;``once``= 网络错误不重试。
+
+        ``account``(SPEC-12 P2): 具名账户按 AccountRef 的 user_data_dir/
+        cdp_port 解析(多开豆包各一份 User Data、各一个调试端口)。
+        """
+        ref = account_ref(config, account) if account else None
+        root = Path(ref.user_data_dir) if ref and ref.user_data_dir else _user_data_dir(config)
+        # 端口优先级: 具名账户显式 cdp_port > 域配置 cdp_port > 环境变量/默认探测
+        effective_port = ref.cdp_port if ref and ref.cdp_port is not None else config.cdp_port
         try:
-            cookie_header = cookies.load_cookie_header(_user_data_dir(config),
-                                                       cdp_port=config.cdp_port)
+            cookie_header = cookies.load_cookie_header(root, cdp_port=effective_port)
         except AutoSignInKitError as exc:
             result = "NO_AUTH" if isinstance(exc, cookies.DoubaoCookieError) else "ERROR"
             raise DomainError(result, str(exc), exit_code=exc.exit_code) from exc
@@ -171,9 +179,12 @@ class DoubaoDomain(SigninDomain):
         """活动详情查询(只读)。"""
         return _status(api, config)
 
-    def doctor(self, config: Any) -> tuple[dict, int]:
+    def doctor(self, config: Any, *, account: str = "") -> tuple[dict, int]:
         """离线体检: 平台/数据目录/Cookie 解密链路逐项检查(不联网)。"""
-        report = cookies.doctor_report(_user_data_dir(config), cdp_port=config.cdp_port)
+        ref = account_ref(config, account) if account else None
+        root = Path(ref.user_data_dir) if ref and ref.user_data_dir else _user_data_dir(config)
+        effective_port = ref.cdp_port if ref and ref.cdp_port is not None else config.cdp_port
+        report = cookies.doctor_report(root, cdp_port=effective_port)
         ok = bool(report.get("session_ok"))
         return make_result(
             "OK" if ok else "ERROR",

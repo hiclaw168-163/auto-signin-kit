@@ -34,14 +34,16 @@ def _candidate_paths() -> list[Path]:
     ]
 
 
-def find_auth_file() -> tuple[Path | None, list[str]]:
+def find_auth_file(*, auth_file: str | None = None) -> tuple[Path | None, list[str]]:
     """按平台探测凭据文件;返回 (路径或 None, 实际检查过的候选列表)。
 
-    环境变量 ``WORKBUDDY_AUTH_FILE`` 优先;不存在时单独报告该路径,不给无关建议。
+    解析优先级(SPEC-12 P2): 具名账户的显式 ``auth_file`` > 环境变量
+    ``WORKBUDDY_AUTH_FILE`` > 平台默认扫描。前两者不存在时单独报告该路径,
+    不给无关建议;``auth_file`` 缺省(None)行为与 P2 之前逐字节一致。
     """
-    override = os.environ.get("WORKBUDDY_AUTH_FILE")
+    override = auth_file or os.environ.get("WORKBUDDY_AUTH_FILE")
     if override:
-        path = Path(override)
+        path = Path(override).expanduser()
         candidates = [str(path)]
         return (path if path.exists() else None), candidates
     candidates = [str(c) for c in _candidate_paths()]

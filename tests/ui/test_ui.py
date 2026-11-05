@@ -62,9 +62,10 @@ def _patch_history(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 
     def daily_status(days: int = 7, *, domain: str | None = None,
                      source: str | None = None,
-                     result: str | None = None) -> list[dict]:
+                     result: str | None = None,
+                     account: str | None = None) -> list[dict]:
         calls["daily"] = {"days": days, "domain": domain, "source": source,
-                          "result": result}
+                          "result": result, "account": account}
         rows = [r for r in _DAILY_ROWS if domain is None or r["domain"] == domain]
         return [r for r in rows if result is None or r["result"] == result]
 
@@ -113,7 +114,7 @@ class TestReadRoutes:
         calls = _patch_history(monkeypatch)
         rows = client.get("/api/history", params={"days": 3, "domain": "doubao"}).json()
         assert calls["daily"] == {"days": 3, "domain": "doubao", "source": None,
-                                  "result": None}
+                                  "result": None, "account": None}
         assert all(r["domain"] == "doubao" for r in rows)
 
     def test_history_passes_result_filter(self, client, monkeypatch):
@@ -131,8 +132,8 @@ class TestReadRoutes:
         client.get("/api/events", params={
             "date": "2026-11-02", "domain": "doubao", "attention_only": True, "limit": 5})
         assert calls["events"] == {
-            "date": "2026-11-02", "domain": "doubao",
-            "attention_only": True, "result": None, "limit": 5}
+            "date": "2026-11-02", "domain": "doubao", "attention_only": True,
+            "result": None, "account": None, "limit": 5}
 
 
 # ---------------------------------------------------------------- 调度管理
@@ -187,7 +188,7 @@ class TestRunRoutes:
         assert client.post("/api/run/doubao", params={"action": "install"}).status_code == 422
 
     def test_run_busy_409(self, client, monkeypatch):
-        def busy(domain: str, action: str) -> None:
+        def busy(domain: str, action: str, account: str | None = None) -> None:
             raise runner_mod.DomainBusyError("doubao auto 已在运行")
 
         monkeypatch.setattr(runner_mod.runner, "submit", busy)
@@ -196,7 +197,8 @@ class TestRunRoutes:
     def test_run_returns_job_and_poll(self, client, monkeypatch):
         from auto_signin_kit.ui.runner import Job
 
-        def fake_submit(domain: str, action: str) -> Job:
+        def fake_submit(domain: str, action: str,
+                        account: str | None = None) -> Job:
             job = Job(id="abc123", domain=domain, action=action,
                       argv=("auto-signin-kit", domain, action), started_at="t",
                       status="ok", exit_code=0, output="{}",
@@ -212,6 +214,24 @@ class TestRunRoutes:
 
     def test_job_missing_404(self, client):
         assert client.get("/api/jobs/no-such").status_code == 404
+
+    def test_run_with_account_param(self, client, monkeypatch):
+        """SPEC-12 P3: /api/run 透传 account 到 runner.submit。"""
+        got: dict[str, Any] = {}
+
+        def fake_submit(domain: str, action: str, account: str | None = None):
+            got["account"] = account
+            from auto_signin_kit.ui.runner import Job
+
+            job = Job(id="acc1", domain=domain, action=action,
+                      argv=("auto-signin-kit", domain, action), started_at="t",
+                      account=account, status="ok")  # 立即置完成,避免占用互斥位
+            runner_mod.runner._jobs[job.id] = job
+            return job
+
+        monkeypatch.setattr(runner_mod.runner, "submit", fake_submit)
+        client.post("/api/run/workbuddy", params={"account": "main"})
+        assert got["account"] == "main"
 
 
 # ---------------------------------------------------------------- runner 本体
@@ -262,6 +282,34 @@ class TestRunner:
         done = runner_mod.runner.get(job.id)
         assert done is not None and done.status == "failed" and done.exit_code == 2
 
+    def test_submit_with_account_carries_flag(self, monkeypatch):
+        """SPEC-12 P3: 指定账户手动触发 → 子进程带 --account。"""
+        captured: dict[str, Any] = {}
+
+        def fake_run(argv: Any, **kwargs: Any) -> Any:
+            captured["argv"] = tuple(argv)
+            return subprocess_result(stdout='{"result": "OK", "report": "ok"}\n',
+                                     returncode=0)
+
+        monkeypatch.setattr(runner_mod.subprocess, "run", fake_run)
+        job = runner_mod.runner.submit("workbuddy", "auto", account="main")
+        _wait_finished(job.id)
+        assert captured["argv"] == ("auto-signin-kit", "workbuddy", "auto",
+                                    "--account", "main")
+        assert runner_mod.runner.get(job.id).account == "main"
+
+    def test_different_accounts_not_busy(self, monkeypatch):
+        """不同账户各自独立凭据与台账行,同域同动作可并发;同账户才互斥。"""
+        monkeypatch.setattr(runner_mod.subprocess, "run",
+                            lambda argv, **kw: (time.sleep(0.2),
+                                                subprocess_result(stdout="{}", returncode=0))[1])
+        first = runner_mod.runner.submit("doubao", "doctor", account="a")
+        second = runner_mod.runner.submit("doubao", "doctor", account="b")  # 不抛
+        with pytest.raises(runner_mod.DomainBusyError):
+            runner_mod.runner.submit("doubao", "doctor", account="a")
+        _wait_finished(first.id)
+        _wait_finished(second.id)
+
 
 def subprocess_result(*, stdout: str, returncode: int) -> Any:
     """最小 subprocess.CompletedProcess 桩(runner 只用 stdout/returncode)。"""
@@ -278,3 +326,44 @@ def _wait_finished(job_id: str, timeout: float = 5.0) -> None:
             return
         time.sleep(0.02)
     raise AssertionError("job 未在时限内结束")
+
+
+# ---------------------------------------------------------------- 账户视图(SPEC-12 P3)
+
+
+class TestAccountsRoutes:
+    """账户视图: 登记账户 × 逐账户运行统计合并;启停只改登记态。"""
+
+    def test_accounts_list_merges_registry_and_stats(self, client):
+        import json
+
+        from auto_signin_kit.core import store
+
+        store.record_payload(json.dumps({
+            "ts": "2026-11-05T09:00:00+08:00", "level": "INFO", "domain": "trae",
+            "action": "auto", "result": "CLAIMED", "needs_attention": False,
+            "report": "ok", "credits": 30, "account": "main"}, ensure_ascii=False))
+        out = client.get("/api/accounts").json()
+        row = next(r for r in out["accounts"]
+                   if r["domain"] == "trae" and r["name"] == "main")
+        assert row["enabled"] is True and row["streak"] == 1
+        assert row["today_credits"] == 30
+
+    def test_account_toggle_roundtrip_and_404(self, client):
+        import json
+
+        from auto_signin_kit.core import store
+
+        store.record_payload(json.dumps({
+            "ts": "2026-11-05T09:00:00+08:00", "level": "INFO", "domain": "trae",
+            "action": "auto", "result": "CLAIMED", "needs_attention": False,
+            "report": "ok"}, ensure_ascii=False))
+        ok = client.post("/api/accounts/enabled",
+                         json={"domain": "trae", "name": "default", "enabled": False})
+        assert ok.status_code == 200
+        row = next(r for r in client.get("/api/accounts").json()["accounts"]
+                   if r["domain"] == "trae")
+        assert row["enabled"] is False
+        missing = client.post("/api/accounts/enabled",
+                              json={"domain": "trae", "name": "ghost", "enabled": True})
+        assert missing.status_code == 404

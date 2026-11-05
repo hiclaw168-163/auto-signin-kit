@@ -395,13 +395,14 @@ class TestScheduleSkip:
         from types import SimpleNamespace
 
         monkeypatch.setattr("auto_signin_kit.core.kit.actions.done_today",
-                            lambda domain: True)
+                            lambda domain, account="default": True)
         emitted: list = []
         monkeypatch.setattr("auto_signin_kit.core.kit.domain.emit_result",
                             lambda out, **kw: emitted.append(out))
         monkeypatch.setattr(service, "build_api",
-                            lambda cfg: (SimpleNamespace(token_expires_at=None),
-                                         {"expiresAt": None}, "FRESH"))
+                            lambda cfg, auth_dir=None: (
+                                SimpleNamespace(token_expires_at=None),
+                                {"expiresAt": None}, "FRESH"))
         already = {"result": "ALREADY", "needs_attention": False,
                    "campaign": "act-x", "credits": 100, "report": "本周期已领取"}
         monkeypatch.setattr(service, "claim_once", lambda api, budget, **kw: already)

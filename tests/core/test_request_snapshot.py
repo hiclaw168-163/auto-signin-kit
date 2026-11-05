@@ -47,7 +47,7 @@ def test_domain_emit_injects_request(monkeypatch, tmp_path):
         name = "d"
         display = "D"
 
-        def build(self, config, *, once=False, dry_run=False):
+        def build(self, config, *, once=False, dry_run=False, account=""):
             return "api"
 
         def claim(self, api, config, *, dry_run=False, once=False):

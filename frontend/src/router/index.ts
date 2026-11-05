@@ -12,6 +12,7 @@ const router = createRouter({
       children: [
         { path: '', redirect: '/dashboard' },
         { path: 'dashboard', name: 'dashboard', component: () => import('../views/DashboardView.vue'), meta: { title: '签到总览' } },
+        { path: 'accounts', name: 'accounts', component: () => import('../views/AccountsView.vue'), meta: { title: '账户管理' } },
         { path: 'apps', name: 'apps', component: () => import('../views/AppsView.vue'), meta: { title: '应用管理' } },
         { path: 'history', name: 'history', component: () => import('../views/HistoryView.vue'), meta: { title: '签到台账' } },
         { path: 'schedule', name: 'schedule', component: () => import('../views/ScheduleView.vue'), meta: { title: '定时任务' } },

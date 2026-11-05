@@ -160,9 +160,12 @@ class {v.cls}Domain(SigninDomain):
     display = "{v.display}"
 
     def build(self, config: {v.cls}DomainConfig, *, once: bool = False,
-              dry_run: bool = False) -> Api:
+              dry_run: bool = False, account: str = "") -> Api:
         """凭证 → API 客户端;TODO(开发者): 取凭证(配置/环境变量/客户端解密),
-        失败时 ``raise DomainError("NO_AUTH", 提示, exit_code=2)``。"""
+        失败时 ``raise DomainError("NO_AUTH", 提示, exit_code=2)``。
+
+        ``account``(SPEC-12): 具名账户按 AccountRef 的凭据位置字段解析;
+        缺省/空串沿用全局链路,单账户域可忽略。"""
         return Api(config.base_url, None, Budget(config.budget_seconds or 240.0))
 
     def claim(self, api: Api, config: {v.cls}DomainConfig, *, dry_run: bool = False,
@@ -175,7 +178,7 @@ class {v.cls}Domain(SigninDomain):
         """只查签到状态,不修改;TODO(开发者): 调 api.status()。"""
         return _stub()
 
-    def doctor(self, config: {v.cls}DomainConfig) -> tuple[dict, int]:
+    def doctor(self, config: {v.cls}DomainConfig, *, account: str = "") -> tuple[dict, int]:
         """离线体检(不联网);TODO(开发者): 校验凭证可读性/有效期。"""
         return _stub()
 

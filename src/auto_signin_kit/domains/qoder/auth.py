@@ -177,9 +177,20 @@ def _read_store_retry(root: Path, attempts: int = 3) -> dict:
     raise AuthFormatError("%s 读取失败（%s: %s）" % (AUTH_FILE, type(last).__name__, last))
 
 
-def load_session() -> dict:
-    """读出可用登录态(Windows/macOS 双平台);失败给带 looked_in 的错误。"""
-    dirs = find_auth_dirs()
+def load_session(auth_dir: str | None = None) -> dict:
+    """读出可用登录态(Windows/macOS 双平台);失败给带 looked_in 的错误。
+
+    ``auth_dir``(SPEC-12 P2): 具名账户的显式数据目录——只看这一个目录,
+    不做全局扫描兜底(落错账户比没签到严重);目录不存在显式报错。
+    缺省(None)走 ``find_auth_dirs()`` 全链路,行为不变。
+    """
+    if auth_dir:
+        root = Path(auth_dir).expanduser()
+        if not root.is_dir():
+            raise NoAuthError("账户数据目录不存在：%s" % root, [str(root)])
+        dirs = [root]
+    else:
+        dirs = find_auth_dirs()
     looked_in = [str(d) for d in dirs]
     if not dirs:
         where = ("~/Library/Application Support/" + AUTH_DIR_GLOB_MAC if IS_MACOS
@@ -238,10 +249,16 @@ def detect_api_base(sess: dict | None) -> str | None:
     return None
 
 
-def resolve_token() -> tuple[str, dict | None]:
-    """令牌来源: 环境变量优先;否则解本地登录态。"""
-    token = (os.environ.get("QODER_TOKEN") or "").strip()
-    if token:
-        return token, None
-    sess = load_session()
+def resolve_token(auth_dir: str | None = None) -> tuple[str, dict | None]:
+    """令牌来源: 环境变量优先;否则解本地登录态。
+
+    ``auth_dir``(SPEC-12 P2): 具名账户显式数据目录——此时**跳过**全局
+    ``QODER_TOKEN`` 环境变量(那是 default 户的令牌,混用会拿 A 户令牌
+    签 B 户的到),只信该目录里的登录态。
+    """
+    if auth_dir is None:
+        token = (os.environ.get("QODER_TOKEN") or "").strip()
+        if token:
+            return token, None
+    sess = load_session(auth_dir)
     return sess["token"], sess

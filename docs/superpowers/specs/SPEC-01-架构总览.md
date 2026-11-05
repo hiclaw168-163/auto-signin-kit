@@ -94,19 +94,25 @@
 
 ```text
 typer(cli.py) → load_domain_config_model("trae", TraeDomainConfig, merge_local=True)
-            → service.run_action("claim", config, silent=True)
+            → service.run_action("claim", config, silent=True, account=<--account, 缺省 default>)
+                ├ resolve_account(config, account): 未声明的账户当场报错(SPEC-12)
+                ├ 停用账户 + 静默调度 → 跳过(不执行、不落库);手动 --account 放行
                 ├ Budget(TRAE_BUDGET_SECONDS 解析,非法回落,越界夹上限)
-                ├ build_api(config): TRAE_TOKEN 优先,否则 auth 解本地登录态
+                ├ build_api(config, account=…): 具名账户按 AccountRef 显式路径取凭据
+                │   并隔离全局环境变量令牌;default 沿用 TRAE_TOKEN 优先/本地登录态
                 ├ Api.claim/status → core.httpclient.call(预算守卫+分桶退避)
                 ├ result 映射(CLAIMED/ALREADY/AUTH_REJECTED/…)
-                └ emit_result(silent→平台日志目录 trae.log;
-                              ERROR 双通道;令牌 [REDACTED])
+                └ emit_result(…, account=…): 台账按 (domain, account) 落维
             → 退出码 0 / 1 / 2
 ```
 
 外围兜底: 域 cli 的 `_run` 只包 `AutoSignInKitError → typer.Exit(exit_code)`;
 service 的 `run_action` 自身保证**不抛业务异常**(本地异常收拢为 NO_AUTH/AUTH_ERROR
 结果)。
+
+多账户(SPEC-12): 账户在域 YAML `accounts` 显式声明(空 = 单账户 default,
+存量配置零改动);台账/聚合/调度全链以 `(domain, account)` 为业务主体维度,
+调度按账户展开成 `<任务名>@<账户>` 实例并按账户序号错峰。详见 SPEC-12。
 
 ## 6. 错误与退出码
 

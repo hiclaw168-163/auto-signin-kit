@@ -47,6 +47,16 @@ def set_account_potential(domain: str, name: str, daily_potential: int) -> None:
     _update_account(domain, name, daily_potential=daily_potential)
 
 
+def set_account_enabled(domain: str, name: str, enabled: bool) -> None:
+    """账户启停(管理台开关,SPEC-12 P3);账户不存在则显式报错。
+
+    注意口径: 这是**台账维表**的登记态(展示/容量计算用);调度执行的启停
+    真相在各域 YAML 配置的 ``accounts[].enabled``(run_action 读配置)——
+    两处要一起改,面板的开关只改登记态,配置由用户在配置页维护。
+    """
+    _update_account(domain, name, enabled=1 if enabled else 0)
+
+
 #: 档案里要提取为**独立列**的字段(高频查询/业务关键维度,JSON 查询麻烦):
 #: client_version ← 域方言 "version";install_path ← "install_path"/"data_dir"。
 #: 提取后这些键不再进 client_info JSON;其余(机器级信息/域特有)留在 JSON。
@@ -79,7 +89,7 @@ def set_account_client_info(domain: str, name: str, info: dict[str, Any]) -> Non
 
 
 #: 允许更新的账户列(白名单,防止任意标识符进 SQL)。
-_ACCOUNT_FIELDS = ("daily_potential", "client_info", "info_synced_at",
+_ACCOUNT_FIELDS = ("daily_potential", "enabled", "client_info", "info_synced_at",
                    "client_version", "device_id", "install_path", "uid")
 
 

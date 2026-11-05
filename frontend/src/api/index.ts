@@ -1,4 +1,6 @@
 import type {
+  AccountRow,
+  AccountsInfo,
   AppCreateResult,
   AppConfigInfo,
   AppInfo,
@@ -14,14 +16,21 @@ import type {
 } from '../types'
 import { del, get, post, put } from './http'
 
-// 接口层按资源分组;URL 与 Python 侧 ui/api.py + ui/config_api.py 一一对应。
+// 接口层按资源分组;URL 与 Python 侧 ui/api.py + ui/apps_api.py 一一对应。
 
 export const dashboardApi = {
   overview: () => get<Overview>('/api/overview'),
-  history: (days: number, domain?: string, result?: string) =>
-    get<DailyRow[]>('/api/history', { days, domain, result }),
-  events: (query: { date?: string; domain?: string; attention_only?: boolean; result?: string; limit?: number }) =>
+  history: (days: number, domain?: string, result?: string, account?: string) =>
+    get<DailyRow[]>('/api/history', { days, domain, result, account }),
+  events: (query: { date?: string; domain?: string; attention_only?: boolean; result?: string; account?: string; limit?: number }) =>
     get<EventRow[]>('/api/events', query),
+}
+
+// SPEC-12 账户视图;启停只改台账登记态,调度启停真相在各域 YAML 配置。
+export const accountsApi = {
+  list: (days = 14) => get<AccountsInfo>('/api/accounts', { days }),
+  setEnabled: (domain: string, name: string, enabled: boolean) =>
+    post<{ ok: boolean }>('/api/accounts/enabled', { domain, name, enabled }),
 }
 
 export const scheduleApi = {
@@ -33,9 +42,10 @@ export const scheduleApi = {
 }
 
 export const jobApi = {
-  run: (domain: string, action: string) =>
+  run: (domain: string, action: string, account?: string) =>
     post<{ job: JobInfo }>(
-      `/api/run/${encodeURIComponent(domain)}?action=${encodeURIComponent(action)}`,
+      `/api/run/${encodeURIComponent(domain)}?action=${encodeURIComponent(action)}`
+      + (account ? `&account=${encodeURIComponent(account)}` : ''),
     ),
   get: (id: string) => get<{ job: JobInfo }>(`/api/jobs/${encodeURIComponent(id)}`),
 }

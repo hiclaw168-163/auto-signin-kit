@@ -12,8 +12,12 @@ from auto_signin_kit.domains.qoder.auth import (
 )
 
 
-def run_doctor() -> tuple[dict, int]:
-    """产出 ``doctor`` 结果;退出码 0/1/2 由 result 决定。"""
+def run_doctor(auth_dir: str | None = None) -> tuple[dict, int]:
+    """产出 ``doctor`` 结果;退出码 0/1/2 由 result 决定。
+
+    ``auth_dir``(SPEC-12 P2): 具名账户的显式数据目录;给出时环境变量令牌
+    不参与(体检的就是这个账户的登录态)。
+    """
     out: dict = {
         "result": "OK",
         "needs_attention": False,
@@ -23,12 +27,12 @@ def run_doctor() -> tuple[dict, int]:
     }
     import os
 
-    if os.environ.get("QODER_TOKEN"):
+    if auth_dir is None and os.environ.get("QODER_TOKEN"):
         return out, 0
 
     out["token_source"] = "desktop"
     try:
-        sess = load_session_state()
+        sess = load_session_state(auth_dir)
     except NoAuthError as exc:
         out.update({
             "result": "NO_AUTH", "needs_attention": True, "report": str(exc),

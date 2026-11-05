@@ -80,10 +80,13 @@ CREATE INDEX IF NOT EXISTS idx_ask_signin_runs_source ON ask_signin_runs(source)
 -- 直接 DROP+CREATE 保证老库也能拿到新列)
 DROP VIEW IF EXISTS ask_daily_checkins;
 -- executed_at 已统一为本地无时区时间(迁移抹掉旧 +08:00 后缀),
--- 裸 date() 直接取日期部分,不再有 UTC 偏移问题
+-- 裸 date() 直接取日期部分,不再有 UTC 偏移问题;
+-- 折叠维度是 (day, domain, account)(SPEC-12): 多账户各自有"当天最终状态",
+-- 按 (day, domain) 折叠会把 B 账户的最终行折叠掉
 CREATE VIEW ask_daily_checkins AS
 SELECT date(r.executed_at)   AS day,
        r.domain              AS domain,
+       r.account             AS account,
        r.result              AS result,
        r.source              AS source,
        r.needs_attention     AS needs_attention,
@@ -93,6 +96,7 @@ FROM ask_signin_runs AS r
 WHERE r.id = (
     SELECT r2.id FROM ask_signin_runs AS r2
     WHERE date(r2.executed_at) = date(r.executed_at) AND r2.domain = r.domain
+      AND r2.account = r.account
     ORDER BY r2.executed_at DESC, r2.id DESC
     LIMIT 1
 );

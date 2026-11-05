@@ -15,6 +15,7 @@ import time
 from typing import Any
 
 from auto_signin_kit.core.httpclient import Budget
+from auto_signin_kit.core.kit.accounts import account_ref
 from auto_signin_kit.core.kit.domain import DomainError, SigninDomain
 from auto_signin_kit.core.kit.transport import transport_error_dto
 from auto_signin_kit.domains.trae.api import (
@@ -173,11 +174,17 @@ class TraeDomain(SigninDomain):
     display = "Trae CN"
     sensitive = SENSITIVE
 
-    def build(self, config: Any, *, once: bool = False, dry_run: bool = False) -> Api:
-        """登录态 → Api;三种凭证失败按语义转 DomainError。"""
+    def build(self, config: Any, *, once: bool = False, dry_run: bool = False,
+              account: str = "") -> Api:
+        """登录态 → Api;三种凭证失败按语义转 DomainError。
+
+        ``account``(SPEC-12 P2): 具名账户按 AccountRef.auth_dir 解析登录态
+        与设备头(凭据=设备同文件,多账户即多数据目录)。
+        """
         del once  # 查询+领取共两次请求,预算内完成;参数位与 qoder 对齐
+        ref = account_ref(config, account) if account else None
         try:
-            api, info, staleness = build_api(config)
+            api, info, staleness = build_api(config, auth_dir=ref.auth_dir if ref else None)
         except NoAuthError as exc:
             raise DomainError("NO_AUTH", str(exc), exit_code=2,
                               extra={"looked_in": exc.looked_in or None}) from exc
@@ -205,10 +212,13 @@ class TraeDomain(SigninDomain):
         budget, _ = self._budget(config)
         return run_status(api, budget)
 
-    def doctor(self, config: Any) -> tuple[dict, int]:
-        """离线检查登录态可读性与有效期。"""
+    def doctor(self, config: Any, *, account: str = "") -> tuple[dict, int]:
+        """离线检查登录态可读性与有效期(指定账户时体检该账户的目录)。"""
         from auto_signin_kit.domains.trae.doctor import run_doctor
 
+        ref = account_ref(config, account) if account else None
+        if ref is not None and ref.auth_dir:
+            return run_doctor(ref.auth_dir, skip_env=True)
         return run_doctor(config.data_dir)
 
     def _budget(self, config: Any) -> tuple[Budget, str | None]:

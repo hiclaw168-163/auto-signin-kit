@@ -375,7 +375,8 @@ class TestScheduleSkip:
     """静默调度时当天已成功签到 → 不执行、不 emit、不落库。"""
 
     def test_silent_claim_skips_when_done_today(self, monkeypatch, tmp_path):
-        monkeypatch.setattr("auto_signin_kit.core.kit.actions.done_today", lambda domain: True)
+        monkeypatch.setattr("auto_signin_kit.core.kit.actions.done_today",
+                            lambda domain, account="default": True)
         emitted: list = []
         monkeypatch.setattr("auto_signin_kit.core.report.emit_result",
                             lambda out, **kw: emitted.append(out))
@@ -384,3 +385,23 @@ class TestScheduleSkip:
         code = service.run_action("claim", SimpleNamespace(data_dir=tmp_path), silent=True)
         assert code == 0
         assert emitted == []
+
+
+class TestAccountAuthDir:
+    """SPEC-12 P2: 具名账户显式数据目录(凭据=设备同文件,多账户即多目录)。"""
+
+    def test_skip_env_resolves_from_dir_only(self, tmp_path, monkeypatch):
+        """skip_env=True 时 TRAE_TOKEN 被隔离,只信该目录的 storage.json。"""
+        from auto_signin_kit.domains.trae import auth as trae_auth
+
+        monkeypatch.setenv("TRAE_TOKEN", "env-token-of-default")
+        with pytest.raises(trae_auth.NoAuthError):
+            trae_auth.resolve_token(str(tmp_path / "no-such-dir"), skip_env=True)
+
+    def test_default_without_dir_keeps_env_token(self, monkeypatch):
+        """回归: default 户环境变量令牌优先,行为不变。"""
+        from auto_signin_kit.domains.trae import auth as trae_auth
+
+        monkeypatch.setenv("TRAE_TOKEN", "  env-token  ")
+        token, info = trae_auth.resolve_token()
+        assert token == "env-token" and info is None

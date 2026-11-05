@@ -85,24 +85,28 @@ def parse_budget(config: Any) -> tuple[float, str | None]:
         config.budget_seconds, default, BUDGET_CEILING, env_var="QODER_BUDGET_SECONDS")
 
 
-def load_session_state() -> dict:
-    """从本地登录态解出令牌并登记脱敏;原始异常收拢为 QoderAuthError。"""
+def load_session_state(auth_dir: str | None = None) -> dict:
+    """从本地登录态解出令牌并登记脱敏;原始异常收拢为 QoderAuthError。
+
+    ``auth_dir``(SPEC-12 P2): 具名账户的显式数据目录,透传给 load_session。
+    """
     from auto_signin_kit.domains.qoder.auth import load_session
 
-    sess = load_session()
+    sess = load_session(auth_dir)
     token = sess.get("token")
     if isinstance(token, str):
         SENSITIVE.add(token)
     return sess
 
 
-def build_api(config: Any) -> tuple[Api, dict | None, str | None]:
+def build_api(config: Any, auth_dir: str | None = None) -> tuple[Api, dict | None, str | None]:
     """组 Api: 令牌(环境变量优先) + 风控头;令牌过期返回 (api, sess, "EXPIRED")。
 
     API 域优先级: QODER_BASE_URL > 登录态 authenticationContext 推导 >
     配置 base_url——令牌只对签发它的端点有效,登录态推导放配置前面。
+    ``auth_dir``(SPEC-12 P2): 具名账户显式数据目录,此时环境变量令牌被隔离。
     """
-    token, sess = resolve_token()
+    token, sess = resolve_token(auth_dir)
     if isinstance(token, str):
         SENSITIVE.add(token)
     from auto_signin_kit.domains.qoder.auth import detect_api_base

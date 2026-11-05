@@ -24,6 +24,7 @@ from auto_signin_kit.core.report import emit_result
 from auto_signin_kit.domains.schedule.data import (
     apply_overrides,
     domain_of,
+    expand_accounts,
     known_domains,
     provider_of,
     tasks_for,
@@ -77,10 +78,14 @@ def filter_ready(
 def select_tasks(config: Any, domain: str | None) -> tuple[ScheduleSpec, ...]:
     """按 ``--domain`` 与配置里的 ``enabled_tasks`` 求交集,再套用配置覆盖。
 
+    账户展开(SPEC-12 P3)发生在筛选**之前**——``enabled_tasks`` 用
+    ``<任务名>@<账户>`` 精确控制某账户实例;时间覆盖也按展开后任务名匹配,
+    给 backup 账户单独改时间不波及 default。基础任务(default)名字不变。
+
     顺序不能反: 先筛选再覆盖——否则给未启用任务写的覆盖项也会被解析,时间格式
     错误会在"根本没打算注册"的任务上炸出来。
     """
-    pool = tasks_for(domain)
+    pool = expand_accounts(tasks_for(domain))
     enabled = [name for name in getattr(config, "enabled_tasks", None) or [] if name]
     if enabled:
         allowed = set(enabled)

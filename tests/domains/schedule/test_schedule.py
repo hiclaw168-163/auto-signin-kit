@@ -4,13 +4,14 @@
 """
 
 import json
+from dataclasses import replace
 
 import pytest
 from typer.testing import CliRunner
 
 from auto_signin_kit.core import config as config_m
 from auto_signin_kit.core.adapters.scheduler import SchedulerError
-from auto_signin_kit.core.ports.scheduler import TaskStatus
+from auto_signin_kit.core.ports.scheduler import ScheduleSpec, TaskStatus
 from auto_signin_kit.domains.schedule import service
 from auto_signin_kit.domains.schedule.cli import app
 from auto_signin_kit.domains.schedule.data import TASKS, domain_of, known_domains, tasks_for
@@ -325,3 +326,66 @@ class TestSchema:
 
         with pytest.raises(ValidationError):
             TaskOverride.model_validate({"times": ["09:05", "09:05"]})
+
+
+# --------------------------------------------------- 账户展开(SPEC-12 P3)
+
+def _fake_provider(monkeypatch, accounts):
+    """注入只含 accounts() 的假声明模块;expand 经 provider_of 查它。"""
+    import types
+
+    from auto_signin_kit.domains.schedule import data as data_m
+
+    module = types.ModuleType("fake_meta")
+    if accounts is not None:
+        module.accounts = lambda: tuple(accounts)
+    monkeypatch.setattr(data_m, "provider_of", lambda domain: module)
+
+
+_SPEC = ScheduleSpec(
+    name="DemoDaily",
+    argv=("auto-signin-kit", "demo", "auto", "--silent"),
+    times=("10:05", "23:59"),
+    limit_minutes=5,
+    description="演示任务",
+)
+
+
+class TestExpandAccounts:
+    """调度按账户展开: 基础任务(default)原样 + 每具名账户一个 @实例(错峰)。"""
+
+    def test_base_spec_untouched_and_extras_staggered(self, monkeypatch):
+        from auto_signin_kit.domains.schedule.data import expand_accounts
+
+        _fake_provider(monkeypatch, ("backup", "third"))
+        out = expand_accounts((_SPEC,))
+        assert [s.name for s in out] == ["DemoDaily", "DemoDaily@backup",
+                                         "DemoDaily@third"]
+        base, backup, third = out
+        assert base.times == ("10:05", "23:59") and "--account" not in base.argv
+        assert backup.argv[-2:] == ("--account", "backup")
+        assert backup.times == ("10:06", "00:00")  # 23:59 +1 分钟回绕到 00:00
+        assert third.times == ("10:07", "00:01")  # 错峰按账户序号递增
+        assert backup.limit_minutes == 5 and backup.description.endswith("账户 backup")
+
+    def test_no_accounts_declaration_keeps_single_spec(self, monkeypatch):
+        from auto_signin_kit.domains.schedule.data import expand_accounts
+
+        _fake_provider(monkeypatch, None)  # 域未声明 accounts(): 单账户,行为不变
+        assert len(expand_accounts((_SPEC,))) == 1
+
+    def test_select_tasks_filters_expanded_names(self, monkeypatch):
+        """enabled_tasks 能用 @名字精确控制某账户实例(真实声明链路)。"""
+        spec0 = tasks_for(None)[0]
+        _fake_provider(monkeypatch, ("backup",))
+        cfg = _Config(enabled=[spec0.name, "%s@backup" % spec0.name])
+        picked = service.select_tasks(cfg, None)
+        assert [s.name for s in picked] == [spec0.name, "%s@backup" % spec0.name]
+        expanded = picked[-1]
+        assert expanded.argv[-2:] == ("--account", "backup")
+
+    def test_account_of(self):
+        from auto_signin_kit.domains.schedule.data import account_of
+
+        assert account_of(_SPEC) == "default"
+        assert account_of(replace(_SPEC, name="DemoDaily@backup")) == "backup"

@@ -227,6 +227,10 @@ def load_cookie_header(user_data_dir: Path | None = None,
     最后覆盖(它才是浏览器当前真正在用的会话——文件库可能是未刷新的旧会话,
     实测表现为服务端回"登录已过期")。值本身不进任何日志/输出。
 
+    ``user_data_dir``/``cdp_port``(SPEC-12 P2): 具名账户的显式数据目录与
+    调试端口(多开豆包各一份 User Data、各一个 --remote-debugging-port);
+    缺省(None)沿用环境变量与默认探测链路,行为不变。
+
     **不做兜底式包装**: 两个读取通道(文件解密/CDP)各自的失败原因按原样抛出,
     缺 cookie 时按"CDP 可达但没取到 / 双通道均失败 / 文件读到了但登录态不完整"
     三种确定情形分别报错,绝不合并成一句模糊的"登录态不完整"。
@@ -299,7 +303,11 @@ def cdp_available(cdp_port: int | None = None) -> bool:
 
 def doctor_report(user_data_dir: Path | None = None,
                   cdp_port: int | None = None) -> dict[str, Any]:
-    """离线体检: 各环节逐一检查并给出结论,供 doctor 命令输出。"""
+    """离线体检: 各环节逐一检查并给出结论,供 doctor 命令输出。
+
+    ``cdp_port``(SPEC-12): 具名账户的显式调试端口(多开豆包各一个端口);
+    缺省沿用域配置与环境变量链路,行为不变。
+    """
 
     try:
         port = cdp.resolve_port(cdp_port)

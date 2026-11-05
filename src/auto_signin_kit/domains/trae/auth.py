@@ -259,10 +259,16 @@ def aha_device_id(storage: dict) -> str | None:
     return None
 
 
-def resolve_token(override_dir: str | None = None) -> tuple[str, dict | None]:
-    """令牌来源: 环境变量 TRAE_TOKEN 优先;否则解本地登录态。"""
-    token = (os.environ.get("TRAE_TOKEN") or "").strip()
-    if token:
-        return token, None
+def resolve_token(override_dir: str | None = None, *,
+                  skip_env: bool = False) -> tuple[str, dict | None]:
+    """令牌来源: 环境变量 TRAE_TOKEN 优先;否则解本地登录态。
+
+    ``skip_env``(SPEC-12 P2): 具名账户的显式数据目录解析时置 True——
+    环境变量令牌是 default 户的,混用会拿 A 户令牌签 B 户的到。
+    """
+    if not skip_env:
+        token = (os.environ.get("TRAE_TOKEN") or "").strip()
+        if token:
+            return token, None
     info = load_session(override_dir)
     return info["token"], info

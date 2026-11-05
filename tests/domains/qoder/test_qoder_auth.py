@@ -221,3 +221,32 @@ class TestDetectApiBase:
         """域尾斜杠被去掉;无协议头的裸域跳过,主域映射兜底生效。"""
         sess = {"authenticationContext": ["openapi.qoder.sh", "https://qoder.com/"]}
         assert auth.detect_api_base(sess) == "https://openapi.qoder.sh"
+
+
+class TestAccountAuthDir:
+    """SPEC-12 P2: 具名账户显式数据目录——只认该目录,隔离全局环境变量。"""
+
+    def test_missing_account_dir_raises_no_auth(self, tmp_path):
+        with pytest.raises(NoAuthError) as exc:
+            auth.load_session(str(tmp_path / "no-such-dir"))
+        assert "账户数据目录不存在" in str(exc.value)
+        assert str(tmp_path / "no-such-dir") in exc.value.looked_in[0]
+
+    def test_account_dir_without_login_reports_not_logged_in(self, tmp_path):
+        (tmp_path / "com.qodercn.app-1").mkdir()
+        with pytest.raises(NoAuthError) as exc:
+            auth.load_session(str(tmp_path / "com.qodercn.app-1"))
+        assert "未登录" in str(exc.value)
+
+    def test_account_dir_skips_env_token(self, tmp_path, monkeypatch):
+        """QODER_TOKEN 是 default 户的: 具名账户目录解析时必须被隔离,
+        否则会拿 A 户令牌签 B 户的到。"""
+        monkeypatch.setenv("QODER_TOKEN", "env-token-of-default")
+        with pytest.raises(NoAuthError):
+            resolve_token(str(tmp_path / "no-such-dir"))
+
+    def test_default_without_dir_keeps_env_token(self, monkeypatch):
+        """回归: default 户(无显式目录)环境变量令牌优先,行为不变。"""
+        monkeypatch.setenv("QODER_TOKEN", "  env-token  ")
+        token, sess = resolve_token()
+        assert token == "env-token" and sess is None

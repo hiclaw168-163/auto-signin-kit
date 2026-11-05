@@ -494,18 +494,40 @@ class TestScheduleSkip:
     """静默调度时当天已成功签到 → 不执行、不 emit、不落库。"""
 
     def test_silent_claim_skips_when_done_today(self, monkeypatch, emitted, tmp_path):
-        monkeypatch.setattr("auto_signin_kit.core.kit.actions.done_today", lambda domain: True)
+        monkeypatch.setattr("auto_signin_kit.core.kit.actions.done_today",
+                            lambda domain, account="default": True)
         assert service.run_action("claim", _config(tmp_path),
                                   silent=True, command="auto") == 0
         assert emitted == []  # 没有任何 emit → 也就没有落库
 
     def test_done_check_not_applied_to_manual_run(self, monkeypatch, no_cookies, emitted):
-        monkeypatch.setattr("auto_signin_kit.core.kit.actions.done_today", lambda domain: True)
+        monkeypatch.setattr("auto_signin_kit.core.kit.actions.done_today",
+                            lambda domain, account="default": True)
         monkeypatch.setattr("auto_signin_kit.domains.doubao.api.call",
                             _router([CHECKIN_ALREADY]))
         # 手动执行(silent=False)不受跳过影响,照常执行
         assert service.run_action("claim", _config(no_cookies), command="auto") == 0
         assert emitted[0]["result"] == "ALREADY"
+
+
+class TestAccountProfile:
+    """SPEC-12 P2: 具名账户独立 User Data/CDP 端口;default 路径不变。"""
+
+    def test_account_user_data_dir_is_used(self, monkeypatch, emitted, tmp_path):
+        """账户声明的 user_data_dir 优先于全局配置;目录不存在如实 NO_AUTH。"""
+        from auto_signin_kit.core.config.schema import AccountRef
+
+        seen: list = []
+        monkeypatch.setattr("auto_signin_kit.core.kit.domain.emit_result",
+                            lambda out, **kw: seen.append((out, kw.get("account"))))
+        missing = tmp_path / "second-user-data"
+        cfg = _config(tmp_path)
+        cfg = cfg.model_copy(update={"accounts": [
+            AccountRef(name="second", user_data_dir=str(missing))]})
+        assert service.run_action("claim", cfg, account="second") == 2
+        out, acct = seen[-1]
+        assert out["result"] == "NO_AUTH" and acct == "second"
+        assert str(missing) in out["report"]
 
 
 

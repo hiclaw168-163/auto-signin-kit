@@ -14,10 +14,12 @@ from importlib.metadata import entry_points
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 
 from auto_signin_kit.core import store
 from auto_signin_kit.core.adapters.scheduler import get_scheduler
 from auto_signin_kit.core.config import load_domain_config_model
+from auto_signin_kit.core.errors import AutoSignInKitError
 from auto_signin_kit.core.report import RESULT_LABELS, RESULT_OK
 from auto_signin_kit.domains.schedule import service as schedule_service
 from auto_signin_kit.domains.schedule.schema import ScheduleDomainConfig
@@ -77,9 +79,10 @@ def history(
     days: int = Query(7, ge=1, le=90),
     domain: str | None = Query(None),
     result: str | None = Query(None),
+    account: str | None = Query(None),
 ) -> list[dict[str, Any]]:
-    """每日折叠视图(每天每域最后一次运行 = 当天最终状态)。"""
-    return store.daily_status(days, domain=domain, result=result)
+    """每日折叠视图(每天每域每账户最后一次运行 = 当天最终状态)。"""
+    return store.daily_status(days, domain=domain, result=result, account=account)
 
 
 @router.get("/events")
@@ -88,12 +91,59 @@ def events(
     domain: str | None = Query(None),
     attention_only: bool = Query(False),
     result: str | None = Query(None),
+    account: str | None = Query(None),
     limit: int = Query(50, ge=1, le=500),
 ) -> list[dict[str, Any]]:
     """运行明细,最新在前;attention_only=1 只看需要人工介入的。"""
     return store.events(
         date=date, domain=domain, attention_only=attention_only,
-        result=result, limit=limit)
+        result=result, account=account, limit=limit)
+
+
+class AccountToggle(BaseModel):
+    """账户启停请求体;domain/name 组合必须在台账已登记。"""
+
+    domain: str
+    name: str
+    enabled: bool
+
+
+@router.get("/accounts")
+def accounts_list(days: int = Query(14, ge=1, le=90)) -> dict[str, Any]:
+    """账户视图(SPEC-12 P3): 登记账户 × 近 N 天逐账户统计合并。
+
+    登记态来自 ``ask_accounts``(enabled/daily_potential/档案列),运行态
+    (连签/14 天色块/积分)来自 ``overview_by_account``——两份都是现算,
+    合并后一行一个 (domain, account)。
+    """
+    summary = store.accounts_summary(days)
+    stats = store.overview_by_account()
+    items = []
+    for row in summary["accounts"]:
+        st = stats.get(row["domain"], {}).get(row["name"], {})
+        items.append({**row, "streak": st.get("streak", 0),
+                      "days14": st.get("days14", []),
+                      "credits": st.get("credits", 0),
+                      "today_credits": st.get("today_credits", 0),
+                      "last_run": st.get("last_run")})
+    return {"total": summary["total"], "active": summary["active"],
+            "window_days": summary["window_days"], "accounts": items}
+
+
+@router.post("/accounts/enabled")
+def account_toggle(body: AccountToggle) -> dict[str, Any]:
+    """账户启停开关(SPEC-12 P3): 只改台账登记态。
+
+    调度执行的启停真相在各域 YAML ``accounts[].enabled``(run_action 读配置),
+    面板改登记态后请同步配置页——两处不一致时以配置为准,登记态只影响展示
+    与容量计算,这里如实说明不做静默同步。
+    """
+    try:
+        store.set_account_enabled(body.domain, body.name, body.enabled)
+    except AutoSignInKitError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return {"ok": True, "domain": body.domain, "name": body.name,
+            "enabled": body.enabled}
 
 
 @router.get("/credits/summary")
@@ -152,12 +202,16 @@ def schedule_uninstall(body: ScheduleOp) -> dict[str, Any]:
 
 
 @router.post("/run/{domain}")
-def run_task(domain: str, action: str = Query("auto")) -> dict[str, Any]:
-    """手动触发一个动作(auto/doctor),立即返回 job;前端轮询 /jobs/{id}。"""
+def run_task(domain: str, action: str = Query("auto"),
+             account: str | None = Query(None)) -> dict[str, Any]:
+    """手动触发一个动作(auto/doctor),立即返回 job;前端轮询 /jobs/{id}。
+
+    ``account``(SPEC-12 P3): 指定账户触发,子进程带 ``--account``。
+    """
     if domain not in _known_domains():
         raise HTTPException(404, "未知域: %s" % domain)
     try:
-        job = runner.runner.submit(domain, action)
+        job = runner.runner.submit(domain, action, account=account)
     except runner.DomainBusyError as exc:
         raise HTTPException(409, str(exc)) from exc
     except ValueError as exc:

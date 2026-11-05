@@ -45,6 +45,7 @@ class Job:
     action: str
     argv: tuple[str, ...]
     started_at: str
+    account: str | None = None  # SPEC-12 P3: 指定账户手动触发(default/缺省为 None)
     status: str = "running"  # running / ok / failed / timeout
     exit_code: int | None = None
     output: str = ""
@@ -57,6 +58,7 @@ class Job:
             "id": self.id,
             "domain": self.domain,
             "action": self.action,
+            "account": self.account,
             "argv": list(self.argv),
             "started_at": self.started_at,
             "finished_at": self.finished_at,
@@ -93,23 +95,31 @@ class _Runner:
         self._jobs: OrderedDict[str, Job] = OrderedDict()
         self._lock = threading.Lock()
 
-    def submit(self, domain: str, action: str) -> Job:
-        """登记并异步启动一个 job;同域同动作在跑则抛 :class:`DomainBusyError`。"""
+    def submit(self, domain: str, action: str, account: str | None = None) -> Job:
+        """登记并异步启动一个 job;同域同动作同账户在跑则抛 :class:`DomainBusyError`。
+
+        ``account``(SPEC-12 P3): 指定账户手动触发,子进程带 ``--account``;
+        不同账户可以并发(各自独立凭据与台账行),同账户同动作才互斥。
+        """
         timeout = ACTIONS.get(action)
         if timeout is None:
             raise ValueError("不允许的动作: %s(可用: %s)" % (action, "、".join(ACTIONS)))
+        argv = ("auto-signin-kit", domain, action)
+        if account:
+            argv = (*argv, "--account", account)
         with self._lock:
             for job in self._jobs.values():
                 if (job.domain == domain and job.action == action
-                        and job.status == "running"):
+                        and job.account == account and job.status == "running"):
                     raise DomainBusyError(
                         "%s %s 已在运行(job=%s),等它结束再触发" % (domain, action, job.id))
             job = Job(
                 id=uuid.uuid4().hex[:12],
                 domain=domain,
                 action=action,
-                argv=("auto-signin-kit", domain, action),
+                argv=argv,
                 started_at=_now(),
+                account=account,
             )
             self._jobs[job.id] = job
             while len(self._jobs) > MAX_JOBS:

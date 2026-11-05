@@ -4,3 +4,12 @@ budget_seconds: 420
 # 成长任务进度制造器: 自动补齐「需客户端交互」任务的判据事件(taskbot.py);
 # 专家/技能类动作会消耗真实对话额度,默认关,按需开启。
 taskbot: false
+
+# 多账户(SPEC-12,可选): 不声明 = 单账户 default,存量配置零改动。
+# 每个账户独立凭据与台账;enabled=false 的账户调度跳过(手动 --account 仍可跑)。
+# 凭据按账户名解析: default 沿用现有链路(WORKBUDDY_AUTH_FILE/env/扫描),
+# 具名账户用 auth_file 显式指定,如 auth_file: "D:/data/workbuddy-backup.info"
+# accounts:
+#   - name: main
+#   - name: backup
+#     enabled: false

@@ -30,6 +30,7 @@ from importlib.metadata import entry_points
 from types import ModuleType
 from typing import Any
 
+from auto_signin_kit.core.errors import ConfigMissingError
 from auto_signin_kit.core.ports.scheduler import ScheduleSpec
 
 #: 各域调度声明的 entry-point 组;值指向 ``<域>/schedule_meta.py`` 模块,
@@ -84,6 +85,53 @@ def tasks_for(domain: str | None) -> tuple[ScheduleSpec, ...]:
     if not domain:
         return TASKS
     return tuple(spec for spec in TASKS if domain_of(spec) == domain)
+
+
+def _shift_time(hhmm: str, minutes: int) -> str:
+    """``HH:MM`` 平移 N 分钟(可跨小时/跨天回绕);错峰用,分钟粒度足够。"""
+    hour, minute = (int(part) for part in hhmm.split(":", 1))
+    total = (hour * 60 + minute + minutes) % (24 * 60)
+    return "%02d:%02d" % divmod(total, 60)
+
+
+def expand_accounts(specs: tuple[ScheduleSpec, ...]) -> tuple[ScheduleSpec, ...]:
+    """把各域声明的多账户展开成"基础任务 + 每账户一个实例"(SPEC-12 P3)。
+
+    - **基础任务原样保留**: default 账户骑在原声明上(名字/argv/时间都不动),
+      单账户配置零变化;账户实例名 ``<原名>@<账户>``,argv 追加 ``--account``;
+    - **错峰**: 第 i 个具名账户的全部触发时间整体 +i 分钟(回绕)——多个账户
+      同一秒打同一个服务端容易被当成风控流量,错开比并发礼貌;
+    - 账户名单来自各域 ``schedule_meta.accounts()``(读各域 YAML 的
+      ``accounts[].enabled``);未声明该函数的域视为单账户,行为不变;
+    - 各域配置**还没建**时降级为单账户(域 CLI 真跑时自会把"配置不存在"
+      报给用户,注册侧不连坐);**格式/校验错**仍然当场炸——schedule install
+      是用户主动操作,坏配置必须显式报出来,绝不静默少注册。
+    """
+    out: list[ScheduleSpec] = []
+    for spec in specs:
+        out.append(spec)
+        module = provider_of(domain_of(spec))
+        names = getattr(module, "accounts", None)
+        if names is None:
+            continue
+        try:
+            declared = names()
+        except ConfigMissingError:
+            continue  # 域配置还没建: 单账户降级,基础任务照常注册
+        for index, name in enumerate(declared, start=1):
+            out.append(replace(
+                spec,
+                name="%s@%s" % (spec.name, name),
+                argv=(*spec.argv, "--account", name),
+                times=tuple(_shift_time(t, index) for t in spec.times),
+                description="%s · 账户 %s" % (spec.description, name),
+            ))
+    return tuple(out)
+
+
+def account_of(spec: ScheduleSpec) -> str:
+    """任务实例的账户名(名字含 ``@账户`` 的具名实例);基础任务返回 default。"""
+    return spec.name.rsplit("@", 1)[1] if "@" in spec.name else "default"
 
 
 def apply_overrides(spec: ScheduleSpec, override: Any) -> ScheduleSpec:

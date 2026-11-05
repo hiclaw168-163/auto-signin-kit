@@ -19,6 +19,7 @@
 | [SPEC-09-Web管理台.md](SPEC-09-Web管理台.md) | 本地 Web UI(ui/ API 层 + frontend/ Vue3 前端包) | 已实现 |
 | [SPEC-10-ui后台运行与停止.md](SPEC-10-ui后台运行与停止.md) | ui serve --daemon + stop/status(PID 文件 + 日志落盘) | 已实现 |
 | [SPEC-11-内核抽取与应用管理.md](SPEC-11-内核抽取与应用管理.md) | core/kit 内核抽取 → 脚手架 → UI 应用管理(三阶段) | 已实现 |
+| [SPEC-12-多账户管理.md](SPEC-12-多账户管理.md) | 一域多账户: 配置声明/凭据 profile 化/台账双维/管理台账户视图(三阶段) | 设计中 |
 
 关键架构决策单独沉淀在 `docs/adr/`(见根目录该目录的各 ADR):
 

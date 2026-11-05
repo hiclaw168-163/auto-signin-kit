@@ -414,3 +414,85 @@ class TestCreditsAndAccounts:
             assert seq["seq"] == 1  # 自增计数没丢
         finally:
             conn.close()
+
+
+class TestAccountDimension:
+    """SPEC-12 P1: 台账 (domain, account) 双维隔离——A 账户的行不能影响 B 账户。"""
+
+    def test_done_today_isolated_between_accounts(self):
+        ts = datetime.now().astimezone().isoformat(timespec="seconds")
+        store.record_payload(json.dumps(_record(
+            ts=ts, result="CLAIMED", account="main"), ensure_ascii=False))
+        assert store.done_today("trae", "main") is True
+        assert store.done_today("trae", "backup") is False  # B 账户没签,不能被 A 误跳
+        assert store.done_today("trae") is False  # default 与具名账户同样隔离
+
+    def test_compact_keeps_each_accounts_success_rows(self):
+        """compact 按 (day, domain, account) 分组: 两账户同天各一条成功行,
+        冗余清理后都必须保留——这是多账户场景最大的真数据丢失点。"""
+        store.record_payload(json.dumps(_record(
+            ts=_today_ts("09:00"), result="CLAIMED", account="main"),
+            ensure_ascii=False))
+        store.record_payload(json.dumps(_record(  # main 的冗余重跑行 → 删
+            ts=_today_ts("10:00"), result="ALREADY", account="main"),
+            ensure_ascii=False))
+        store.record_payload(json.dumps(_record(  # main 当天最后一行 → 保留(视图取它)
+            ts=_today_ts("10:20"), result="ALREADY", account="main"),
+            ensure_ascii=False))
+        store.record_payload(json.dumps(_record(  # backup 的唯一成功行 → 必须保留
+            ts=_today_ts("10:30"), result="CLAIMED", account="backup"),
+            ensure_ascii=False))
+        assert store.compact_history()["deleted"] == 1
+        rows = store.events(limit=10)
+        accounts = {row["account"] for row in rows}
+        assert accounts == {"main", "backup"}
+        assert len([r for r in rows if r["account"] == "backup"]) == 1
+
+    def test_daily_view_folds_per_account(self):
+        store.record_payload(json.dumps(_record(
+            ts=_today_ts("09:00"), result="CLAIMED", account="main"),
+            ensure_ascii=False))
+        store.record_payload(json.dumps(_record(
+            ts=_today_ts("09:10"), result="NO_AUTH", needs_attention=True,
+            account="backup"), ensure_ascii=False))
+        rows = store.daily_status(days=7)
+        assert len(rows) == 2  # 两账户各自有"当天最终状态"
+        by_account = {row["account"]: row["result"] for row in rows}
+        assert by_account == {"main": "CLAIMED", "backup": "NO_AUTH"}
+
+    def test_overview_stats_credits_sum_across_accounts(self):
+        """域级积分 = 每 (账户, 天) MAX 后跨账户求和;两户同天不互吃。"""
+        store.record_payload(json.dumps(_record(
+            ts=_today_ts("09:00"), result="CLAIMED", account="main", credits=100),
+            ensure_ascii=False))
+        store.record_payload(json.dumps(_record(
+            ts=_today_ts("09:30"), result="CLAIMED", account="backup", credits=50),
+            ensure_ascii=False))
+        stats = store.overview_stats()["trae"]
+        assert stats["today_credits"] == 150
+        per = store.overview_by_account()["trae"]
+        assert per["main"]["today_credits"] == 100
+        assert per["backup"]["today_credits"] == 50
+
+
+
+class TestFailureCountToday:
+    """降噪依据: 当天同 (domain, account, result) 失败计数(不含调用方本条)。"""
+
+    def test_counts_same_result_only_and_isolates_account(self):
+        ts = _today_ts("09:00")
+        store.record_payload(json.dumps(_record(
+            ts=ts, result="ERROR", needs_attention=True, account="main"),
+            ensure_ascii=False))
+        store.record_payload(json.dumps(_record(
+            ts=_today_ts("10:00"), result="NO_AUTH", needs_attention=True,
+            account="main"), ensure_ascii=False))
+        assert store.failure_count_today("trae", "main", result="ERROR") == 1
+        assert store.failure_count_today("trae", "main", result="NO_AUTH") == 1
+        assert store.failure_count_today("trae", "main") == 2  # 不收窄 = 全部失败
+        assert store.failure_count_today("trae", "backup") == 0  # 账户隔离
+        # 成功行不进失败计数
+        store.record_payload(json.dumps(_record(
+            ts=_today_ts("11:00"), result="CLAIMED", account="main"),
+            ensure_ascii=False))
+        assert store.failure_count_today("trae", "main") == 2

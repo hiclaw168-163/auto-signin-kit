@@ -22,7 +22,7 @@ from pydantic import ValidationError
 
 from auto_signin_kit.core.config.schema import DomainConfig
 from auto_signin_kit.core.envvar import auto_signin_kit_env
-from auto_signin_kit.core.errors import ConfigError
+from auto_signin_kit.core.errors import ConfigError, ConfigMissingError
 
 TDomainConfig = TypeVar("TDomainConfig", bound=DomainConfig)
 
@@ -59,12 +59,16 @@ def _domain_yaml_path(domain: str) -> Path:
 
 
 def _read_domain_dict(domain: str) -> tuple[Path, dict[str, Any]]:
-    """读域 YAML 为 dict;不存在/格式错立即 ConfigError,不做静默兜底。"""
+    """读域 YAML 为 dict;不存在/格式错立即 ConfigError,不做静默兜底。
+
+    文件不存在抛 :class:`ConfigMissingError`(ConfigError 子类)——调度侧
+    的账户展开靠它区分"还没建配置"(降级单账户)与"配置坏了"(当场炸)。
+    """
     path = _domain_yaml_path(domain)
     if not path.exists():
         example = resolve_config_dir() / "examples" / f"{domain}.yaml.example"
         hint = f"cp {example} {path}" if example.exists() else f"create {path}"
-        raise ConfigError(f"配置不存在: {path} — {hint}")
+        raise ConfigMissingError(f"配置不存在: {path} — {hint}")
     try:
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
     except yaml.YAMLError as e:

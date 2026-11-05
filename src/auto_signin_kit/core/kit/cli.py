@@ -55,26 +55,36 @@ def create_domain_app(
     def _config() -> DomainConfig:
         return load_domain_config_model(domain, config_cls, merge_local=True)
 
+    # 账户选项(SPEC-12): 缺省 default 单账户语义不变;未声明/停用由
+    # service.run_action 内的 core.kit.accounts 统一裁决,cli 不重复实现。
+    def _account_opt() -> Any:
+        return typer.Option(
+            "default", "--account", metavar="NAME",
+            help="多账户: 配置 accounts 里声明的账户名(缺省 default)。")
+
     @app.command()
     def auto(
         dry_run: bool = typer.Option(False, "--dry-run", help=dry_run_help),
         once: bool = typer.Option(False, "--once", help=once_help),
         silent: bool = typer.Option(False, "--silent",
                                     help="结果写日志文件而非 stdout(配合 pythonw)"),
+        account: str = _account_opt(),
     ) -> None:
         """%s""" % (auto_help or ("领取今日 %s 签到(幂等;已签只提示不重复领取)。" % display))
         raise typer.Exit(run_guarded(service.run_action, "claim", _config(),
                                      silent=silent, dry_run=dry_run, once=once,
-                                     command="auto"))
+                                     command="auto", account=account))
 
     @app.command()
-    def status() -> None:
+    def status(account: str = _account_opt()) -> None:
         """%s""" % status_help
-        raise typer.Exit(run_guarded(service.run_action, "status", _config()))
+        raise typer.Exit(run_guarded(service.run_action, "status", _config(),
+                                     account=account))
 
     @app.command()
-    def doctor() -> None:
+    def doctor(account: str = _account_opt()) -> None:
         """%s""" % doctor_help
-        raise typer.Exit(run_guarded(service.run_action, "doctor", _config()))
+        raise typer.Exit(run_guarded(service.run_action, "doctor", _config(),
+                                     account=account))
 
     return app

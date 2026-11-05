@@ -27,6 +27,41 @@ ATTENTION_RESULTS = frozenset({
     "AUTH_ERROR", "AUTH_REJECTED", "FORBIDDEN", "PENDING", "INACTIVE_ERROR",
 })
 
+#: 降噪集合(2026-11-05 增补): 这些**硬失败**当天在同一 (domain, account,
+#: result) 上重复出现时不再反复置 needs_attention——起因是豆包服务端故障
+#: (710010702)当天三次调度重试刷了三条"需要关注",人只需要在第一条被提醒。
+#: PENDING/INACTIVE_ERROR 是状态提醒,不在降噪之列。
+DEDUP_RESULTS = frozenset({
+    "ERROR", "UNKNOWN", "NETWORK", "TIMEOUT", "NO_AUTH", "NO_SESSION",
+    "AUTH_ERROR", "AUTH_REJECTED", "FORBIDDEN",
+})
+
+
+def _dedupe_attention(record: dict[str, Any]) -> None:
+    """当天同 (domain, account, result) 的硬失败重复出现时降噪。
+
+    在落库**之前**查(本条还没进台账,计数不含自己);第 2 次起
+    ``needs_attention`` 置 False、``level`` 回 INFO,``repeat_today`` 记
+    当日第几次——台账里行仍在,总览/明细照常可见,只是不再刷"需要关注"。
+    查询失败按未降噪处理(best-effort,与落库同一口径)。
+    """
+    if not record.get("needs_attention") or record.get("result") not in DEDUP_RESULTS:
+        return
+    try:
+        from auto_signin_kit.core import store
+
+        seen = store.failure_count_today(
+            record.get("domain") or "", record.get("account") or "default",
+            result=record.get("result"))
+    except Exception:
+        return
+    if seen:
+        record["needs_attention"] = False
+        record["level"] = "INFO"
+        record["repeat_today"] = seen + 1
+        record["report"] = "%s（当日第 %d 次,已降噪）" % (
+            record.get("report") or record.get("result"), seen + 1)
+
 #: **结果取值标准词表**(唯一事实源): 域上报什么、台账存什么、UI 显示什么,
 #: 都以这里为准——界面上"有的显示已签到、有的显示 OK"就是因为取值没有
 #: 标准答案,各层各翻各的。新增 result 取值必须在这里登记中文标签。
@@ -135,6 +170,7 @@ def emit_result(
     sensitive: set[str] | None = None,
     log_errors_without_silent: bool = True,
     request: dict[str, Any] | None = None,
+    account: str | None = None,
 ) -> None:
     """按双通道契约输出结果;本函数保证不抛异常。
 
@@ -151,6 +187,8 @@ def emit_result(
     ``silent``: 写日志文件而非 stdout(定时任务静默运行)。
     ``log_errors_without_silent``: 非静默模式下 ERROR 结果也补写日志(workbuddy
     语义);qoder 语义不需要,传 False。
+    ``account``: 本次运行用的账户(SPEC-12),并入事件信封;out 里已带
+    account 时以 out 为准。台账 ingest 按 (domain, account) 落维表与运行行。
     """
     record: dict[str, Any] = {
         "ts": datetime.now().astimezone().isoformat(timespec="seconds"),
@@ -167,8 +205,11 @@ def emit_result(
         record["domain"] = domain
     if action:
         record["action"] = action
+    if account:
+        record.setdefault("account", account)
     if request:
         record["request"] = {k: v for k, v in request.items() if k not in record}
+    _dedupe_attention(record)
     payload = _dumps(record)
     for value in sensitive or ():
         payload = payload.replace(value, "[REDACTED]")

@@ -12,7 +12,7 @@
 |------|------|
 | `cli.py` | 命令入口(install / uninstall / status / render);只做参数解析与退出码映射 |
 | `service.py` | `run_action` 分发;install/uninstall 逐个执行且**失败不中断**,status 查询,render_definitions |
-| `data.py` | 任务清单 `TASKS`(名称/命令行/触发时间/时限)+ `tasks_for(domain)` 过滤 |
+| `data.py` | 任务清单 `TASKS`(名称/命令行/触发时间/时限)+ `tasks_for(domain)` 过滤;`expand_accounts` 把各域声明按账户展开成 `<任务名>@<账户>` 实例(触发时间按账户序号 +i 分钟错峰;域配置缺失降级单账户,格式/校验错当场炸,SPEC-12) |
 | `schema.py` | `ScheduleDomainConfig`,只有 `enabled_tasks` 一个开关 |
 
 OS 差异全部在 `core/adapters/scheduler/`,本域只见 `core.ports.scheduler.Scheduler`

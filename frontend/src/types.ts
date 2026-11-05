@@ -99,6 +99,7 @@ export interface JobInfo {
   id: string
   domain: string
   action: string
+  account: string | null
   argv: string[]
   started_at: string
   finished_at: string | null
@@ -106,4 +107,27 @@ export interface JobInfo {
   exit_code: number | null
   output: string
   result: Record<string, unknown> | null
+}
+
+// SPEC-12 账户视图: 登记账户(ask_accounts) × 逐账户运行统计(overview_by_account)。
+export interface AccountRow {
+  domain: string
+  name: string
+  enabled: boolean
+  daily_potential: number | null
+  device_id: string | null
+  client_version: string | null
+  uid: string | null
+  streak: number
+  days14: { day: string; ok: boolean }[]
+  credits: number
+  today_credits: number
+  last_run: string | null
+}
+
+export interface AccountsInfo {
+  total: number
+  active: number
+  window_days: number
+  accounts: AccountRow[]
 }

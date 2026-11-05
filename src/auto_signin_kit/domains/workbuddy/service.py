@@ -7,10 +7,16 @@ import os
 from pathlib import Path
 from typing import Any
 
+from auto_signin_kit.core.errors import AutoSignInKitError
 from auto_signin_kit.core.httpclient import Budget
-from auto_signin_kit.core.kit.actions import skip_done_today, unknown_action_report
+from auto_signin_kit.core.kit.accounts import (
+    account_enabled,
+    account_ref,
+    resolve_account,
+)
+from auto_signin_kit.core.kit.actions import DEFAULT_ACCOUNT, skip_done_today, unknown_action_report
 from auto_signin_kit.core.kit.budget import parse_budget as core_parse_budget
-from auto_signin_kit.core.logging import result_log_path
+from auto_signin_kit.core.logging import log_debug, result_log_path
 from auto_signin_kit.core.report import emit_result, make_result
 from auto_signin_kit.domains.workbuddy import checkin, daily, rewards
 from auto_signin_kit.domains.workbuddy.credentials import find_auth_file, load_session_retry
@@ -61,13 +67,18 @@ def parse_budget(
         config.budget_seconds, default, maximum, env_var="WORKBUDDY_BUDGET_SECONDS")
 
 
-def load_credentials() -> tuple[dict | None, dict | None]:
-    """定位/读取/校验凭据;返回 (session, 失败结果)。两者必有其一为 None。"""
-    auth_file, looked_in = find_auth_file()
-    if auth_file is None or not auth_file.exists():
-        override = os.environ.get("WORKBUDDY_AUTH_FILE")
-        if override:
-            report = "WORKBUDDY_AUTH_FILE 指向的文件不存在：%s" % override
+def load_credentials(*, auth_file: str | None = None) -> tuple[dict | None, dict | None]:
+    """定位/读取/校验凭据;返回 (session, 失败结果)。两者必有其一为 None。
+
+    ``auth_file``(SPEC-12 P2): 具名账户的显式凭据路径;缺省走环境变量/
+    平台扫描,行为不变。
+    """
+    auth_path, looked_in = find_auth_file(auth_file=auth_file)
+    if auth_path is None or not auth_path.exists():
+        if auth_file:
+            report = "账户凭据文件不存在：%s" % auth_file
+        elif os.environ.get("WORKBUDDY_AUTH_FILE"):
+            report = "WORKBUDDY_AUTH_FILE 指向的文件不存在：%s" % os.environ["WORKBUDDY_AUTH_FILE"]
         else:
             report = (
                 "未找到 WorkBuddy 登录凭据。请先在本机登录 WorkBuddy 桌面端；"
@@ -76,7 +87,7 @@ def load_credentials() -> tuple[dict | None, dict | None]:
         return None, {"result": "NO_AUTH", "report": report, "looked_in": looked_in,
                       "needs_attention": True}
     try:
-        return load_session_retry(auth_file), None
+        return load_session_retry(auth_path), None
     except json.JSONDecodeError as e:
         return None, {"result": "ERROR",
                       "report": "登录凭据文件不是合法 JSON（%s），请重新登录客户端" % e,
@@ -117,26 +128,45 @@ def run_doctor(session: dict, budget: Budget) -> dict:
     return out
 
 
-def run_action(action: str, config: WorkbuddyDomainConfig, *, silent: bool = False) -> int:
-    """命令分发;结果一律按一行 JSON 契约输出,本函数保证不抛业务异常。"""
+def run_action(action: str, config: WorkbuddyDomainConfig, *, silent: bool = False,
+               account: str = DEFAULT_ACCOUNT) -> int:
+    """命令分发;结果一律按一行 JSON 契约输出,本函数保证不抛业务异常。
+
+    ``account``(SPEC-12): 未声明直接报错;停用账户静默调度跳过,手动跑放行;
+    全程透传进台账信封(emit_result 的 account=)。会话身份 dict 已改名 acct。
+    """
+    try:
+        account = resolve_account(config, account)
+    except AutoSignInKitError as exc:
+        emit_result(make_result("FAILED", str(exc), domain="workbuddy"),
+                    action=action, silent=silent, log_path=log_path())
+        return exc.exit_code
+    # 停用账户只在静默(调度)路径跳过;显式 --account 手动跑永远放行
+    if silent and not account_enabled(config, account):
+        log_debug("workbuddy/%s: 账户已停用,调度触发跳过(不执行、不落库)" % account)
+        return 0
     if action not in KNOWN_ACTIONS:
         emit_result(
             make_result("ERROR", unknown_action_report(action, KNOWN_ACTIONS),
                         domain="workbuddy"),
-            action=action, silent=silent, log_path=log_path(),
+            action=action, silent=silent, log_path=log_path(), account=account,
         )
         return 2
-    # 调度兜底触发(高密度时间点): 当天已成功签到就不再执行,也不重复落库
-    if skip_done_today("workbuddy", action, silent=silent, skip_when_done=SKIP_WHEN_DONE):
+    # 调度兜底触发(高密度时间点): 当天该账户已成功签到就不再执行,也不重复落库
+    if skip_done_today("workbuddy", action, silent=silent, skip_when_done=SKIP_WHEN_DONE,
+                       account=account):
         return 0
     poll = action in POLL_ACTIONS
     budget_value, warning = parse_budget(config, poll=poll)
     budget = Budget(budget_value)
 
-    session, failure = load_credentials()
+    # 凭据 profile(SPEC-12 P2): 具名账户用 AccountRef.auth_file 显式路径,
+    # default/未声明沿用环境变量与平台扫描链路
+    ref = account_ref(config, account)
+    session, failure = load_credentials(auth_file=ref.auth_file if ref else None)
     if failure is not None:
-        emit_result(failure, domain="workbuddy", action=action, silent=silent,
-                    log_path=log_path())
+        emit_result(dict(failure, account=account), domain="workbuddy", action=action,
+                    silent=silent, log_path=log_path())
         return 2
 
     if action == "doctor":
@@ -144,9 +174,10 @@ def run_action(action: str, config: WorkbuddyDomainConfig, *, silent: bool = Fal
             out = run_doctor(session, budget)
         except AuthError as e:
             emit_result(e.output(), domain="workbuddy", action=action, silent=silent,
-                        log_path=log_path())
+                        log_path=log_path(), account=account)
             return 1
-        emit_result(out, domain="workbuddy", action=action, silent=silent, log_path=log_path())
+        emit_result(out, domain="workbuddy", action=action, silent=silent,
+                    log_path=log_path(), account=account)
         return 0
 
     try:
@@ -154,15 +185,15 @@ def run_action(action: str, config: WorkbuddyDomainConfig, *, silent: bool = Fal
         headers = build_headers(resolved)
     except AuthError as e:
         emit_result(e.output(), domain="workbuddy", action=action, silent=silent,
-                    log_path=log_path())
+                    log_path=log_path(), account=account)
         return 1
     endpoint = ((resolved.get("auth") or {}).get("endpoint") or config.endpoint
                 or DEFAULT_ENDPOINT).rstrip("/")
-    account = resolved.get("account") or {}
+    acct = resolved.get("account") or {}
     identity = {
-        "uid": str(account.get("uid") or ""),
-        "nickname": str(account.get("nickname") or ""),
-        "enterprise": str(account.get("enterpriseId") or ""),
+        "uid": str(acct.get("uid") or ""),
+        "nickname": str(acct.get("nickname") or ""),
+        "enterprise": str(acct.get("enterpriseId") or ""),
     }
     net = Net(endpoint, headers, budget, identity=identity)
 
@@ -174,7 +205,7 @@ def run_action(action: str, config: WorkbuddyDomainConfig, *, silent: bool = Fal
             out.setdefault("config_warning", warning)
         emit_result(out, domain="workbuddy", action=action,
                     silent=silent or (action in POLL_ACTIONS or action == "silent"),
-                    log_path=log_path(), sensitive=SENSITIVE)
+                    log_path=log_path(), sensitive=SENSITIVE, account=account)
         return code
 
     if action == "active":
@@ -185,7 +216,7 @@ def run_action(action: str, config: WorkbuddyDomainConfig, *, silent: bool = Fal
         if warning:
             out.setdefault("config_warning", warning)
         emit_result(out, domain="workbuddy", action=action, silent=silent,
-                    log_path=log_path(), sensitive=SENSITIVE)
+                    log_path=log_path(), sensitive=SENSITIVE, account=account)
         # 只有补完对话仍无活跃记录(或链路失败)才非零退出;ACTIVE 为 0。
         return 0 if out.get("result") == "ACTIVE" else 1
 
@@ -198,37 +229,41 @@ def run_action(action: str, config: WorkbuddyDomainConfig, *, silent: bool = Fal
         if warning:
             gout.setdefault("config_warning", warning)
         emit_result(gout, domain="workbuddy", action=action, silent=silent,
-                    log_path=log_path(), sensitive=SENSITIVE)
+                    log_path=log_path(), sensitive=SENSITIVE, account=account)
         return gcode
 
-    return run_debug(action, net)
+    return run_debug(action, net, account=account)
 
 
-def run_debug(action: str, net: Net) -> int:
+def run_debug(action: str, net: Net, *, account: str = DEFAULT_ACCOUNT) -> int:
     """status/claim/all: 输出原始返回,调试用;状态查询失败时不继续领取。"""
     if action in ("status", "all"):
         scode, sbody = net.post(checkin.STATUS_SUFFIX, retry=True)
         if scode in (401, 403):
             emit_result(dict(checkin.auth_failure_dto(scode), step="status", domain="workbuddy"),
-                        action=action, sensitive=SENSITIVE, log_path=log_path())
+                        action=action, sensitive=SENSITIVE, log_path=log_path(),
+                        account=account)
             return 1
         emit_result(make_result("OK", "已查询签到状态", step="status", http=scode, body=sbody,
                                 needs_attention=not 200 <= scode < 300,
                                 domain="workbuddy"),
-                    action=action, sensitive=SENSITIVE, log_path=log_path())
+                    action=action, sensitive=SENSITIVE, log_path=log_path(),
+                    account=account)
         if not 200 <= scode < 300:
             return 1
     if action in ("claim", "all"):
         ccode, cbody = net.post(checkin.CLAIM_SUFFIX, retry=True)
         if ccode in (401, 403):
             emit_result(dict(checkin.auth_failure_dto(ccode), step="claim", domain="workbuddy"),
-                        action=action, sensitive=SENSITIVE, log_path=log_path())
+                        action=action, sensitive=SENSITIVE, log_path=log_path(),
+                        account=account)
             return 1
         success = 200 <= ccode < 300 or (ccode == 400 and checkin.is_already_checked_in(cbody))
         emit_result(make_result("OK", "已请求领取签到", step="claim", http=ccode, body=cbody,
                                 needs_attention=not success,
                                 domain="workbuddy"),
-                    action=action, sensitive=SENSITIVE, log_path=log_path())
+                    action=action, sensitive=SENSITIVE, log_path=log_path(),
+                    account=account)
         if not success:
             return 1
     return 0

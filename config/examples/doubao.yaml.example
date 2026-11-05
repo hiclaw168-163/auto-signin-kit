@@ -11,3 +11,13 @@ campaign_code: pc_incentive_task_mvp_v3
 cdp_port: 9223
 # 时间预算(秒),计划任务 PT5M 上限 240。
 budget_seconds: 240
+
+# 多账户(SPEC-12,可选): 不声明 = 单账户 default,存量配置零改动。
+# 多账户 = 豆包客户端多开: 每账户一份独立 User Data + 一个独立调试端口,
+# 各自用桌面快捷方式带 --remote-debugging-port=<port> 启动并登录。
+# accounts:
+#   - name: main
+#   - name: second
+#     user_data_dir: "D:/software/DoubaoSecond/User Data"
+#     cdp_port: 9223
+#     # enabled: false

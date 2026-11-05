@@ -20,6 +20,15 @@ class ConfigError(AutoSignInKitError):
     exit_code = 2
 
 
+class ConfigMissingError(ConfigError):
+    """域配置**文件不存在**(区别于格式/字段非法)。
+
+    单独建类是因为有一个合法的降级场景(SPEC-12 调度账户展开): 域配置还没
+    建时,调度侧按"单账户 default"注册基础任务即可——真实运行时域 CLI 会
+    把"配置不存在"原样报给用户;但格式错/字段校验错必须当场炸,绝不能静默。
+    """
+
+
 class CommandError(AutoSignInKitError):
     """命令参数/流程性错误;退出码 3。"""
 

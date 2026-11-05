@@ -91,3 +91,36 @@ def test_sensitive_values_redacted_in_record(tmp_path):
     (record,) = _read_records(log)
     assert record["token"] == "[REDACTED]"
     assert "secret-value" not in log.read_text(encoding="utf-8")
+
+
+class TestDedupeAttention:
+    """降噪(2026-11-05): 当天同 (domain, account, result) 硬失败第 2 次起不刷 attention。"""
+
+    def _emit(self, log: Path, result: str, domain: str = "doubao") -> dict:
+        report.emit_result(report.make_result(result, "服务端故障 code=710010702",
+                                              domain=domain),
+                           domain=domain, action="auto", account="default",
+                           silent=True, log_path=log)
+        return _read_records(log)[-1]
+
+    def test_first_failure_keeps_attention(self, tmp_path):
+        log = tmp_path / "doubao.log"
+        record = self._emit(log, "ERROR")
+        assert record["needs_attention"] is True  # 第 1 条照常提醒
+        assert "repeat_today" not in record
+
+    def test_repeat_failure_is_muted(self, tmp_path):
+        log = tmp_path / "doubao.log"
+        self._emit(log, "ERROR")
+        record = self._emit(log, "ERROR")
+        assert record["needs_attention"] is False
+        assert record["level"] == "INFO"
+        assert record["repeat_today"] == 2
+        assert "已降噪" in record["report"]
+
+    def test_status_reminders_never_muted(self, tmp_path):
+        """PENDING 是状态提醒不是硬失败,重复出现照常 attention。"""
+        log = tmp_path / "qoder.log"
+        self._emit(log, "PENDING", domain="qoder")
+        record = self._emit(log, "PENDING", domain="qoder")
+        assert record["needs_attention"] is True

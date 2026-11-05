@@ -29,12 +29,14 @@ SIGNIN_DONE_RESULTS = ("CLAIMED", "ALREADY")
 
 def daily_status(days: int = 7, *, domain: str | None = None,
                  source: str | None = None,
-                 result: str | None = None) -> list[dict[str, Any]]:
-    """最近 N 天每天每域的最终状态(读 ``ask_daily_checkins`` 视图),新的一天在前。"""
+                 result: str | None = None,
+                 account: str | None = None) -> list[dict[str, Any]]:
+    """最近 N 天每天每域每账户的最终状态(读 ``ask_daily_checkins`` 视图),新的一天在前。"""
     conn = connect()
     try:
         sql = (
-            "SELECT day, domain, result, source, needs_attention, report, executed_at"
+            "SELECT day, domain, account, result, source, needs_attention, report,"
+            " executed_at"
             " FROM ask_daily_checkins WHERE day >= date('now', 'localtime', ?)"
         )
         params: list[Any] = ["-%d days" % max(1, days)]
@@ -47,7 +49,11 @@ def daily_status(days: int = 7, *, domain: str | None = None,
         if result:
             sql += " AND result = ?"
             params.append(normalize_result(result))
-        rows = conn.execute(sql + " ORDER BY day DESC, domain", params).fetchall()
+        if account:
+            sql += " AND account = ?"
+            params.append(account)
+        rows = conn.execute(sql + " ORDER BY day DESC, domain, account",
+                            params).fetchall()
     finally:
         conn.close()
     return [dict(row) for row in rows]
@@ -55,6 +61,11 @@ def daily_status(days: int = 7, *, domain: str | None = None,
 
 def overview_stats() -> dict[str, dict[str, Any]]:
     """每域汇总统计(读台账,现算不落库): 14 天逐日成败/连续签到天数/积分/最近运行。
+
+    域卡片的口径(SPEC-12 P1): 一域多账户时本函数聚合**该域全部账户**——
+    ``days14``/``streak`` 任一账户成功即 OK;积分按"每 (账户, 天) 取 MAX
+    再跨账户求和",不会把两户同天快照互吃。账户级明细由
+    :func:`overview_by_account` 提供(P3 管理台账户视图用)。
 
     - ``days14``: 今天往前 14 天的逐日布尔(当天有任一成功行即 OK),供色块条;
     - ``streak``: 截至今天的连续成功天数(今天还没签则从昨天起算,不把"还没到"
@@ -66,22 +77,23 @@ def overview_stats() -> dict[str, dict[str, Any]]:
     conn = connect()
     try:
         rows = conn.execute(
-            "SELECT date(executed_at) AS day, domain, result, executed_at, response"
+            "SELECT date(executed_at) AS day, domain, account, result,"
+            " executed_at, response"
             " FROM ask_signin_runs WHERE source = 'run' ORDER BY executed_at"
         ).fetchall()
     finally:
         conn.close()
     today = date.today().isoformat()
     per: dict[str, dict[str, Any]] = {}
-    day_credits: dict[tuple[str, str], int] = {}
+    day_credits: dict[tuple[str, str, str], int] = {}
     for row in rows:
         d = per.setdefault(row["domain"], {
             "ok_days": set(), "last": None})
         if row["result"] in RESULT_OK:
             d["ok_days"].add(row["day"])
             earned = _extract_credits(row["response"])
-            # 同域同天多行(幂等重跑)取最大快照,不累加——响应里是"当日所得"
-            key = (row["domain"], row["day"])
+            # 同域同账户同天多行(幂等重跑)取最大快照,不累加——响应里是"当日所得"
+            key = (row["domain"], row["account"], row["day"])
             day_credits[key] = max(day_credits.get(key, 0), earned)
         d["last"] = row["executed_at"]
     out: dict[str, dict[str, Any]] = {}
@@ -96,10 +108,60 @@ def overview_stats() -> dict[str, dict[str, Any]]:
         days14 = [{"day": (today_date - timedelta(days=13 - i)).isoformat(),
                    "ok": (today_date - timedelta(days=13 - i)).isoformat() in d["ok_days"]}
                   for i in range(14)]
-        credits = sum(v for (dom, _day), v in day_credits.items() if dom == domain)
+        credits = sum(v for (dom, _acct, _day), v in day_credits.items()
+                      if dom == domain)
         out[domain] = {"streak": streak, "days14": days14, "credits": credits,
-                       "today_credits": day_credits.get((domain, today), 0),
+                       "today_credits": sum(
+                           v for (dom, _acct, day), v in day_credits.items()
+                           if dom == domain and day == today),
                        "last_run": d["last"]}
+    return out
+
+
+def overview_by_account() -> dict[str, dict[str, dict[str, Any]]]:
+    """每 (domain, account) 一份汇总统计;形状与 :func:`overview_stats` 同构。
+
+    Web 管理台账户视图(SPEC-12 P3)的数据源;键序 ``out[domain][account]``。
+    与域级聚合的差异: streak/days14/credits 都只算本账户自己的行。
+    """
+    conn = connect()
+    try:
+        rows = conn.execute(
+            "SELECT date(executed_at) AS day, domain, account, result,"
+            " executed_at, response"
+            " FROM ask_signin_runs WHERE source = 'run' ORDER BY executed_at"
+        ).fetchall()
+    finally:
+        conn.close()
+    today = date.today().isoformat()
+    today_date = date.fromisoformat(today)
+    per: dict[tuple[str, str], dict[str, Any]] = {}
+    day_credits: dict[tuple[str, str, str], int] = {}
+    for row in rows:
+        key = (row["domain"], row["account"])
+        d = per.setdefault(key, {"ok_days": set(), "last": None})
+        if row["result"] in RESULT_OK:
+            d["ok_days"].add(row["day"])
+            earned = _extract_credits(row["response"])
+            credit_key = (row["domain"], row["account"], row["day"])
+            day_credits[credit_key] = max(day_credits.get(credit_key, 0), earned)
+        d["last"] = row["executed_at"]
+    out: dict[str, dict[str, dict[str, Any]]] = {}
+    for (domain, account), d in per.items():
+        cursor = today_date if today in d["ok_days"] else today_date - timedelta(days=1)
+        streak = 0
+        while cursor.isoformat() in d["ok_days"]:
+            streak += 1
+            cursor -= timedelta(days=1)
+        days14 = [{"day": (today_date - timedelta(days=13 - i)).isoformat(),
+                   "ok": (today_date - timedelta(days=13 - i)).isoformat() in d["ok_days"]}
+                  for i in range(14)]
+        out.setdefault(domain, {})[account] = {
+            "streak": streak, "days14": days14,
+            "credits": sum(v for (dom, acct, _day), v in day_credits.items()
+                           if dom == domain and acct == account),
+            "today_credits": day_credits.get((domain, account, today), 0),
+            "last_run": d["last"]}
     return out
 
 
@@ -134,11 +196,12 @@ def events(
     attention_only: bool = False,
     source: str | None = None,
     result: str | None = None,
+    account: str | None = None,
     limit: int = 50,
 ) -> list[dict[str, Any]]:
     """按条件查 ``ask_signin_runs`` 明细,最新在前;``source`` 过滤 run/backfill。"""
-    sql = ("SELECT executed_at, domain, action, source, result, needs_attention, report,"
-           " request, response"
+    sql = ("SELECT executed_at, domain, account, action, source, result,"
+           " needs_attention, report, request, response"
            " FROM ask_signin_runs WHERE 1=1")
     params: list[Any] = []
     if date:
@@ -153,6 +216,9 @@ def events(
     if result:
         sql += " AND result = ?"
         params.append(normalize_result(result))
+    if account:
+        sql += " AND account = ?"
+        params.append(account)
     if attention_only:
         sql += " AND needs_attention = 1"
     sql += " ORDER BY executed_at DESC, id DESC LIMIT ?"
@@ -165,9 +231,10 @@ def events(
     return [dict(row) for row in rows]
 
 
-def done_today(domain: str) -> bool:
-    """该域今天(source=run)是否已有成功签到行;调度兜底触发的跳过判断用。
+def done_today(domain: str, account: str = "default") -> bool:
+    """该域该账户今天(source=run)是否已有成功签到行;调度兜底跳过判断用。
 
+    账户维度(SPEC-12): 按 (domain, account) 判,A 账户已签不影响 B 账户执行。
     时间口径与 ``ask_daily_checkins`` 视图一致: ``executed_at`` 存带时区的
     ISO 时间戳,左侧 ``date(executed_at, 'localtime')`` 取其**本地**日期
     (裸 date() 会转 UTC,凌晨 0~8 点的运行会被算到昨天);右侧
@@ -176,21 +243,47 @@ def done_today(domain: str) -> bool:
     conn = connect()
     try:
         row = conn.execute(
-            "SELECT 1 FROM ask_signin_runs WHERE domain = ? AND source = 'run'"
-            " AND result IN (?, ?)"
+            "SELECT 1 FROM ask_signin_runs WHERE domain = ? AND account = ?"
+            " AND source = 'run' AND result IN (?, ?)"
             " AND date(executed_at) = date('now', 'localtime')"
-            " LIMIT 1", (domain, *SIGNIN_DONE_RESULTS)).fetchone()
+            " LIMIT 1", (domain, account, *SIGNIN_DONE_RESULTS)).fetchone()
     finally:
         conn.close()
     return row is not None
 
 
+def failure_count_today(domain: str, account: str = "default",
+                        result: str | None = None) -> int:
+    """该域该账户今天(source=run)已有的失败行数(按 result 精确匹配可再收窄)。
+
+    降噪用(见 ``core.report`` 的 repeat_today): 调用方在**本条落库前**查询,
+    返回值不含本条;>0 说明同样的失败今天已经报过,重复置 needs_attention
+    只是刷屏。失败行 = needs_attention=1 的 run 行。
+    """
+    conn = connect()
+    try:
+        sql = ("SELECT COUNT(*) FROM ask_signin_runs"
+               " WHERE domain = ? AND account = ? AND source = 'run'"
+               " AND needs_attention = 1"
+               " AND date(executed_at) = date('now', 'localtime')")
+        params: list[Any] = [domain, account]
+        if result:
+            sql += " AND result = ?"
+            params.append(normalize_result(result))
+        (count,) = conn.execute(sql, params).fetchone()
+    finally:
+        conn.close()
+    return count
+
+
 def compact_history() -> dict[str, Any]:
     """清理高密度调度留下的历史冗余成功行;返回 {"deleted", "per_domain"}。
 
-    每天 (day, domain) 只保留: **首条成功行**(真正完成签到的那次)与**当天
-    最后一行**(``ask_daily_checkins`` 视图的最终状态取它);失败/需关注行与
-    backfill 行一律不动。幂等——清完再跑 deleted=0。
+    每天 (day, domain, **account**) 只保留: **首条成功行**(真正完成签到的
+    那次)与**当天最后一行**(``ask_daily_checkins`` 视图的最终状态取它);
+    失败/需关注行与 backfill 行一律不动。分组必须带 account——否则多账户
+    场景下 B 账户的成功行会被当成 A 账户的冗余删掉(SPEC-12 P1 的真数据
+    丢失点)。幂等——清完再跑 deleted=0。
     """
     conn = connect()
     try:
@@ -199,9 +292,9 @@ def compact_history() -> dict[str, Any]:
             " WHERE source = 'run' AND result IN ('CLAIMED', 'ALREADY')"
             "   AND id NOT IN (SELECT MIN(id) FROM ask_signin_runs"
             "                  WHERE source = 'run' AND result IN ('CLAIMED', 'ALREADY')"
-            "                  GROUP BY date(executed_at), domain)"
+            "                  GROUP BY date(executed_at), domain, account)"
             "   AND id NOT IN (SELECT MAX(id) FROM ask_signin_runs"
-            "                  GROUP BY date(executed_at), domain)"
+            "                  GROUP BY date(executed_at), domain, account)"
         ).fetchall()
         per_domain: dict[str, int] = {}
         ids = []

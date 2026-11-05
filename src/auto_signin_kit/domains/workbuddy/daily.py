@@ -90,6 +90,14 @@ def _aggregate_daily(ctx: dict[str, Any]) -> tuple[int, dict, bool]:
     gout = ctx.get("growth_out")
     out["growth"] = ctx.get("growth")
     out["growth_result"] = ctx.get("growth_result")
+    # 成长中心积分(旅行礼物/任务奖)并入台账积分方言字段: 签到所得
+    # (credit/today_credit)+ 本轮成长所得(credits_gained)。此前 credits_gained
+    # 只拼进 report 文本,台账 _extract_credits 取不到 → 管理台 workbuddy
+    # 的"今日积分"永远少算成长中心那部分(2026-11-05 补账口径)。
+    checkin_credit = int(out.get("credit") or out.get("today_credit") or 0)
+    growth_credit = int((gout or {}).get("credits_gained") or 0)
+    if checkin_credit or growth_credit:
+        out["credits"] = checkin_credit + growth_credit
     if gout is not None and (gout.get("credits_gained") or gcode != 0):
         out["report"] += "；" + gout["report"]
     if gcode != 0 and code == 0:

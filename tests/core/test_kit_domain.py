@@ -6,6 +6,8 @@ from typing import ClassVar
 
 import pytest
 
+from auto_signin_kit.core.config.schema import AccountRef
+from auto_signin_kit.core.config.schema import DomainConfig as _DomainConfig
 from auto_signin_kit.core.errors import ConfigError
 from auto_signin_kit.core.kit.domain import DomainError, SigninDomain
 
@@ -17,12 +19,12 @@ class _Capture(SigninDomain):
     display = "Demo"
     emitted: ClassVar[list] = []
 
-    def _emit(self, out, label, *, silent):
-        self.emitted.append((out, label, silent))
+    def _emit(self, out, label, *, silent, account=None):
+        self.emitted.append((out, label, silent, account))
 
 
 class _Ok(_Capture):
-    def build(self, config, *, once=False, dry_run=False):
+    def build(self, config, *, once=False, dry_run=False, account=""):
         return "api"
 
     def claim(self, api, config, *, dry_run=False, once=False):
@@ -44,8 +46,8 @@ def _reset(monkeypatch, tmp_path):
 def test_full_flow_claim_and_status():
     d = _Ok()
     assert d.run_action("claim", cfg := object(), command="auto") == 0
-    out, label, _ = _Capture.emitted[-1]
-    assert out["result"] == "CLAIMED" and label == "auto" and not _Capture.emitted[-1][2]
+    out, label, _silent, _acct = _Capture.emitted[-1]
+    assert out["result"] == "CLAIMED" and label == "auto" and not _silent
     assert d.run_action("status", cfg) == 0
 
 
@@ -63,7 +65,7 @@ def test_doctor_default_stub():
 
 def test_domain_failure_mapped_with_extra():
     class _F(_Ok):
-        def build(self, config, *, once=False, dry_run=False):
+        def build(self, config, *, once=False, dry_run=False, account=""):
             raise DomainError("NO_AUTH", "没有登录态", exit_code=2,
                                 extra={"looked_in": ["a", "b"]})
 
@@ -74,7 +76,7 @@ def test_domain_failure_mapped_with_extra():
 
 def test_legacy_auto_error_fallback():
     class _F(_Ok):
-        def build(self, config, *, once=False, dry_run=False):
+        def build(self, config, *, once=False, dry_run=False, account=""):
             raise ConfigError("配置坏了")
 
     assert _F().run_action("claim", object()) == 2  # exit_code=2 → NO_AUTH
@@ -86,7 +88,7 @@ def test_unimplemented_hooks_return_2():
         name = "p"
         display = "P"
 
-        def build(self, config, *, once=False, dry_run=False):
+        def build(self, config, *, once=False, dry_run=False, account=""):
             return "api"
 
     d = _Partial()
@@ -99,3 +101,28 @@ def test_skip_done_today_path(monkeypatch):
                         lambda *a, **k: True)
     assert _Ok().run_action("claim", object(), silent=True) == 0
     assert not _Capture.emitted  # 跳过不落库
+
+
+# --------------------------------------------------------------- SPEC-12 账户维
+
+def test_run_action_passes_account_to_emit():
+    cfg = _DomainConfig(accounts=[AccountRef(name="main")])
+    assert _Ok().run_action("claim", cfg, account="main") == 0
+    assert _Capture.emitted[-1][3] == "main"  # account 进了台账信封
+
+
+def test_undeclared_account_fails_fast():
+    cfg = _DomainConfig(accounts=[AccountRef(name="main")])
+    assert _Ok().run_action("claim", cfg, account="ghost") == 2
+    out = _Capture.emitted[-1][0]
+    assert out["result"] == "FAILED" and "ghost" in out["report"]
+
+
+def test_disabled_account_skips_silent_but_allows_manual():
+    cfg = _DomainConfig(accounts=[AccountRef(name="main", enabled=False)])
+    # 静默(调度)路径: 停用账户不执行、不落库
+    assert _Ok().run_action("claim", cfg, silent=True, account="main") == 0
+    assert not _Capture.emitted
+    # 手动路径: 显式 --account 指名道姓,停用也放行真跑
+    assert _Ok().run_action("claim", cfg, account="main") == 0
+    assert _Capture.emitted[-1][0]["result"] == "CLAIMED"

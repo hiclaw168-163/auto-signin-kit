@@ -6,8 +6,12 @@ from auto_signin_kit.domains.trae.api import load_session_state
 from auto_signin_kit.domains.trae.auth import NoAuthError, TraeAuthError, token_expired
 
 
-def run_doctor(override_dir: str | None = None) -> tuple[dict, int]:
-    """产出 ``doctor`` 结果;退出码 0/1/2 由 result 决定。"""
+def run_doctor(override_dir: str | None = None, *,
+               skip_env: bool = False) -> tuple[dict, int]:
+    """产出 ``doctor`` 结果;退出码 0/1/2 由 result 决定。
+
+    ``skip_env``(SPEC-12 P2): 具名账户显式目录体检时置 True,隔离环境变量令牌。
+    """
     out: dict = {
         "result": "OK",
         "needs_attention": False,
@@ -17,7 +21,7 @@ def run_doctor(override_dir: str | None = None) -> tuple[dict, int]:
     }
     import os
 
-    if os.environ.get("TRAE_TOKEN"):
+    if not skip_env and os.environ.get("TRAE_TOKEN"):
         return out, 0
 
     out["token_source"] = "desktop"

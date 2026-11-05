@@ -6,6 +6,7 @@ import {
   AppsOutline,
   CalendarClearOutline,
   MedkitOutline,
+  PersonCircleOutline,
   SettingsOutline,
   StatsChartOutline,
   TimeOutline,
@@ -22,6 +23,7 @@ function icon(render: () => typeof NIcon) {
 
 const menus: MenuOption[] = [
   { label: '签到总览', key: 'dashboard', icon: icon(() => h(StatsChartOutline)) },
+  { label: '账户管理', key: 'accounts', icon: icon(() => h(PersonCircleOutline)) },
   { label: '应用管理', key: 'apps', icon: icon(() => h(AppsOutline)) },
   { label: '签到台账', key: 'history', icon: icon(() => h(TimeOutline)) },
   { label: '定时任务', key: 'schedule', icon: icon(() => h(CalendarClearOutline)) },

@@ -118,17 +118,20 @@ def load_session_state(override_dir: str | None = None) -> dict:
     return info
 
 
-def build_api(config: Any) -> tuple[Api, dict | None, str | None]:
+def build_api(config: Any, auth_dir: str | None = None) -> tuple[Api, dict | None, str | None]:
     """组 Api: 环境变量令牌优先;令牌过期返回 (api, info, "EXPIRED")。
 
     设备头取自本机 storage.json(与令牌来源无关: 即使走 TRAE_TOKEN,
     机器 ID 仍在本地,补上才能过 claim 的设备头校验)。
+    ``auth_dir``(SPEC-12 P2): 具名账户显式数据目录——令牌与设备头都取自
+    该目录,且隔离全局 TRAE_TOKEN(那是 default 户的)。
     """
-    token, info = resolve_token(config.data_dir)
+    data_dir = auth_dir or config.data_dir
+    token, info = resolve_token(data_dir, skip_env=bool(auth_dir))
     if token:
         SENSITIVE.add(token)
     base_url = os.environ.get("TRAE_BASE_URL") or config.base_url
-    api = Api(token, base_url, device=device_meta(config.data_dir))
+    api = Api(token, base_url, device=device_meta(data_dir))
     if info is not None and token_expired(info):
         return api, info, "EXPIRED"
     if info is not None and info.get("expiredAt"):

@@ -58,6 +58,8 @@ log_errors_without_silent)`——域 service 层唯一出口,本函数保证不�
 | `ERROR` 双通道 | `result=="ERROR"` 时两条通道都走——即便 silent 参数写错也有痕迹 |
 | `log_errors_without_silent` | workbuddy 语义 True;**qoder/trae 传 False**(非静默不再回写) |
 | `sensitive` | 序列化后把已知令牌统一替换 `[REDACTED]`(域层登记,见 api.SENSITIVE) |
+| `account` | 账户名(SPEC-12): 并入事件信封(优先取 out 同名字段);kit `run_action`/workbuddy `run_action` 全程透传,台账按 `(domain, account)` 落维;缺省 `default` |
+| 降噪(2026-11-05) | 落库前查当天同 `(domain, account, result)` 已有失败行(`DEDUP_RESULTS` 硬失败集合,PENDING/INACTIVE_ERROR 状态提醒不降噪): 第 2 次起 `needs_attention` 置 False、`level` 回 INFO、`repeat_today` 记当日第几次、report 追加"已降噪"——台账行照常落,只是不刷"需要关注"(起因: 豆包服务端故障 710010702 当天三次重试刷屏) |
 | 每轮必写 | 无 `quiet` 机制: silent 下 ALREADY/INACTIVE 也落盘——记录即定时任务
   心跳,噪音用 `level` 字段 + jq 过滤(旧的"空跑不落盘"契约已废除) |
 | `needs_attention` | 缺省时按 `result in ATTENTION_RESULTS` 自动补:
@@ -71,6 +73,7 @@ NO_AUTH, NO_SESSION, AUTH_ERROR, AUTH_REJECTED, FORBIDDEN, PENDING, INACTIVE_ERR
 |------|--------|------|
 | `AutoSignInKitError` | 1 | 业务基类;cli 捕获后按 `exit_code` 退出 |
 | `ConfigError` | 2 | 配置缺失/非法(extra=forbid、目录不存在、字段类型错) |
+| `ConfigMissingError` | 2 | ConfigError 子类: **文件不存在**(区别于格式/字段非法);调度账户展开靠它降级单账户,坏配置仍当场炸 |
 | `CommandError` | 3 | 命令参数/流程错误;PipelineError 继承它 |
 | `AdapterError` | 4 | core/adapters 失败基类;**域不得直接上抛**,要转译 |
 
