@@ -16,12 +16,18 @@
 
 各域对操作系统的支持不一样(qoder 的自动凭据读取依赖 Windows DPAPI):
 
-| 域 | macOS | Windows | 说明 |
+| 域 / 应用 | macOS | Windows | 说明 |
 |---|-------|---------|------|
-| workbuddy | ✅ | ✅ | 桌面端登录过即可 |
-| trae | ✅ | ✅ | SS_AES 信封解密,全平台可用 |
+| workbuddy_cn | ✅ | ✅ | 桌面端登录过即可 |
+| doubao_cn | ✅ | ✅ | Cookie/CDP 取登录态 |
+| trae_cn(声明式应用,经 client_signin 引擎) | ✅ | ✅ | SS_AES 信封解密,全平台可用 |
 | qoder | ⚠️ 仅手动注入 `QODER_TOKEN` | ✅ 自动读取 | 非 Windows 自动读会报退出码 2 |
 | schedule | launchd | schtasks | Linux 走 crontab |
+
+签到形态分两类(按**凭据来源**分类,见 `STD-07`): 声明式应用走
+`web_signin` / `client_signin` 双引擎(YAML 接入,`config/apps/`),编排型
+应用是代码域(`doubao_cn` / `workbuddy_cn` / `qoder`,扩展挂在
+`domains/client_signin/apps/`)。
 
 ## 2. 安装(分平台,整段复制执行)
 
@@ -39,10 +45,11 @@ git clone <仓库地址>
 cd auto-signin-kit
 
 # ③ 安装依赖并装成全局命令(Python 3.11+ 由 uv 自动准备)
+#    必须带 '.[web]': 不带会把 fastapi/uvicorn 从 tool 环境挤掉,ui serve 起不来
 uv sync
-uv tool install --editable . --force
+uv tool install --editable '.[web]' --force
 
-# ④ 验证: 应列出 workbuddy / qoder / trae / schedule
+# ④ 验证: 应列出 client_signin / doubao_cn / qoder / schedule / web_signin / workbuddy_cn
 auto-signin-kit --help
 ```
 
@@ -57,10 +64,11 @@ git clone <仓库地址>
 cd auto-signin-kit
 
 # ③ 安装依赖并装成全局命令(Python 3.11+ 由 uv 自动准备)
+#    必须带 '.[web]': 不带会把 fastapi/uvicorn 从 tool 环境挤掉,ui serve 起不来
 uv sync
-uv tool install --editable . --force
+uv tool install --editable '.[web]' --force
 
-# ④ 验证: 应列出 workbuddy / qoder / trae / schedule
+# ④ 验证: 应列出 client_signin / doubao_cn / qoder / schedule / web_signin / workbuddy_cn
 auto-signin-kit --help
 ```
 
@@ -71,6 +79,20 @@ auto-signin-kit --help
 里,只改文件不会自动生效。
 
 不想装全局,用 `uv run auto-signin-kit <域> <命令>` 也一样。
+
+**新机器跑起来(推荐顺序)**:
+
+```bash
+auto-signin-kit init                     # 一键初始化: 自检 → 就绪检查 → 注册调度 → 拉起管理台
+# 或手动:
+auto-signin-kit schedule install         # 注册定时任务(未就绪的应用会如实报出来)
+```
+
+桌面客户端登录过、`schedule install` 后用 `auto-signin-kit schedule status`
+核对 6/6 就绪。已有一台机器在跑、想把**台账数据**带到新机器: 把旧机器
+`data/auto-signin-kit.db` 拷到新机器同路径即可(配置 `config/*.local.yaml`
+不入库,需手动带);登录态不用带——各应用在新机器的客户端里重新登录一次,
+工具读的是本机客户端的凭据。
 
 要让它每天自己跑: `auto-signin-kit schedule install`(详见根 `README.md`
 的「定时调度」)。
@@ -87,8 +109,8 @@ Node.js 18+),然后**后台**起服务并自动打开浏览器,脚本立即退�
 手动方式:
 
 ```bash
-# ① web 依赖(uv 版本较老不支持 --extra 时,用 --with fastapi --with uvicorn 等效)
-uv tool install --editable . --force --extra web
+# ① web 依赖(装全局命令时带上,前面第 ③ 步的 '.[web]' 已经包含)
+uv tool install --editable '.[web]' --force
 
 # ② 构建前端(或交给一键启动自动补建;产物在 frontend/dist)
 auto-signin-kit ui build
@@ -100,8 +122,9 @@ auto-signin-kit ui status           # 查运行状态与日志路径
 auto-signin-kit ui stop             # 停止后台实例(幂等)
 ```
 
-浏览器打开后: **看板**(各域今日状态 + 一键手动签到)、**历史**(签到台账)、
-**调度**(注册/注销定时任务)、**诊断**(各域 doctor 的结构化展示)。
+浏览器打开后: **看板**(各应用今日状态 + 一键手动签到)、**应用**(主档管理/
+新建/同步本机应用/编辑声明)、**历史**(签到台账)、**调度**(注册/注销定时
+任务)、**诊断**(各应用 doctor 的结构化展示)。
 前端没构建也不影响 API——`/api/docs` 有交互文档。CLI 与定时任务**完全不依赖
 web 栈**,不装 `[web]` extra 一切照旧。
 
@@ -129,13 +152,20 @@ uv tool uninstall auto-signin-kit
 ## 3. 命令面
 
 ```bash
-auto-signin-kit workbuddy auto      # 签到 + 成长中心(幂等,重复跑不会多领)
-auto-signin-kit workbuddy active    # 活跃保底: 没有对话记录就自动补一次对话
-auto-signin-kit workbuddy doctor    # 离线检查凭据格式与解密运行时
-auto-signin-kit qoder auto          # 每日 Credits 领取
-auto-signin-kit trae auto           # 每日签到领取
-auto-signin-kit schedule status     # 看定时任务注册情况
-auto-signin-kit ui serve            # Web 管理台: 总览/台账等(台账数据读 SQLite,也可直接查库)
+# 代码应用(编排型域)
+auto-signin-kit workbuddy_cn auto      # 签到 + 成长中心(幂等,重复跑不会多领)
+auto-signin-kit workbuddy_cn active    # 活跃保底: 没有对话记录就自动补一次对话
+auto-signin-kit workbuddy_cn doctor    # 离线检查凭据格式与解密运行时
+auto-signin-kit qoder auto             # 每日 Credits 领取
+auto-signin-kit doubao_cn auto         # 豆包客户端签到
+
+# 声明式应用(YAML 接入,按 kind 选引擎;--app 是应用编码)
+auto-signin-kit client_signin run --app trae_cn       # trae 每日签到
+auto-signin-kit client_signin doctor --app trae_cn    # 登录态检查
+auto-signin-kit client_signin list                    # 列出本机客户端类声明式应用
+
+auto-signin-kit schedule status       # 看定时任务注册情况
+auto-signin-kit ui serve              # Web 管理台: 总览/台账等(台账数据读 SQLite,也可直接查库)
 ```
 
 每个命令输出**一行 JSON 事件**(stdout 给机器读,过程日志走 stderr),关键字段
@@ -159,11 +189,14 @@ auto-signin-kit ui serve            # Web 管理台: 总览/台账等(台账数�
 |------|--------|
 | `src/auto_signin_kit/cli.py` | 组合根: **只做 entry_points 发现**,加域不改它 |
 | `src/auto_signin_kit/core/` | 跨域公共层: 请求、配置、报告、日志、端口与平台适配器 |
-| `src/auto_signin_kit/domains/<域>/` | 一个助手一个域,固定三件套 |
+| `src/auto_signin_kit/core/declarative/` | 声明式共享底座: schema/加载/authkit/executor/常量,双引擎共用 |
+| `src/auto_signin_kit/domains/<域>/` | 一个域三件套;`web_signin` / `client_signin` 是声明式引擎 |
+| `src/auto_signin_kit/domains/client_signin/apps/` | 代码应用扩展(工厂+策略): doubao_cn / workbuddy_cn / qoder,入口名仍按应用注册 |
 | `src/auto_signin_kit/orchestration/` | 多步命令的 Pipeline(顺序执行 + 逆序回滚) |
 | `config/domains/` | 各域 YAML 配置,`*.local.yaml` 是本机覆盖、不入库 |
+| `config/apps/` | 声明式应用: 一份 `<app_code>.yaml` 一个应用(字段字典见 `STD-07`) |
 | `tests/` | 含**架构门禁**(`test_architecture_gate.py`)——不是普通单测 |
-| `docs/standards/` | 开发规范 STD-01~06 |
+| `docs/standards/` | 开发规范 STD-01~07 |
 | `docs/superpowers/specs/` | as-built 文档 SPEC-01~07 |
 | `docs/notes/` | 逆向取证 NOTE-01~03(端点与协议是怎么知道的) |
 | `docs/adr/` | 架构决策记录 |
@@ -198,6 +231,12 @@ uv run ruff check && uv run lint-imports && uv run pytest -q
    路径等不该公开的差异
 3. 环境变量 — `AUTO_SIGNIN_KIT_*` 是跨域前缀;各域另有自己的前缀
    (`WORKBUDDY_*` / `QODER_*` / `TRAE_*`,见对应 SPEC)
+
+声明式应用没有域配置,它的"配置"就是 `config/apps/<app_code>.yaml`
+(字段字典与扩展契约见 `STD-07`;`extra="forbid"`,写错键当场报)。注意
+`ask_apps` 主档里的 `credits_refresh_time`(积分刷新时刻)不是声明字段,
+在 Web 管理台「应用」页改或走 `PUT /api/apps/<code>/state`——它决定
+"今日已签"按哪个时刻切天(Qoder 是 10:00,多数应用 00:00)。
 
 配置模型是 `extra="forbid"`: **写了 schema 里没有的键会直接报错**,不会静默忽略。
 想改调度触发时间,改 `config/domains/schedule.yaml` 的 `tasks`,不用动代码。

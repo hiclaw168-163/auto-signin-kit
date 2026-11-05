@@ -43,12 +43,12 @@
 
 ```bash
 uv sync
-uv tool install --editable . --force
+uv tool install --editable '.[web]' --force   # 必须带 '.[web]': 否则 ui serve 起不来
 ```
 
 装完之后 `auto-signin-kit` 就是一个全局命令。`--editable` 意味着改代码不用重装,
 但如果改了 `pyproject.toml`(尤其是新增域),要重新跑一次
-`uv sync && uv tool install --editable . --force`——域注册表写在包的
+`uv sync && uv tool install --editable '.[web]' --force`——域注册表写在包的
 dist-info 里,只改文件不会自动生效。
 
 卸载(顺序别反——`schedule uninstall` 依赖命令本身;先卸命令的话,定时任务会
@@ -70,16 +70,17 @@ uv tool uninstall auto-signin-kit     # 移除全局命令
 ## 用法
 
 ```bash
-auto-signin-kit --help                     # 列出所有域
-auto-signin-kit workbuddy --help           # 看某个域有哪些命令
-auto-signin-kit workbuddy auto             # WorkBuddy 签到 + 成长中心(幂等)
-auto-signin-kit workbuddy active           # 活跃保底: 没有对话记录就自动补一次对话
-auto-signin-kit workbuddy doctor           # 离线检查凭据与解密运行时
-auto-signin-kit qoder auto                 # Qoder CN 每日 Credits 领取
-auto-signin-kit qoder auto --dry-run       # 只报告可领取项,不真领取
-auto-signin-kit trae auto                  # Trae CN 每日签到领取(幂等)
-auto-signin-kit trae doctor                # 离线检查登录态可读性与有效期
-auto-signin-kit ui serve                   # Web 管理台: 总览/台账/调度/配置/诊断(读 SQLite 台账)
+auto-signin-kit --help                          # 列出所有域
+auto-signin-kit workbuddy_cn --help             # 看某个域有哪些命令
+auto-signin-kit workbuddy_cn auto               # WorkBuddy 签到 + 成长中心(幂等)
+auto-signin-kit workbuddy_cn active             # 活跃保底: 没有对话记录就自动补一次对话
+auto-signin-kit workbuddy_cn doctor             # 离线检查凭据与解密运行时
+auto-signin-kit qoder auto                      # Qoder 每日 Credits 领取
+auto-signin-kit qoder auto --dry-run            # 只报告可领取项,不真领取
+auto-signin-kit doubao_cn auto                  # 豆包客户端签到
+auto-signin-kit client_signin run --app trae_cn # Trae CN 每日签到(声明式应用,走 client_signin 引擎)
+auto-signin-kit client_signin doctor --app trae_cn  # 离线检查登录态可读性与有效期
+auto-signin-kit ui serve                        # Web 管理台: 总览/台账/调度/配置/诊断(读 SQLite 台账)
 ```
 
 每个命令输出**一行 JSON 事件**(stdout 由机器读,过程日志走 stderr),字段
@@ -127,8 +128,9 @@ auto-signin-kit ui serve                   # Web 管理台: 总览/台账/调度
   客户端已登录;Linux 需设置 `QODER_TOKEN`),`QODER_TOKEN` 可覆盖。API 端点
   按登录态自动匹配(CN 版→`openapi.qoder.com.cn`,国际版→`openapi.qoder.sh`,
   两者协议同构),`QODER_BASE_URL` 可覆盖。
-- trae 域: 桌面端 storage.json(`%APPDATA%\Trae CN\User\globalStorage`,
-  `SS_AES` 信封解密,无需 DPAPI 全平台可用),`TRAE_TOKEN` 可覆盖。
+- trae 域(现为声明式应用 trae_cn,走 `client_signin` 引擎): 桌面端
+  storage.json(`%APPDATA%\Trae CN\User\globalStorage`,`SS_AES` 信封解密,
+  无需 DPAPI 全平台可用),`TRAE_TOKEN` 可覆盖。
 - 敏感值(令牌)在一切输出前统一替换为 `[REDACTED]`。
 
 ---
@@ -163,11 +165,16 @@ auto-signin-kit schedule uninstall            # 注销(同样支持 --domain / -
 
 | 任务名 | 命令 | 触发时间 | 时限 |
 |--------|------|----------|------|
-| `WorkBuddyAutoSignin` | `workbuddy auto --silent` | 00:05 | 10 min |
-| `WorkBuddyGrowthPoll` | `workbuddy poll` | 01/09/17/21:05 | 5 min |
-| `WorkBuddyActiveCheck` | `workbuddy active --silent` | 12/20:05 | 5 min |
-| `QoderDailyCredits` | `qoder auto --silent` | 10/11/15/19/23:05 | 5 min |
-| `TraeDailyCheckin` | `trae auto --silent` | 09/13/21:05 | 5 min |
+| `WorkBuddyAutoSignin` | `workbuddy_cn auto --silent` | 00:05 | 10 min |
+| `WorkBuddyGrowthPoll` | `workbuddy_cn poll` | 01/09/17/21:05 | 5 min |
+| `WorkBuddyActiveCheck` | `workbuddy_cn active --silent` | 12/20:05 | 5 min |
+| `QoderDailyCredits` | `qoder auto --silent` | 00/10/11/15/19/23:05 | 5 min |
+| `DoubaoDailyCheckin` | `doubao_cn auto --silent` | 00/09/13/19/23:05 | 5 min |
+| `ClientSigninTraeCn` | `client_signin run --app trae_cn --silent` | 09/13/15/19/21/23:05 | 5 min |
+
+默认触发时间是 `config/domains/schedule.yaml` 与各应用声明
+`config/apps/<code>.yaml` 里 `schedule.times` 的合订,可被 schedule.yaml
+的 `tasks` 覆盖——以 `schedule status` 实际输出为准。
 
 `WorkBuddyActiveCheck` 是独立于签到的活跃保底: 活跃天数**只认对话**,领了积分
 没对话当天仍算断。它发现当天没有活跃记录时会**自动补一次对话**并复查记分,
@@ -233,10 +240,14 @@ tasks:
 2. 在 `pyproject.toml` 的 `[project.entry-points."auto_signin_kit.domains"]` 加一行
 3. 建配置: `config/domains/<新域名>.yaml` + `config/examples/<新域名>.yaml.example`
 4. 补测试: `tests/domains/<新域名>/test_<新域名>.py`
-5. `uv sync && uv tool install --editable . --force`
+5. `uv sync && uv tool install --editable '.[web]' --force`
 6. 跑门禁 + **手动执行一次真实命令**,不要只看测试绿
-7. 如果这个域要每天自动跑: 在 `domains/schedule/data.py` 的 `TASKS` 加一条,
-   并同步 `config/domains/schedule.yaml`(时限必须大于该域的时间预算)
+7. 如果这个域要每天自动跑: 注册 `schedule_meta` entry point(schedule 域经
+   注册表发现各域任务,不反向 import 业务域),并同步 `config/domains/schedule.yaml`
+   (时限必须大于该域的时间预算)
+
+> 普通签到应用不需要建域,一份 `config/apps/<app_code>.yaml` 声明即可,
+> 见 `docs/standards/STD-07-声明式应用接入.md`。
 
 ---
 
