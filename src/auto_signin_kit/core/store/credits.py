@@ -129,6 +129,58 @@ def credits_daily(days: int = 14) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
+def credits_stats(days: int = 30) -> dict[str, Any]:
+    """R4(2026-11-05,参考 workbuddy-switch 积分统计的本地化版): 积分统计页数据。
+
+    - ``trend``: 近 N 天**全域**每日所得合计,升序(图表直接画);
+    - ``by_domain``: 每域累计所得(全部历史)+ 窗口内所得;
+    - ``balances``: 每域**累计所得快照**——取该域最近一条成功行 response 里的
+      ``total_credits``(workbuddy 签到状态自带;个人版官方没有独立积分包/余额
+      接口,这是 workbuddy-switch"官方数据不可用回退本地快照"的同款做法)。
+      **口径警示**: 这是"累计所得"不是"可用余额"——网页上显示的余额会随
+      消耗与过期减少(qoder 积分领取后 30 天有效),两者本来就不相等;
+      域不回传该字段(null)如实显示"—",不编造 0。
+    """
+    conn = connect()
+    try:
+        trend_rows = conn.execute(
+            "SELECT day, SUM(credits) AS credits FROM ask_daily_credits"
+            " WHERE day >= date('now', 'localtime', ?)"
+            " GROUP BY day ORDER BY day", ["-%d days" % max(1, days)]).fetchall()
+        domain_rows = conn.execute(
+            "SELECT domain,"
+            " SUM(credits) AS total,"
+            " SUM(CASE WHEN day >= date('now', 'localtime', ?) THEN credits ELSE 0 END)"
+            "   AS window_total,"
+            " MAX(day) AS last_day"
+            " FROM ask_daily_credits GROUP BY domain ORDER BY domain",
+            ["-%d days" % max(1, days)]).fetchall()
+        balance_rows = conn.execute(
+            "SELECT r.domain AS domain, r.executed_at AS executed_at,"
+            " json_extract(r.response, '$.total_credits') AS total_credits"
+            " FROM ask_signin_runs AS r"
+            " WHERE r.source = 'run' AND r.result IN ('CLAIMED', 'ALREADY', 'OK')"
+            "   AND json_extract(r.response, '$.total_credits') IS NOT NULL"
+            "   AND r.id IN (SELECT MAX(id) FROM ask_signin_runs"
+            "                WHERE source = 'run' AND result IN ('CLAIMED', 'ALREADY', 'OK')"
+            "                GROUP BY domain)").fetchall()
+    finally:
+        conn.close()
+    balances = {row["domain"]: {"total_credits": row["total_credits"],
+                                "updated_at": row["executed_at"]}
+                for row in balance_rows}
+    return {
+        "window_days": max(1, days),
+        "trend": [{"day": row["day"], "credits": row["credits"] or 0}
+                  for row in trend_rows],
+        "by_domain": [{"domain": row["domain"], "total": row["total"] or 0,
+                       "window_total": row["window_total"] or 0,
+                       "last_day": row["last_day"]}
+                      for row in domain_rows],
+        "balances": balances,
+    }
+
+
 def accounts_summary(days: int = 7) -> dict[str, Any]:
     """R2: 有多少账户在获取积分。
 

@@ -496,3 +496,31 @@ class TestFailureCountToday:
             ts=_today_ts("11:00"), result="CLAIMED", account="main"),
             ensure_ascii=False))
         assert store.failure_count_today("trae", "main") == 2
+
+
+class TestCreditsStats:
+    """SPEC-13 积分统计: 趋势/按域/余额快照(credits_stats)。"""
+
+    def test_trend_by_domain_and_balance_snapshot(self):
+        store.record_payload(json.dumps(_record(
+            ts=_today_ts("09:00"), result="CLAIMED", credits=100),
+            ensure_ascii=False))
+        # 带余额快照的成功行(total_credits 在 response 里,workbuddy 方言)
+        store.record_payload(json.dumps({
+            **_record(ts=_today_ts("09:10"), result="ALREADY"),
+            "total_credits": 3600}, ensure_ascii=False))
+        stats = store.credits_stats(days=7)
+        assert stats["trend"][-1]["credits"] == 100
+        row = next(r for r in stats["by_domain"] if r["domain"] == "trae")
+        assert row["total"] == 100 and row["window_total"] == 100
+        assert stats["balances"]["trae"]["total_credits"] == 3600
+
+    def test_balance_picks_latest_row_per_domain(self):
+        store.record_payload(json.dumps({
+            **_record(ts=_today_ts("09:00"), result="CLAIMED"),
+            "total_credits": 3000}, ensure_ascii=False))
+        store.record_payload(json.dumps({
+            **_record(ts=_today_ts("10:00"), result="ALREADY"),
+            "total_credits": 3100}, ensure_ascii=False))
+        stats = store.credits_stats(days=7)
+        assert stats["balances"]["trae"]["total_credits"] == 3100  # 取最新

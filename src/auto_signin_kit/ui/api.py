@@ -146,6 +146,12 @@ def account_toggle(body: AccountToggle) -> dict[str, Any]:
             "enabled": body.enabled}
 
 
+@router.get("/credits/stats")
+def credits_stats(days: int = Query(30, ge=7, le=180)) -> dict[str, Any]:
+    """积分统计页(2026-11-05): 趋势/按域汇总/当前余额快照。"""
+    return store.credits_stats(days)
+
+
 @router.get("/credits/summary")
 def credits_summary() -> dict[str, Any]:
     """积分总览(三问一端点): 每应用每日所得 / 账户活跃 / 可获取 vs 实际。"""

@@ -115,10 +115,18 @@ def _checkin(api: DoubaoApi, config: DoubaoDomainConfig, *,
         parts.append("领取失败: %s" % "; ".join(sweep["failures"]))
     if sweep.get("error"):
         parts.append("[%s]" % sweep["error"])
-    return make_result(result, "; ".join(parts), domain="doubao",
-                       checkin_date=data.get("checkin_date"), reward_amount=amount,
-                       continuous_days=days, task_rewards=claimed,
-                       task_pending=sweep.get("pending", 0)), 0
+    # 积分方言(2026-11-05 补): credits = 签到所得 + 任务清扫所得——此前 doubao
+    # 不回传方言字段,台账积分恒 0,积分统计少算了整个域(每日 +200)。
+    earned = (amount or 0) + task_amount
+    out = make_result(result, "; ".join(parts), domain="doubao",
+                      checkin_date=data.get("checkin_date"), reward_amount=amount,
+                      continuous_days=days, task_rewards=claimed,
+                      task_pending=sweep.get("pending", 0))
+    if earned:
+        out["credits"] = earned
+    if days is not None:
+        out["streak_days"] = days
+    return out, 0
 
 
 def _status(api: DoubaoApi, config: DoubaoDomainConfig) -> tuple[dict[str, Any], int]:
