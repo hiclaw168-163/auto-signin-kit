@@ -49,6 +49,10 @@ uv run ruff check && uv run lint-imports && uv run pytest -q
 
 ## 新增一个域的步骤
 
+**先想一下要不要域**: 「status 查询 → 幂等 claim → 确认」同构形态的普通
+签到应用,默认走声明式接入(`config/apps/<app_code>.yaml` 一份 YAML 即可,
+见 `docs/standards/STD-07-声明式应用接入.md`);建域留给编排型/多流程应用。
+
 细则与完整清单见 `docs/standards/STD-01-新增命令与域规范.md`,速查:
 
 1. `src/auto_signin_kit/domains/<域名>/{__init__.py,schema.py,service.py,cli.py,schedule_meta.py}`

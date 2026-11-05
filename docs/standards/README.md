@@ -11,6 +11,7 @@
 | [STD-04-代码规范.md](STD-04-代码规范.md) | ruff 门禁化(命名/格式/异常/日志) + 对象建模(dataclass/Protocol) |
 | [STD-05-平台适配规范.md](STD-05-平台适配规范.md) | OS 差异判定 / 端口与适配器步骤 / 门禁扫描 |
 | [STD-06-脚本与资产规范.md](STD-06-脚本与资产规范.md) | bash 胶水脚本红线 / 文档命名(`类型-NN-主题.md`) / 数据放哪的判据 |
+| [STD-07-声明式应用接入.md](STD-07-声明式应用接入.md) | web_signin 引擎 / `config/apps/*.yaml` 字段字典 / 认证适配器 / 新应用接入清单 |
 
 > 维护约定: 沉淀新约束时先问一句"能不能变成门禁测试"——能,就改
 > `tests/test_architecture_gate.py`;不能机器强制的,写进对应细则并在 `AGENTS.md`
