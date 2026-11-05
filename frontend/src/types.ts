@@ -39,6 +39,7 @@ export interface AppUpdateResult {
 export interface DailyRow {
   day: string
   domain: string
+  account?: string
   result: string
   source: string
   needs_attention: number
@@ -49,6 +50,10 @@ export interface DailyRow {
 export interface OverviewCard {
   domain: string
   today: DailyRow | null
+  /** 当天存在签到成功行(CLAIMED/ALREADY)——"今日已签"以此为准 */
+  today_signed?: boolean
+  /** 当天最后一行是否需关注(成功之后的失败不被藏掉) */
+  today_attention?: boolean
   week_ok: number
   week_total: number
   /** 截至今天的连续成功天数(今天未签则从昨天起算) */

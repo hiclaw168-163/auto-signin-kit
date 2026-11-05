@@ -12,12 +12,9 @@ const props = defineProps<{
 
 const emit = defineEmits<{ run: [] }>()
 
-const OK = ['CLAIMED', 'ALREADY', 'ACTIVE']
-const signedToday = !!card_today_ok(props.card)
-
-function card_today_ok(c: OverviewCard): boolean {
-  return !!c.today && OK.includes(c.today.result)
-}
+// "已签"以当天成功行为准(后端 today_signed);today 行已优先取成功行,
+// 状态徽标与 report 展示的即是签到结果而非 status 探测行。
+const signedToday = !!props.card.today_signed
 
 function dayTitle(d: { day: string; ok: boolean }): string {
   return `${d.day}: ${d.ok ? '成功' : '无成功记录'}`

@@ -19,11 +19,11 @@ const events = ref<EventRow[]>([])
 const loading = ref(false)
 const { jobs, run } = useJob()
 
-const OK = ['CLAIMED', 'ALREADY', 'ACTIVE']
-
 const cards = computed(() => overview.value?.cards ?? [])
-const signedToday = computed(() => cards.value.filter((c) => c.today && OK.includes(c.today.result)).length)
-const attentionToday = computed(() => cards.value.filter((c) => c.today?.needs_attention).length)
+// "今日已签"以当天是否存在签到成功行为准(后端 signed_today_by_domain),
+// 不看"当天最后一行"——status/doctor 探测也落台账,会把最后一行占掉。
+const signedToday = computed(() => cards.value.filter((c) => c.today_signed).length)
+const attentionToday = computed(() => cards.value.filter((c) => c.today_attention).length)
 const installedCount = computed(() => schedule.value?.tasks.filter((t) => t.installed).length ?? 0)
 const todayCredits = computed(() => cards.value.reduce((s, c) => s + (c.today_credits ?? 0), 0))
 const bestStreak = computed(() => Math.max(0, ...cards.value.map((c) => c.streak ?? 0)))
@@ -70,7 +70,7 @@ onMounted(load)
     <n-space vertical size="large">
       <n-grid :cols="4" :x-gap="12" item-responsive>
         <n-gi span="1 m:2 l:1"><StatCard label="今日已签" :value="`${signedToday}/${cards.length}`"
-          sub="按各域台账最新记录" tone="primary" /></n-gi>
+          sub="按各域台账当日成功行" tone="primary" /></n-gi>
         <n-gi span="1 m:2 l:1"><StatCard label="今日需关注" :value="String(attentionToday)"
           sub="登录过期/失败,需人工介入" :tone="attentionToday ? 'danger' : 'info'" /></n-gi>
         <n-gi span="1 m:2 l:1"><StatCard label="今日积分" :value="`+${todayCredits}`"

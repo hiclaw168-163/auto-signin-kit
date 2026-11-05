@@ -498,6 +498,39 @@ class TestFailureCountToday:
         assert store.failure_count_today("trae", "main") == 2
 
 
+class TestSignedTodayByDomain:
+    """总览"今日已签"判定: 当天最新成功行,不被 status/doctor 探测行占据。"""
+
+    def test_success_row_wins_over_later_probe_row(self):
+        store.record_payload(json.dumps(_record(
+            ts=_today_ts("09:00"), result="CLAIMED", report="领取成功"),
+            ensure_ascii=False))
+        # 签到成功后跑一次 status 探测(OK 也落台账)——2026-11-05 真实踩坑
+        store.record_payload(json.dumps(_record(
+            ts=_today_ts("17:20"), domain="qoder", result="OK",
+            action="status", report="共 2 个活动"), ensure_ascii=False))
+        signed = store.signed_today_by_domain()
+        assert signed["trae"]["result"] == "CLAIMED"
+        assert signed["trae"]["report"] == "领取成功"
+        assert "qoder" not in signed  # OK 探测行不算签到成功
+
+    def test_multiselect_accounts_any_success_and_latest_row(self):
+        store.record_payload(json.dumps(_record(
+            ts=_today_ts("09:00"), result="CLAIMED", account="main",
+            report="main 成功"), ensure_ascii=False))
+        store.record_payload(json.dumps(_record(
+            ts=_today_ts("10:00"), result="ALREADY", account="backup",
+            report="backup 已签"), ensure_ascii=False))
+        signed = store.signed_today_by_domain()
+        assert signed["trae"]["account"] == "backup"  # 跨账户取最新一条
+
+    def test_no_success_today_gives_empty(self):
+        store.record_payload(json.dumps(_record(
+            ts=_today_ts("09:00"), result="NO_AUTH", needs_attention=True),
+            ensure_ascii=False))
+        assert store.signed_today_by_domain() == {}
+
+
 class TestCreditsStats:
     """SPEC-13 积分统计: 趋势/按域/余额快照(credits_stats)。"""
 

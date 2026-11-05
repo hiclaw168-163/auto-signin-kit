@@ -52,6 +52,7 @@ from auto_signin_kit.core.store.runs import (
     failure_count_today,
     overview_by_account,
     overview_stats,
+    signed_today_by_domain,
 )
 
 __all__ = [
@@ -78,4 +79,5 @@ __all__ = [
     "set_account_client_info",
     "set_account_enabled",
     "set_account_potential",
+    "signed_today_by_domain",
 ]

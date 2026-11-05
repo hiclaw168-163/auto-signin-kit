@@ -50,19 +50,31 @@ def meta_results() -> dict[str, str]:
 
 @router.get("/overview")
 def overview() -> dict[str, Any]:
-    """看板首页数据: 每个签到域一张卡(今日状态 + 14 天色块 + 连签/积分统计)。"""
+    """看板首页数据: 每个签到域一张卡(今日状态 + 14 天色块 + 连签/积分统计)。
+
+    ``today`` 优先取当天最新**签到成功行**(signed_today_by_domain),没有
+    成功行才回退到视图最后一行——status/doctor 探测也落台账,最后一行会被
+    它们占据,不能当签到状态。"today_attention" 仍看最后一行(成功之后
+    出现的失败不该被藏掉)。
+    """
     week = store.daily_status(7)
     today = datetime.now().date().isoformat()
     stats = store.overview_stats()
+    signed = store.signed_today_by_domain()
     domains = sorted({str(row["domain"]) for row in week} | set(store.SIGNIN_DOMAINS))
     cards = []
     for domain in domains:
         rows = [r for r in week if r["domain"] == domain]
-        today_row = next((r for r in rows if r["day"] == today), None)
+        today_rows = [r for r in rows if r["day"] == today]
+        last_row = today_rows[0] if today_rows else None
+        success_row = signed.get(domain)
+        today_row = dict(success_row, day=today, source="run") if success_row else last_row
         st = stats.get(domain, {})
         cards.append({
             "domain": domain,
             "today": today_row,
+            "today_signed": domain in signed,
+            "today_attention": bool(last_row and last_row["needs_attention"]),
             "week_ok": sum(1 for r in rows if r["result"] in RESULT_OK),
             "week_total": len(rows),
             "streak": st.get("streak", 0),

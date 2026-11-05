@@ -252,6 +252,33 @@ def done_today(domain: str, account: str = "default") -> bool:
     return row is not None
 
 
+def signed_today_by_domain() -> dict[str, dict[str, Any]]:
+    """每域当天(source=run)最新一行签到成功行(CLAIMED/ALREADY)。
+
+    总览"今日已签"的判定与展示用,与 :func:`done_today`(调度跳过)同口径;
+    取行而不止判存在,是域卡片要显示成功行的 report。status/doctor 等
+    只读探测同样落台账(result=OK/UNKNOWN),"当天最后一行"会被它们占据——
+    不能拿 ``ask_daily_checkins`` 视图最后一行当签到状态(2026-11-05 实测
+    踩坑: 签到成功后跑一次 status,总览四个域误判成两个未签)。多账户时
+    任一账户成功即算该域已签,行取跨账户最新的那条。
+    """
+    conn = connect()
+    try:
+        rows = conn.execute(
+            "SELECT domain, account, result, needs_attention, report, executed_at"
+            " FROM ask_signin_runs"
+            " WHERE source = 'run' AND result IN (?, ?)"
+            "   AND date(executed_at) = date('now', 'localtime')"
+            " ORDER BY executed_at DESC, id DESC", SIGNIN_DONE_RESULTS).fetchall()
+    finally:
+        conn.close()
+    latest: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        if row["domain"] not in latest:
+            latest[row["domain"]] = dict(row)
+    return latest
+
+
 def failure_count_today(domain: str, account: str = "default",
                         result: str | None = None) -> int:
     """该域该账户今天(source=run)已有的失败行数(按 result 精确匹配可再收窄)。

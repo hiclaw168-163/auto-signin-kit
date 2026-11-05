@@ -73,8 +73,18 @@ def _patch_history(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         calls["events"] = kwargs
         return [{"executed_at": "t", "domain": "doubao", "result": "CLAIMED"}]
 
+    def signed_today() -> dict[str, dict]:
+        rows: dict[str, dict] = {}
+        for r in _DAILY_ROWS:
+            if r["day"] == _TODAY and r["result"] in ("CLAIMED", "ALREADY") \
+                    and r["domain"] not in rows:
+                rows[r["domain"]] = r
+        return rows
+
     monkeypatch.setattr("auto_signin_kit.ui.api.store.daily_status", daily_status)
     monkeypatch.setattr("auto_signin_kit.ui.api.store.events", events)
+    monkeypatch.setattr(
+        "auto_signin_kit.ui.api.store.signed_today_by_domain", signed_today)
     return calls
 
 
@@ -109,6 +119,16 @@ class TestReadRoutes:
         qoder = next(c for c in client.get("/api/overview").json()["cards"]
                      if c["domain"] == "qoder")
         assert qoder["week_ok"] == 0 and qoder["week_total"] == 1
+
+    def test_overview_signed_uses_success_row_not_last_row(self, client, monkeypatch):
+        """doubao 成功行判"已签";qoder 最后一行 NO_AUTH 只进 today_attention。"""
+        _patch_history(monkeypatch)
+        cards = {c["domain"]: c for c in client.get("/api/overview").json()["cards"]}
+        assert cards["doubao"]["today_signed"] is True
+        assert cards["doubao"]["today"]["result"] == "CLAIMED"
+        assert cards["qoder"]["today_signed"] is False
+        assert cards["qoder"]["today_attention"] is True
+        assert cards["qoder"]["today"]["result"] == "NO_AUTH"
 
     def test_history_passes_days_and_domain(self, client, monkeypatch):
         calls = _patch_history(monkeypatch)
