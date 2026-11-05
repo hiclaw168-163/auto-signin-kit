@@ -20,9 +20,21 @@ from auto_signin_kit.core.dto import DailyCheckinRow, SigninRunRow
 from auto_signin_kit.core.report import RESULT_OK, normalize_result
 from auto_signin_kit.core.store.connection import connect
 
-#: 台账覆盖的签到域(Web 总览按它补齐"还没有任何记录"的域卡片)。
-#: doubao 与其他域同走 emit_result 落库,纳入正式名单。
-SIGNIN_DOMAINS = ("workbuddy", "qoder", "trae", "doubao")
+
+def signin_domains() -> tuple[str, ...]:
+    """台账口径的应用域清单(Web 总览按它补齐"还没有任何记录"的域卡片)。
+
+    以 ask_apps 主档为准(应用档案唯一主表),不再硬编码——引擎域
+    (web_signin/schedule)不进主档自然不出现,新应用同步建档后看板
+    自动出卡。同层读查,core 层不反向感知注册表。
+    """
+    conn = connect()
+    try:
+        rows = conn.execute(
+            "SELECT DISTINCT app_code FROM ask_apps ORDER BY app_code").fetchall()
+    finally:
+        conn.close()
+    return tuple(str(row["app_code"]) for row in rows)
 
 #: 算"当天已成功签到"的结果词(签到语义的成功;ACTIVE/OK 是相邻语义,不算)。
 SIGNIN_DONE_RESULTS = ("CLAIMED", "ALREADY")

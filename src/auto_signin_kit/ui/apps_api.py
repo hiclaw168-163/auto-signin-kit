@@ -29,6 +29,9 @@ from auto_signin_kit.ui import config_api, daemon
 
 router = APIRouter()
 
+#: 引擎/基础设施域是代码形态不是应用,不进应用列表与主档(ask_apps 只存应用)。
+_ENGINE_DOMAINS = ("web_signin", "schedule")
+
 
 class AppCreate(BaseModel):
     """新建应用请求体。"""
@@ -82,6 +85,8 @@ def list_apps() -> dict[str, Any]:
     times_by_domain = _schedule_times_by_domain()
     apps = []
     for name, meta in providers():
+        if name in _ENGINE_DOMAINS:
+            continue  # 引擎域不是应用,不进列表
         ready = None
         try:
             ready = bool(meta.ready())
@@ -91,7 +96,7 @@ def list_apps() -> dict[str, Any]:
         desc_default = getattr(meta, "DESCRIPTION", None)
         apps.append({
             "name": name,
-            "kind": getattr(meta, "KIND", None),
+            "kind": (state or {}).get("kind") or getattr(meta, "KIND", None),
             "display": (state or {}).get("app_name") or getattr(meta, "DISPLAY_NAME", name),
             "app_name": (state or {}).get("app_name"),  # 覆盖名原文(null = 未覆盖)
             "desc": (state or {}).get("app_desc") or desc_default,  # 生效描述
@@ -112,7 +117,7 @@ def list_apps() -> dict[str, Any]:
             ready = None
         apps.append({
             "name": decl.app_code,
-            "kind": decl.kind,
+            "kind": (state or {}).get("kind") or decl.kind,
             "display": (state or {}).get("app_name") or decl.display,
             "app_name": (state or {}).get("app_name"),
             "desc": (state or {}).get("app_desc") or decl.desc or None,
@@ -180,7 +185,7 @@ def create_app(body: AppCreate) -> dict[str, Any]:
         _create_client_declaration(body)
         try:
             store.ensure_app(body.name, body.region, app_name=body.display,
-                             app_desc=body.desc, source="manual")
+                             app_desc=body.desc, kind=body.kind, source="manual")
             _rebuild_and_exit()
         except Exception as exc:
             _delete_declaration(body.name)
@@ -199,7 +204,8 @@ def create_app(body: AppCreate) -> dict[str, Any]:
         raise HTTPException(422, str(exc)) from exc
     try:
         store.ensure_app(body.name, body.region, app_name=body.display,
-                         app_desc=body.desc, source="manual")  # 主档行随建档落库
+                         app_desc=body.desc, kind=body.kind,
+                         source="manual")  # 主档行随建档落库
         _rebuild_and_exit()
     except Exception as exc:
         scaffolding.rollback(manifest)
@@ -331,12 +337,13 @@ def sync_apps() -> dict[str, Any]:
 
     def ensure(self_name: str, region: str, info: dict[str, Any] | None,
                *, want_account: bool, app_name: str | None = None,
-               app_desc: str | None = None) -> None:
+               app_desc: str | None = None, kind: str | None = None) -> None:
         """主档 + default 户 + 档案;声明式应用无 client_info 采集仍建账户。
 
-        app_name/app_desc 是档案默认值: ensure_app 只补空,用户覆盖过的不动。
+        app_name/app_desc/kind 是档案默认值: ensure_app 只补空,用户覆盖过的不动。
         """
-        store.ensure_app(self_name, region, app_name=app_name, app_desc=app_desc)
+        store.ensure_app(self_name, region, app_name=app_name, app_desc=app_desc,
+                         kind=kind)
         if want_account:
             store.ensure_account(self_name, "default")
         if info:
@@ -344,6 +351,8 @@ def sync_apps() -> dict[str, Any]:
                                           {**machine_info(), **info})
 
     for name, meta in providers():
+        if name in _ENGINE_DOMAINS:
+            continue  # 引擎域不是应用,不建档
         collect = getattr(meta, "client_info", None)
         try:
             info = collect() if collect is not None else None
@@ -365,7 +374,8 @@ def sync_apps() -> dict[str, Any]:
         try:
             ensure(name, region, info, want_account=bool(info),
                    app_name=getattr(meta, "DISPLAY_NAME", None),
-                   app_desc=getattr(meta, "DESCRIPTION", None))
+                   app_desc=getattr(meta, "DESCRIPTION", None),
+                   kind=getattr(meta, "KIND", None))
         except AutoSignInKitError as exc:
             failed.append({"domain": name, "error": str(exc)})
             continue
@@ -381,7 +391,8 @@ def sync_apps() -> dict[str, Any]:
             continue
         try:
             ensure(decl.app_code, decl.region, None, want_account=True,
-                   app_name=decl.display, app_desc=decl.desc or None)
+                   app_name=decl.display, app_desc=decl.desc or None,
+                   kind=decl.kind)
         except AutoSignInKitError as exc:
             failed.append({"domain": decl.app_code, "error": str(exc)})
             continue

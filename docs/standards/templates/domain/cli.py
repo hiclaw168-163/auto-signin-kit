@@ -9,10 +9,10 @@ cli.py 只做三件事: 解析参数、调用 service、把异常映射成合适
 from __future__ import annotations
 
 import typer
+from auto_signin_kit.domains.workbuddy import service
 
 from auto_signin_kit.core.errors import AutoSignInKitError
 from auto_signin_kit.core.logging import log_error
-from auto_signin_kit.domains.workbuddy import service
 
 app = typer.Typer(help="workbuddy 域命令")
 

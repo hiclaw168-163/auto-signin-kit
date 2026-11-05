@@ -22,7 +22,7 @@ src/auto_signin_kit/domains/<域>/
   或管理台"新建应用",生成的骨架已继承 `core.kit.domain.SigninDomain`
   模板方法基类——你只填 `build/claim/status/doctor` 四个钩子(领域知识),
   命令分发/异常映射/台账输出/退出码由基类锁定,不要重写流程代码。
-- 手写 `service.py` 时(流程与标准三动作差异大,如 workbuddy 的多动作编排):
+- 手写 `service.py` 时(流程与标准三动作差异大,如 workbuddy_cn 的多动作编排):
   复制 `docs/standards/templates/domain/` 下的模板起步,不要凭记忆重写。
 - `cli.py` docstring 首行写 `auto-signin-kit <域> <命令> — <功能>`。
 - 每个命令必备 `--help` 与非交互 `--yes/-y`;涉及覆盖/删除/发布类动作时 `-y` 是唯一跳过确认的方式。

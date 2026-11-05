@@ -19,7 +19,7 @@ def _fake_confirm(answers: dict[str, bool]) -> Any:
 class TestBusinessDomains:
     def test_lists_all_registered_schedule_meta_domains(self) -> None:
         names = {d["domain"] for d in service.business_domains()}
-        assert {"workbuddy", "qoder", "web_signin", "doubao"} <= names
+        assert {"workbuddy_cn", "qoder", "web_signin", "doubao_cn"} <= names
         for d in service.business_domains():
             assert d["display"], "展示名缺失"
 
@@ -52,9 +52,9 @@ class TestRunInit:
     def test_unready_client_becomes_todo_not_failure(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Any
     ) -> None:
-        self._stub_env(monkeypatch, tmp_path, unready={"doubao"})
+        self._stub_env(monkeypatch, tmp_path, unready={"doubao_cn"})
         result = service.run_init(interactive=False, start_ui=False, confirm=None)
-        assert any(i["domain"] == "doubao" for i in result["not_ready"])
+        assert any(i["domain"] == "doubao_cn" for i in result["not_ready"])
         assert result["todo"], "未就绪域必须出现在待办清单里"
         assert result["exit"] == 1
         # 其余域不受连累,照常注册

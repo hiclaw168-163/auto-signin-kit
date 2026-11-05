@@ -21,7 +21,7 @@ from typing import Any
 from auto_signin_kit.core.errors import AutoSignInKitError
 from auto_signin_kit.core.store.connection import connect
 
-_ROW_COLS = ("id, app_code, region, enabled, app_name, app_desc, source,"
+_ROW_COLS = ("id, app_code, app_name, app_desc, kind, region, enabled, source,"
              " created_at, updated_at")
 
 
@@ -43,7 +43,7 @@ def app_state(app_code: str, conn: sqlite3.Connection | None = None) -> dict[str
 def ensure_app(app_code: str, region: str = "cn",
                conn: sqlite3.Connection | None = None, *,
                app_name: str | None = None, app_desc: str | None = None,
-               source: str = "auto") -> None:
+               kind: str | None = None, source: str = "auto") -> None:
     """惰性补齐主档行;已存在的行若 region 与探测结论不符则就地纠正。
 
     region 来源是同步时的本机探测(如 qoder 按数据目录名判 cn/intl),
@@ -51,9 +51,9 @@ def ensure_app(app_code: str, region: str = "cn",
     下次同步应把行迁到 intl 而不是留着错值(当前契约: 每应用一行;
     真·双版本共存留给未来独立域,见 ask_apps.sql 头注释)。
 
-    ``app_name``/``app_desc`` 是注册表/声明的档案默认值(同步传入):
-    **只补空,不覆盖**——空串与 NULL 都算未填(UI 显式清空 = 回落注册表
-    展示名,与"未自定义"同义),用户填过非空值的不动。
+    ``app_name``/``app_desc``/``kind`` 是注册表/声明的档案默认值(同步
+    传入): **只补空,不覆盖**——空串与 NULL 都算未填(UI 显式清空 = 回落
+    注册表展示名,与"未自定义"同义),用户填过非空值的不动。
     ``source`` 是行来源(auto=同步扫描 / manual=用户新建),只在建行时
     落值,已有行的来源不翻转。
 
@@ -78,11 +78,12 @@ def ensure_app(app_code: str, region: str = "cn",
                     " WHERE app_code = ? AND region <> ?", (region, app_code, region))
                 conn.execute(
                     "INSERT OR IGNORE INTO ask_apps"
-                    " (app_code, region, app_name, app_desc, source)"
-                    " VALUES (?, ?, ?, ?, ?)",
-                    (app_code, region, app_name, app_desc, source))
+                    " (app_code, region, app_name, app_desc, kind, source)"
+                    " VALUES (?, ?, ?, ?, ?, ?)",
+                    (app_code, region, app_name, app_desc, kind, source))
             # 档案默认值只补空: 空串/NULL 都算未填,用户填过非空值的不动
-            for column, value in (("app_name", app_name), ("app_desc", app_desc)):
+            for column, value in (("app_name", app_name), ("app_desc", app_desc),
+                                  ("kind", kind)):
                 if value:
                     conn.execute(
                         # S608 豁免: 列名来自上面的固定字段白名单,无外部输入

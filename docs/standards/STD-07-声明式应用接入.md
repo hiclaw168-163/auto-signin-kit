@@ -55,7 +55,7 @@ scaffolding 新建域时两边都查重(`scaffolding.service.validate`)。
 
 ## 引擎行为(解释器契约)
 
-- 流程 = trae 域 `claim_once` 的成熟设计(NOTE-03): status 先行,未签才
+- 流程 = 原 trae 域(现声明式应用 trae_cn) `claim_once` 的成熟设计(NOTE-03): status 先行,未签才
   claim;claim 写操作默认不重试;`retry_on` 命中才退避重试;预算耗尽带
   限流结果收尾交下一轮调度;
 - 结果集/退出码与全库口径一致: `CLAIMED/ALREADY/DRY_RUN` → 0,其余 → 1;
@@ -70,7 +70,7 @@ scaffolding 新建域时两边都查重(`scaffolding.service.validate`)。
 引擎走)、`chromium_cookies`(客户端 Chromium Cookie 库: Windows 走
 DPAPI+AES-GCM,macOS 走 Keychain+AES-CBC 经 `core/adapters/mac_keychain`,
 cookie 值的应用层前缀可配置剥离)。豆包客户端的 mac 加密是魔改 os_crypt,
-不在其能力内——doubao 域走 CDP 兜底不迁声明式。**OS 差异只进
+不在其能力内——doubao_cn 域走 CDP 兜底不迁声明式。**OS 差异只进
 core/adapters**(`STD-05`),适配器不写平台分支。
 
 ## 客户端类应用(`kind: client`)

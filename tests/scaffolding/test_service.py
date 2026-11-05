@@ -15,10 +15,10 @@ PYPROJECT = '''[project]
 name = "x"
 
 [project.entry-points."auto_signin_kit.domains"]
-trae = "auto_signin_kit.domains.trae:app"
+demoapp = "auto_signin_kit.domains.demoapp:app"
 
 [project.entry-points."auto_signin_kit.schedule_meta"]
-trae = "auto_signin_kit.domains.trae.schedule_meta"
+demoapp = "auto_signin_kit.domains.demoapp.schedule_meta"
 '''
 
 
@@ -29,7 +29,7 @@ def fake_root(tmp_path, monkeypatch):
     monkeypatch.setattr(svc, "project_root", lambda: tmp_path)
     monkeypatch.setattr(svc, "_manifest_path",
                         lambda: tmp_path / "data" / "scaffold-manifest.json")
-    monkeypatch.setattr(svc, "_known_domains", lambda: {"trae"})
+    monkeypatch.setattr(svc, "_known_domains", lambda: {"demoapp"})
     return tmp_path
 
 
@@ -37,7 +37,7 @@ def test_validate_rejects_bad_inputs():
     for kwargs in (
         {"name": "Bad-Name", "kind": "web", "base_url": "https://x", "daily_time": "09:05"},
         {"name": "class", "kind": "web", "base_url": "https://x", "daily_time": "09:05"},
-        {"name": "trae", "kind": "web", "base_url": "https://x", "daily_time": "09:05"},
+        {"name": "trae_cn", "kind": "web", "base_url": "https://x", "daily_time": "09:05"},
         {"name": "ok_name", "kind": "plugin", "base_url": "https://x", "daily_time": "09:05"},
         {"name": "ok_name", "kind": "web", "base_url": "x.com", "daily_time": "09:05"},
         {"name": "ok_name", "kind": "web", "base_url": "https://x", "daily_time": "25:00"},

@@ -40,7 +40,7 @@ def _schema_py(v: Vars) -> str:
     extra = ""
     if v.kind == "client":
         extra = (
-            "    #: 客户端本地数据目录;留空 = 自动探测(参考 domains/doubao 的探测实现)。\n"
+            "    #: 客户端本地数据目录;留空 = 自动探测(参考 domains/doubao_cn 的探测实现)。\n"
             "    user_data_dir: str | None = None\n"
         )
     return f'''"""{v.display} 域配置,对应 ``config/domains/{v.name}.yaml``。(scaffold 生成)"""
@@ -65,7 +65,7 @@ class {v.cls}DomainConfig(BudgetedConfig):
 
 def _api_py(v: Vars) -> str:
     if v.kind == "client":
-        return f'''"""{v.display} 域 API 封装。(scaffold 生成;客户端签到参考 domains/doubao)
+        return f'''"""{v.display} 域 API 封装。(scaffold 生成;客户端签到参考 domains/doubao_cn)
 
 客户端签到的通用路径: 定位客户端数据目录 → 解密 Cookie/登录态
 (平台差异收口 core/adapters)→ 必要时 CDP 兜底。按目标客户端实现。
@@ -114,7 +114,7 @@ class Api:
 
     def claim(self) -> tuple[int, Any, str | None]:
         """执行签到;返回 (http状态, 响应体, 错误)。"""
-        # TODO(开发者): 换成真实签到端点(参考 domains/trae/api.py 的 call 用法)
+        # TODO(开发者): 换成真实签到端点(参考 domains/doubao_cn_cn/api.py 的 call 用法)
         raise NotImplementedError("填写 {v.display} 签到端点")
 
     def status(self) -> tuple[int, Any, str | None]:

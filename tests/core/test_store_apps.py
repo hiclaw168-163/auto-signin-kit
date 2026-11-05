@@ -148,13 +148,14 @@ class TestLegacyMigration:
         # 重连触发迁移
         with store.connect() as conn:
             row = conn.execute("SELECT * FROM ask_apps").fetchone()
-            assert row["app_code"] == "trae"       # domain → app_code
+            assert row["app_code"] == "trae_cn"    # domain → app_code(迁移改名 trae→trae_cn)
             assert row["app_name"] == "Trae 覆盖名"  # display → app_name
             assert row["app_desc"] == "旧备注"        # note → app_desc
             assert row["region"] == "cn"           # 补列回填
             assert row["enabled"] == 0             # 开关值原样保留
             assert row["source"] == "auto"         # 补列回填(来源列引入前的行)
+            assert row["kind"] is None             # 补列(NULL = 未登记)
             cols = [r["name"] for r in
                     conn.execute("PRAGMA table_info(ask_apps)")]
-        assert cols == ["id", "app_code", "region", "enabled", "app_name",
-                        "app_desc", "source", "created_at", "updated_at"]
+        assert cols == ["id", "app_code", "app_name", "app_desc", "kind",
+                        "region", "enabled", "source", "created_at", "updated_at"]

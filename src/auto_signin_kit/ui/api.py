@@ -61,7 +61,7 @@ def overview() -> dict[str, Any]:
     today = datetime.now().date().isoformat()
     stats = store.overview_stats()
     signed = store.signed_today_by_domain()
-    domains = sorted({str(row["domain"]) for row in week} | set(store.SIGNIN_DOMAINS))
+    domains = sorted({str(row["domain"]) for row in week} | set(store.signin_domains()))
     cards = []
     for domain in domains:
         rows = [r for r in week if r["domain"] == domain]

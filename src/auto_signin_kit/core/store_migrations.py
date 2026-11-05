@@ -62,9 +62,14 @@ _RUNS_COLUMN_ORDER = ("id", "domain", "account_name", "executed_at", "operation"
                       "request", "response", "detail", "created_at",
                       "updated_at")
 
-#: ask_apps 的目标列序(主键 → 业务主体 → 开关 → 展示描述与来源 → 审计)。
-_APP_COLUMN_ORDER = ("id", "app_code", "region", "enabled", "app_name",
-                     "app_desc", "source", "created_at", "updated_at")
+#: ask_apps 的目标列序(主键 → 编码 → 展示档案 → 类别与版本区 → 开关 → 来源 → 审计)。
+_APP_COLUMN_ORDER = ("id", "app_code", "app_name", "app_desc", "kind",
+                     "region", "enabled", "source", "created_at", "updated_at")
+
+#: 国内版 app_code 统一 _cn 后缀(2026-11-05 命名规约,见 ask_apps.sql 头注释):
+#: 全库关联键三表一起迁移;国际版应用保持裸名(qoder)。
+_APP_CODE_RENAMES = (("doubao", "doubao_cn"), ("trae", "trae_cn"),
+                     ("workbuddy", "workbuddy_cn"))
 
 #: 列名规约: 避开数据库关键字——SQLite 官方关键字表里有 ACTION,
 #: MySQL 官方关键字表里有 ACTION/ACCOUNT;ask_apps 业务键统一 app_ 前缀
@@ -244,6 +249,30 @@ def _migrate(conn: sqlite3.Connection) -> None:
         with conn:
             conn.execute("ALTER TABLE ask_apps ADD COLUMN source"
                          " TEXT NOT NULL DEFAULT 'auto'")
+    # ask_apps.kind: 应用类别(web/client);存量行留 NULL(未登记,
+    # 展示回落注册表 KIND/声明 kind,下次同步自动补空)
+    if apps_columns and "kind" not in apps_columns:
+        with conn:
+            conn.execute("ALTER TABLE ask_apps ADD COLUMN kind TEXT")
+        # 存量行规整(挂在 kind 迁移上一次性执行,幂等且不反复改写):
+        # 国内版 app_code 统一 _cn 后缀(2026-11-05 命名规约,见
+        # ask_apps.sql 头注释)——全库关联键三表一起改名(ask_apps.app_code /
+        # ask_accounts.domain / ask_signin_runs.domain);国际版保持裸名(qoder)。
+        for table, column in (("ask_apps", "app_code"), ("ask_accounts", "domain"),
+                              ("ask_signin_runs", "domain")):
+            tcols = {row["name"] for row in
+                     conn.execute("PRAGMA table_info(%s)" % table)}
+            if not tcols or column not in tcols:
+                continue
+            for old, new in _APP_CODE_RENAMES:
+                with conn:
+                    conn.execute("UPDATE %s SET %s = ? WHERE %s = ?"  # noqa: S608
+                                 % (table, column, column), (new, old))
+        # 引擎/基础设施域(web_signin/schedule)是代码形态不是应用,历史误建
+        # 的主档行清掉;ask_accounts 只在应用执行时建档,引擎域本就没有
+        with conn:
+            conn.execute(
+                "DELETE FROM ask_apps WHERE app_code IN ('web_signin', 'schedule')")
     # 列序重建(必须在补列之后: 按名列拷贝要求旧表已有全部目标列)
     _reorder_table(conn, "ask_apps", _APP_COLUMN_ORDER, _load_sql("ask_apps.sql"))
     _reorder_table(conn, "ask_accounts", _ACCOUNT_COLUMN_ORDER, _ASK_ACCOUNTS_DDL)

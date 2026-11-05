@@ -44,7 +44,6 @@ from auto_signin_kit.core.store.credits import (
 from auto_signin_kit.core.store.ingest import SCHEDULE_DOMAIN, record_payload
 from auto_signin_kit.core.store.maintenance import resequence_ids
 from auto_signin_kit.core.store.runs import (
-    SIGNIN_DOMAINS,
     SIGNIN_DONE_RESULTS,
     compact_history,
     daily_status,
@@ -54,12 +53,12 @@ from auto_signin_kit.core.store.runs import (
     overview_by_account,
     overview_stats,
     signed_today_by_domain,
+    signin_domains,
 )
 
 __all__ = [
     "LEDGER_FILENAME",
     "SCHEDULE_DOMAIN",
-    "SIGNIN_DOMAINS",
     "SIGNIN_DONE_RESULTS",
     "accounts_summary",
     "app_enabled",
@@ -85,4 +84,5 @@ __all__ = [
     "set_account_potential",
     "set_app_state",
     "signed_today_by_domain",
+    "signin_domains",
 ]

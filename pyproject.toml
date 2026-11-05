@@ -36,19 +36,19 @@ auto-signin-kit = "auto_signin_kit.cli:main"
 # 加完记得 `uv sync && uv tool install --editable . --force`——
 # entry_points 写在 dist-info 里,只改这个文件不会自动生效。
 [project.entry-points."auto_signin_kit.domains"]
-workbuddy = "auto_signin_kit.domains.workbuddy:app"
+workbuddy_cn = "auto_signin_kit.domains.workbuddy_cn:app"
 qoder = "auto_signin_kit.domains.qoder:app"
 web_signin = "auto_signin_kit.domains.web_signin:app"
 schedule = "auto_signin_kit.domains.schedule:app"
-doubao = "auto_signin_kit.domains.doubao:app"
+doubao_cn = "auto_signin_kit.domains.doubao_cn:app"
 
 # 各域的调度声明(任务清单+客户端就绪探测);schedule 域经注册表发现,
 # 不反向 import 业务域——新增平台时在这里加一行即可,不改 schedule 代码。
 [project.entry-points."auto_signin_kit.schedule_meta"]
-doubao = "auto_signin_kit.domains.doubao.schedule_meta"
+doubao_cn = "auto_signin_kit.domains.doubao_cn.schedule_meta"
 qoder = "auto_signin_kit.domains.qoder.schedule_meta"
 web_signin = "auto_signin_kit.domains.web_signin.schedule_meta"
-workbuddy = "auto_signin_kit.domains.workbuddy.schedule_meta"
+workbuddy_cn = "auto_signin_kit.domains.workbuddy_cn.schedule_meta"
 
 # 扩展组(非业务域,独立 entry-point 组,SPEC-09/11);cli.py 同样只遍历挂载。
 [project.entry-points."auto_signin_kit.ui"]
@@ -120,11 +120,11 @@ forbidden_modules = ["auto_signin_kit.core.adapters"]
 name = "domains 之间彼此独立"
 type = "independence"
 modules = [
-    "auto_signin_kit.domains.workbuddy",
+    "auto_signin_kit.domains.workbuddy_cn",
     "auto_signin_kit.domains.qoder",
     "auto_signin_kit.domains.web_signin",
     "auto_signin_kit.domains.schedule",
-    "auto_signin_kit.domains.doubao",
+    "auto_signin_kit.domains.doubao_cn",
 ]
 # 2026-11 起无特例: 调度任务/探测由各域 schedule_meta.py 声明,
 # schedule 经 entry-point 注册表发现,不再 import 任何业务域。
@@ -159,4 +159,4 @@ ignore = ["UP031", "SIM112", "S105", "S603", "RUF001", "RUF002", "RUF003", "RET5
 # S101: pytest 的 assert 是测试本体;PLR2004: 断言里的字面量就是期望值。
 "tests/**" = ["D1", "S101", "INP001", "PLR2004", "RUF043"]
 # JS 是注入客户端运行时的解密助手原文(逐行对齐原项目),禁改排版
-"src/auto_signin_kit/domains/workbuddy/helper_js.py" = ["E501"]
+"src/auto_signin_kit/domains/workbuddy_cn/helper_js.py" = ["E501"]
