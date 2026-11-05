@@ -27,7 +27,7 @@ class SigninRunRow(TypedDict, total=False):
 
     id: int
     domain: str
-    account: str | None
+    account_name: str | None
     executed_at: str
     operation: str | None
     source: str
@@ -76,9 +76,9 @@ class AccountRow(TypedDict, total=False):
 class DailyCheckinRow(TypedDict, total=False):
     """``ask_daily_checkins`` 视图行(每天每域每账户的最终状态)。"""
 
-    day: str
+    checkin_day: str
     domain: str
-    account: str | None
+    account_name: str | None
     result: str
     source: str
     needs_attention: int

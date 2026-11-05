@@ -100,7 +100,7 @@ class TestRecordAndQuery:
         expected_day = datetime.fromisoformat(ts).astimezone().date().isoformat()
         rows = store.daily_status(days=3650)
         assert len(rows) == 1
-        assert rows[0]["day"] == expected_day
+        assert rows[0]["checkin_day"] == expected_day
         assert rows[0]["executed_at"] == "2026-11-03 00:05:00"
 
     def test_done_today_counts_today_runs(self):
@@ -143,7 +143,7 @@ class TestRecordAndQuery:
         rows = store.daily_status(days=7, domain="workbuddy")
         assert len(rows) == 1
         assert rows[0]["result"] == "ACTIVE"  # 当天最后一次运行
-        assert rows[0]["day"] == today
+        assert rows[0]["checkin_day"] == today
 
 
 class TestDoneTodayAndCompact:
@@ -283,8 +283,8 @@ class TestCreditsAndAccounts:
     def test_account_field_lands_in_column_and_registry(self):
         store.record_payload(json.dumps(_record(
             ts=_today_ts("09:00"), account="alice@x.com"), ensure_ascii=False))
-        row = self._rows("SELECT account FROM ask_signin_runs")[0]
-        assert row["account"] == "alice@x.com"
+        row = self._rows("SELECT account_name FROM ask_signin_runs")[0]
+        assert row["account_name"] == "alice@x.com"
         assert len(self._rows(
             "SELECT * FROM ask_accounts WHERE name='alice@x.com'")) == 1
         # account 是信封字段,不重复进 response(该行除信封外无业务字段 → response 为空)
@@ -293,8 +293,8 @@ class TestCreditsAndAccounts:
 
     def test_backfill_rows_get_default_account(self):
         _insert_backfill("2026-01-01T09:05:03+08:00")
-        row = self._rows("SELECT account FROM ask_signin_runs")[0]
-        assert row["account"] == "default"  # 老行回填,视图分组不留 NULL
+        row = self._rows("SELECT account_name FROM ask_signin_runs")[0]
+        assert row["account_name"] == "default"  # 老行回填,视图分组不留 NULL
 
     def test_credits_daily_aggregates_per_domain_day(self):
         store.record_payload(json.dumps(_record(
@@ -444,9 +444,9 @@ class TestAccountDimension:
             ensure_ascii=False))
         assert store.compact_history()["deleted"] == 1
         rows = store.events(limit=10)
-        accounts = {row["account"] for row in rows}
+        accounts = {row["account_name"] for row in rows}
         assert accounts == {"main", "backup"}
-        assert len([r for r in rows if r["account"] == "backup"]) == 1
+        assert len([r for r in rows if r["account_name"] == "backup"]) == 1
 
     def test_daily_view_folds_per_account(self):
         store.record_payload(json.dumps(_record(
@@ -457,7 +457,7 @@ class TestAccountDimension:
             account="backup"), ensure_ascii=False))
         rows = store.daily_status(days=7)
         assert len(rows) == 2  # 两账户各自有"当天最终状态"
-        by_account = {row["account"]: row["result"] for row in rows}
+        by_account = {row["account_name"]: row["result"] for row in rows}
         assert by_account == {"main": "CLAIMED", "backup": "NO_AUTH"}
 
     def test_overview_stats_credits_sum_across_accounts(self):
@@ -522,7 +522,7 @@ class TestSignedTodayByDomain:
             ts=_today_ts("10:00"), result="ALREADY", account="backup",
             report="backup 已签"), ensure_ascii=False))
         signed = store.signed_today_by_domain()
-        assert signed["trae"]["account"] == "backup"  # 跨账户取最新一条
+        assert signed["trae"]["account_name"] == "backup"  # 跨账户取最新一条
 
     def test_no_success_today_gives_empty(self):
         store.record_payload(json.dumps(_record(

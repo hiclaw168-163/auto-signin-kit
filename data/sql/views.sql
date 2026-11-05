@@ -2,6 +2,7 @@
 -- CREATE VIEW 无 IF NOT EXISTS 的改列能力,直接 DROP+CREATE 保证老库也
 -- 能拿到新列;必须在 _migrate 之后、BEGIN IMMEDIATE 原子块内执行
 -- (多进程并发 connect 时两个 executescript 交错会撞 "already exists")。
+-- 输出列名避开数据库关键字(day→checkin_day, account→account_name)。
 
 -- 每天每域每账户最后一次运行 = 当天最终状态,把"一天多次运行"折叠成一行,
 -- Web 台账页与人工查库都读它。executed_at 已统一为本地无时区(迁移抹掉旧
@@ -10,9 +11,9 @@
 -- 的最终行折叠掉。
 DROP VIEW IF EXISTS ask_daily_checkins;
 CREATE VIEW ask_daily_checkins AS
-SELECT date(r.executed_at)   AS day,
+SELECT date(r.executed_at)   AS checkin_day,
        r.domain              AS domain,
-       r.account             AS account,
+       r.account_name        AS account_name,
        r.result              AS result,
        r.source              AS source,
        r.needs_attention     AS needs_attention,
@@ -22,7 +23,7 @@ FROM ask_signin_runs AS r
 WHERE r.id = (
     SELECT r2.id FROM ask_signin_runs AS r2
     WHERE date(r2.executed_at) = date(r.executed_at) AND r2.domain = r.domain
-      AND r2.account = r.account
+      AND r2.account_name = r.account_name
     ORDER BY r2.executed_at DESC, r2.id DESC
     LIMIT 1
 );
@@ -35,11 +36,11 @@ WHERE r.id = (
 -- 结果词集合须与 core.report.RESULT_OK 同步(4 词,改动时两边一起改)。
 DROP VIEW IF EXISTS ask_daily_credits;
 CREATE VIEW ask_daily_credits AS
-SELECT day, domain, account, MAX(credits_val) AS credits
+SELECT checkin_day, domain, account_name, MAX(credits_val) AS credits
 FROM (
-    SELECT date(executed_at) AS day,
+    SELECT date(executed_at) AS checkin_day,
            domain            AS domain,
-           account           AS account,
+           account_name      AS account_name,
            COALESCE(
                json_extract(response, '$.credits'),
                json_extract(response, '$.credit'),
@@ -50,4 +51,4 @@ FROM (
       AND result IN ('CLAIMED', 'ALREADY', 'ACTIVE', 'OK')
 )
 WHERE credits_val IS NOT NULL
-GROUP BY day, domain, account;
+GROUP BY checkin_day, domain, account_name;

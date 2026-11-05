@@ -47,11 +47,11 @@ _YESTERDAY = (datetime.now().astimezone().date() - timedelta(days=1)).isoformat(
 
 # 日期用运行时"今天/昨天": 写死日历日期的桩过不了午夜(真实踩坑)
 _DAILY_ROWS = [
-    {"day": _TODAY, "domain": "doubao", "result": "CLAIMED",
+    {"checkin_day": _TODAY, "domain": "doubao", "result": "CLAIMED",
      "source": "run", "needs_attention": 0, "report": "签到成功", "executed_at": "t"},
-    {"day": _TODAY, "domain": "qoder", "result": "NO_AUTH",
+    {"checkin_day": _TODAY, "domain": "qoder", "result": "NO_AUTH",
      "source": "run", "needs_attention": 1, "report": "登录过期", "executed_at": "t"},
-    {"day": _YESTERDAY, "domain": "doubao", "result": "ALREADY",
+    {"checkin_day": _YESTERDAY, "domain": "doubao", "result": "ALREADY",
      "source": "run", "needs_attention": 0, "report": "已签到", "executed_at": "t"},
 ]
 
@@ -76,7 +76,7 @@ def _patch_history(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     def signed_today() -> dict[str, dict]:
         rows: dict[str, dict] = {}
         for r in _DAILY_ROWS:
-            if r["day"] == _TODAY and r["result"] in ("CLAIMED", "ALREADY") \
+            if r["checkin_day"] == _TODAY and r["result"] in ("CLAIMED", "ALREADY") \
                     and r["domain"] not in rows:
                 rows[r["domain"]] = r
         return rows

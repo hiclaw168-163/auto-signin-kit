@@ -36,9 +36,9 @@ def daily_status(days: int = 7, *, domain: str | None = None,
     conn = connect()
     try:
         sql = (
-            "SELECT day, domain, account, result, source, needs_attention, report,"
-            " executed_at"
-            " FROM ask_daily_checkins WHERE day >= date('now', 'localtime', ?)"
+            "SELECT checkin_day, domain, account_name, result, source,"
+            " needs_attention, report, executed_at"
+            " FROM ask_daily_checkins WHERE checkin_day >= date('now', 'localtime', ?)"
         )
         params: list[Any] = ["-%d days" % max(1, days)]
         if domain:
@@ -51,9 +51,9 @@ def daily_status(days: int = 7, *, domain: str | None = None,
             sql += " AND result = ?"
             params.append(normalize_result(result))
         if account:
-            sql += " AND account = ?"
+            sql += " AND account_name = ?"
             params.append(account)
-        rows = conn.execute(sql + " ORDER BY day DESC, domain, account",
+        rows = conn.execute(sql + " ORDER BY checkin_day DESC, domain, account_name",
                             params).fetchall()
     finally:
         conn.close()
@@ -78,7 +78,7 @@ def overview_stats() -> dict[str, dict[str, Any]]:
     conn = connect()
     try:
         rows = conn.execute(
-            "SELECT date(executed_at) AS day, domain, account, result,"
+            "SELECT date(executed_at) AS day, domain, account_name, result,"
             " executed_at, response"
             " FROM ask_signin_runs WHERE source = 'run' ORDER BY executed_at"
         ).fetchall()
@@ -94,7 +94,7 @@ def overview_stats() -> dict[str, dict[str, Any]]:
             d["ok_days"].add(row["day"])
             earned = _extract_credits(row["response"])
             # 同域同账户同天多行(幂等重跑)取最大快照,不累加——响应里是"当日所得"
-            key = (row["domain"], row["account"], row["day"])
+            key = (row["domain"], row["account_name"], row["day"])
             day_credits[key] = max(day_credits.get(key, 0), earned)
         d["last"] = row["executed_at"]
     out: dict[str, dict[str, Any]] = {}
@@ -128,7 +128,7 @@ def overview_by_account() -> dict[str, dict[str, dict[str, Any]]]:
     conn = connect()
     try:
         rows = conn.execute(
-            "SELECT date(executed_at) AS day, domain, account, result,"
+            "SELECT date(executed_at) AS day, domain, account_name, result,"
             " executed_at, response"
             " FROM ask_signin_runs WHERE source = 'run' ORDER BY executed_at"
         ).fetchall()
@@ -139,12 +139,12 @@ def overview_by_account() -> dict[str, dict[str, dict[str, Any]]]:
     per: dict[tuple[str, str], dict[str, Any]] = {}
     day_credits: dict[tuple[str, str, str], int] = {}
     for row in rows:
-        key = (row["domain"], row["account"])
+        key = (row["domain"], row["account_name"])
         d = per.setdefault(key, {"ok_days": set(), "last": None})
         if row["result"] in RESULT_OK:
             d["ok_days"].add(row["day"])
             earned = _extract_credits(row["response"])
-            credit_key = (row["domain"], row["account"], row["day"])
+            credit_key = (row["domain"], row["account_name"], row["day"])
             day_credits[credit_key] = max(day_credits.get(credit_key, 0), earned)
         d["last"] = row["executed_at"]
     out: dict[str, dict[str, dict[str, Any]]] = {}
@@ -201,7 +201,7 @@ def events(
     limit: int = 50,
 ) -> list[SigninRunRow]:
     """按条件查 ``ask_signin_runs`` 明细,最新在前;``source`` 过滤 run/backfill。"""
-    sql = ("SELECT executed_at, domain, account, operation, source, result,"
+    sql = ("SELECT executed_at, domain, account_name, operation, source, result,"
            " needs_attention, report, request, response"
            " FROM ask_signin_runs WHERE 1=1")
     params: list[Any] = []
@@ -218,7 +218,7 @@ def events(
         sql += " AND result = ?"
         params.append(normalize_result(result))
     if account:
-        sql += " AND account = ?"
+        sql += " AND account_name = ?"
         params.append(account)
     if attention_only:
         sql += " AND needs_attention = 1"
@@ -244,7 +244,7 @@ def done_today(domain: str, account: str = "default") -> bool:
     conn = connect()
     try:
         row = conn.execute(
-            "SELECT 1 FROM ask_signin_runs WHERE domain = ? AND account = ?"
+            "SELECT 1 FROM ask_signin_runs WHERE domain = ? AND account_name = ?"
             " AND source = 'run' AND result IN (?, ?)"
             " AND date(executed_at) = date('now', 'localtime')"
             " LIMIT 1", (domain, account, *SIGNIN_DONE_RESULTS)).fetchone()
@@ -266,7 +266,7 @@ def signed_today_by_domain() -> dict[str, SigninRunRow]:
     conn = connect()
     try:
         rows = conn.execute(
-            "SELECT domain, account, result, needs_attention, report, executed_at"
+            "SELECT domain, account_name, result, needs_attention, report, executed_at"
             " FROM ask_signin_runs"
             " WHERE source = 'run' AND result IN (?, ?)"
             "   AND date(executed_at) = date('now', 'localtime')"
@@ -291,7 +291,7 @@ def failure_count_today(domain: str, account: str = "default",
     conn = connect()
     try:
         sql = ("SELECT COUNT(*) FROM ask_signin_runs"
-               " WHERE domain = ? AND account = ? AND source = 'run'"
+               " WHERE domain = ? AND account_name = ? AND source = 'run'"
                " AND needs_attention = 1"
                " AND date(executed_at) = date('now', 'localtime')")
         params: list[Any] = [domain, account]
@@ -320,9 +320,9 @@ def compact_history() -> dict[str, Any]:
             " WHERE source = 'run' AND result IN ('CLAIMED', 'ALREADY')"
             "   AND id NOT IN (SELECT MIN(id) FROM ask_signin_runs"
             "                  WHERE source = 'run' AND result IN ('CLAIMED', 'ALREADY')"
-            "                  GROUP BY date(executed_at), domain, account)"
+            "                  GROUP BY date(executed_at), domain, account_name)"
             "   AND id NOT IN (SELECT MAX(id) FROM ask_signin_runs"
-            "                  GROUP BY date(executed_at), domain, account)"
+            "                  GROUP BY date(executed_at), domain, account_name)"
         ).fetchall()
         per_domain: dict[str, int] = {}
         ids = []

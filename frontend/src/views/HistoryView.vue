@@ -50,8 +50,8 @@ async function load() {
 
 async function drill(row: DailyRow) {
   try {
-    events.value = await dashboardApi.events({ date: row.day, domain: row.domain, result: result.value ?? undefined, limit: 100 })
-    eventsTitle.value = `${row.domain} · ${row.day} 明细`
+    events.value = await dashboardApi.events({ date: row.checkin_day, domain: row.domain, result: result.value ?? undefined, limit: 100 })
+    eventsTitle.value = `${row.domain} · ${row.checkin_day} 明细`
     eventPagination.page = 1
   } catch (e) {
     message.error(String(e))
@@ -59,7 +59,7 @@ async function drill(row: DailyRow) {
 }
 
 const columns = [
-  { title: '日期', key: 'day', width: 110 },
+  { title: '日期', key: 'checkin_day', width: 110 },
   { title: '域', key: 'domain', width: 120 },
   {
     title: '结果', key: 'result', width: 110,

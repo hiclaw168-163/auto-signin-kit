@@ -7,7 +7,7 @@
 CREATE TABLE IF NOT EXISTS ask_signin_runs (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     domain          TEXT    NOT NULL,  -- 业务主体: workbuddy / qoder / trae / doubao
-    account         TEXT    DEFAULT 'default',  -- 本次运行用的账户(主体维度,多户时区分)
+    account_name    TEXT    DEFAULT 'default',  -- 本次运行用的账户(主体维度,多户时区分;避开关键字 ACCOUNT)
     executed_at     TEXT    NOT NULL,  -- 执行时间(本地无时区)
     operation       TEXT,              -- 干了什么: auto / active / claim / backfill ...
     source          TEXT    NOT NULL DEFAULT 'run',  -- 数据哪来的: run / backfill

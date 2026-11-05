@@ -122,9 +122,9 @@ def credits_daily(days: int = 14) -> list[dict[str, Any]]:
     conn = connect()
     try:
         rows = conn.execute(
-            "SELECT day, domain, SUM(credits) AS credits FROM ask_daily_credits"
-            " WHERE day >= date('now', 'localtime', ?)"
-            " GROUP BY day, domain ORDER BY day DESC, domain",
+            "SELECT checkin_day, domain, SUM(credits) AS credits FROM ask_daily_credits"
+            " WHERE checkin_day >= date('now', 'localtime', ?)"
+            " GROUP BY checkin_day, domain ORDER BY checkin_day DESC, domain",
             ["-%d days" % max(1, days)]).fetchall()
     finally:
         conn.close()
@@ -146,15 +146,15 @@ def credits_stats(days: int = 30) -> dict[str, Any]:
     conn = connect()
     try:
         trend_rows = conn.execute(
-            "SELECT day, SUM(credits) AS credits FROM ask_daily_credits"
-            " WHERE day >= date('now', 'localtime', ?)"
-            " GROUP BY day ORDER BY day", ["-%d days" % max(1, days)]).fetchall()
+            "SELECT checkin_day, SUM(credits) AS credits FROM ask_daily_credits"
+            " WHERE checkin_day >= date('now', 'localtime', ?)"
+            " GROUP BY checkin_day ORDER BY checkin_day", ["-%d days" % max(1, days)]).fetchall()
         domain_rows = conn.execute(
             "SELECT domain,"
             " SUM(credits) AS total,"
-            " SUM(CASE WHEN day >= date('now', 'localtime', ?) THEN credits ELSE 0 END)"
+            " SUM(CASE WHEN checkin_day >= date('now', 'localtime', ?) THEN credits ELSE 0 END)"
             "   AS window_total,"
-            " MAX(day) AS last_day"
+            " MAX(checkin_day) AS last_day"
             " FROM ask_daily_credits GROUP BY domain ORDER BY domain",
             ["-%d days" % max(1, days)]).fetchall()
         balance_rows = conn.execute(
@@ -173,7 +173,7 @@ def credits_stats(days: int = 30) -> dict[str, Any]:
                 for row in balance_rows}
     return {
         "window_days": max(1, days),
-        "trend": [{"day": row["day"], "credits": row["credits"] or 0}
+        "trend": [{"day": row["checkin_day"], "credits": row["credits"] or 0}
                   for row in trend_rows],
         "by_domain": [{"domain": row["domain"], "total": row["total"] or 0,
                        "window_total": row["window_total"] or 0,
@@ -196,13 +196,13 @@ def accounts_summary(days: int = 7) -> dict[str, Any]:
             " device_id, install_path, uid, client_info, info_synced_at"
             " FROM ask_accounts ORDER BY domain, name").fetchall()
         active_rows = conn.execute(
-            "SELECT domain, account, MAX(day) AS last_day, SUM(credits) AS total"
+            "SELECT domain, account_name, MAX(checkin_day) AS last_day, SUM(credits) AS total"
             " FROM ask_daily_credits"
-            " WHERE day >= date('now', 'localtime', ?)"
-            " GROUP BY domain, account", ["-%d days" % max(1, days)]).fetchall()
+            " WHERE checkin_day >= date('now', 'localtime', ?)"
+            " GROUP BY domain, account_name", ["-%d days" % max(1, days)]).fetchall()
     finally:
         conn.close()
-    active = {(r["domain"], r["account"]): dict(r) for r in active_rows}
+    active = {(r["domain"], r["account_name"]): dict(r) for r in active_rows}
     items = []
     for r in registered:
         stat = active.get((r["domain"], r["name"]))
@@ -243,9 +243,9 @@ def capacity_summary(days: int = 7) -> list[dict[str, Any]]:
             "SELECT SUM(daily_potential) AS p FROM ask_accounts"
             " WHERE enabled = 1 AND daily_potential IS NOT NULL").fetchone()
         earned_rows = conn.execute(
-            "SELECT day, SUM(credits) AS earned FROM ask_daily_credits"
-            " WHERE day >= date('now', 'localtime', ?)"
-            " GROUP BY day ORDER BY day DESC", ["-%d days" % max(1, days)]
+            "SELECT checkin_day, SUM(credits) AS earned FROM ask_daily_credits"
+            " WHERE checkin_day >= date('now', 'localtime', ?)"
+            " GROUP BY checkin_day ORDER BY checkin_day DESC", ["-%d days" % max(1, days)]
         ).fetchall()
     finally:
         conn.close()
@@ -254,6 +254,6 @@ def capacity_summary(days: int = 7) -> list[dict[str, Any]]:
     for row in earned_rows:
         earned = row["earned"]
         rate = round(earned / potential, 4) if potential else None
-        out.append({"day": row["day"], "earned": earned,
+        out.append({"day": row["checkin_day"], "earned": earned,
                     "potential": potential, "rate": rate})
     return out

@@ -80,7 +80,7 @@ def _insert_signin_run(conn: sqlite3.Connection, record: dict, payload: str) -> 
         " VALUES (?, ?, ?, ?)",
         (domain, account, executed_at, executed_at))
     conn.execute(
-        "INSERT INTO ask_signin_runs (domain, account, executed_at, operation,"
+        "INSERT INTO ask_signin_runs (domain, account_name, executed_at, operation,"
         " source, result, needs_attention, report, request, response, detail,"
         " created_at, updated_at)"
         " VALUES (?, ?, ?, ?, 'run', ?, ?, ?, ?, ?, ?, ?, ?)",

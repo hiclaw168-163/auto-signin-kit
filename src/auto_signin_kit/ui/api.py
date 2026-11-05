@@ -65,10 +65,10 @@ def overview() -> dict[str, Any]:
     cards = []
     for domain in domains:
         rows = [r for r in week if r["domain"] == domain]
-        today_rows = [r for r in rows if r["day"] == today]
+        today_rows = [r for r in rows if r["checkin_day"] == today]
         last_row = today_rows[0] if today_rows else None
         success_row = signed.get(domain)
-        today_row = dict(success_row, day=today, source="run") if success_row else last_row
+        today_row = dict(success_row, checkin_day=today, source="run") if success_row else last_row
         st = stats.get(domain, {})
         cards.append({
             "domain": domain,

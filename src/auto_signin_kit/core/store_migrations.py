@@ -57,16 +57,17 @@ _ACCOUNT_COLUMN_ORDER = ("id", "domain", "name", "enabled", "uid", "device_id",
                          "updated_at")
 
 #: ask_signin_runs 的目标列序(主键 → 业务主体 → 时间 → 动作状态 → 明细 → 审计)。
-_RUNS_COLUMN_ORDER = ("id", "domain", "account", "executed_at", "operation",
+_RUNS_COLUMN_ORDER = ("id", "domain", "account_name", "executed_at", "operation",
                       "source", "result", "needs_attention", "report",
                       "request", "response", "detail", "created_at",
                       "updated_at")
 
-#: 列名规约: 避开数据库关键字(SQLite 官方关键字表里有 ACTION)——
-#: 两张表的 action 列统一改名 operation(2026-11-05)。
+#: 列名规约: 避开数据库关键字——SQLite 官方关键字表里有 ACTION,
+#: MySQL 官方关键字表里有 ACTION/ACCOUNT(2026-11-05 两次规约)。
 _RENAME_MIGRATIONS = (
     ("ask_signin_runs", "action", "operation"),
     ("ask_schedule_changes", "action", "operation"),
+    ("ask_signin_runs", "account", "account_name"),
 )
 
 #: 老库迁移: ALTER 加列后,把历史上靠 action 标记的回填行规整到 source 列;
@@ -79,10 +80,12 @@ _MIGRATIONS = (
      None),
     ("response", "ALTER TABLE ask_signin_runs ADD COLUMN response TEXT",
      None),
-    # account: 本次运行用的账户(当前每域一户 'default',一域多户时由域回传);
-    # 存量行统一回填 default(视图按 account 分组,不能留 NULL)
-    ("account", "ALTER TABLE ask_signin_runs ADD COLUMN account TEXT",
-     "UPDATE ask_signin_runs SET account = 'default' WHERE account IS NULL"),
+    # account_name: 本次运行用的账户(当前每域一户 'default',一域多户时由域回传);
+    # 存量行统一回填 default(视图按账户分组,不能留 NULL)。历史列名 account
+    # 是 MySQL 关键字,改名走上面的 _RENAME_MIGRATIONS,这里只补"从没有过"的库
+    ("account_name", "ALTER TABLE ask_signin_runs ADD COLUMN account_name TEXT",
+     "UPDATE ask_signin_runs SET account_name = 'default'"
+     " WHERE account_name IS NULL"),
     ("created_at", "ALTER TABLE ask_signin_runs ADD COLUMN created_at TEXT",
      "UPDATE ask_signin_runs SET created_at = executed_at"
      " WHERE created_at IS NULL"),

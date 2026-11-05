@@ -2,8 +2,9 @@
 // 改 API 时两边一起改。
 
 export interface DailyRow {
-  day: string
+  checkin_day: string
   domain: string
+  account_name?: string
   result: string
   source: string
   needs_attention: number

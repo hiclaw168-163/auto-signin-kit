@@ -39,8 +39,10 @@ def create_app() -> FastAPI:
     async def _no_cache_html(request, call_next):
         # index.html 永远协商缓存: 构建产物是哈希文件名,html 引用变了就必须
         # 立刻拿到新 html,否则浏览器拿旧 html 引用已删除的 JS → 白屏(踩过)。
+        # SPA 子路由(/history 等)也会被 StaticFiles 回落到 index.html,
+        # 所以按"响应是 html"统一判定,不逐个猜路径。
         response = await call_next(request)
-        if request.url.path == "/":
+        if response.headers.get("content-type", "").startswith("text/html"):
             response.headers["Cache-Control"] = "no-cache"
         return response
 
