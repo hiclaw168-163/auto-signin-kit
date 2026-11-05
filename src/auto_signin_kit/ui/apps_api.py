@@ -18,8 +18,11 @@ from auto_signin_kit.core.adapters.device_info import machine_info
 from auto_signin_kit.core.config import load_domain_config_model
 from auto_signin_kit.core.errors import AutoSignInKitError
 from auto_signin_kit.domains.schedule import service as schedule_service
-from auto_signin_kit.domains.schedule.data import domain_of, providers
+from auto_signin_kit.domains.schedule.data import app_label, providers
 from auto_signin_kit.domains.schedule.schema import ScheduleDomainConfig
+from auto_signin_kit.domains.web_signin import apps as web_apps
+from auto_signin_kit.domains.web_signin import authkit
+from auto_signin_kit.domains.web_signin.schema import AppDeclaration
 from auto_signin_kit.scaffolding import service as scaffolding
 from auto_signin_kit.scaffolding.rebuild import spawn_rebuild
 from auto_signin_kit.ui import config_api, daemon
@@ -49,13 +52,22 @@ def _app_config(name: str) -> dict[str, Any] | None:
 
 
 def _schedule_times_by_domain() -> dict[str, list[str]]:
-    """域名 → 该域全部任务的触发时间(已套 schedule.yaml 的任务覆盖)。"""
+    """应用标签 → 全部任务的触发时间(已套 schedule.yaml 的任务覆盖)。
+
+    分组键是 :func:`app_label` 而非域名: web_signin 引擎的任务按 ``--app``
+    归到应用编码,与台账/主档的关联键保持一致。
+    """
     config = load_domain_config_model("schedule", ScheduleDomainConfig,
                                       merge_local=True)
     out: dict[str, list[str]] = {}
     for spec in schedule_service.select_tasks(config, None):
-        out.setdefault(domain_of(spec), []).extend(spec.times)
+        out.setdefault(app_label(spec), []).extend(spec.times)
     return out
+
+
+def _declarative_apps() -> list[AppDeclaration]:
+    """全部有效声明;坏文件不进列表(all_apps_safe 内部已给 stderr 警告)。"""
+    return web_apps.all_apps_safe()[0]
 
 
 @router.get("/apps")
@@ -86,6 +98,26 @@ def list_apps() -> dict[str, Any]:
             "enabled": bool((state or {}).get("enabled", 1)),
             "region": (state or {}).get("region") or "cn",
             "app_desc": (state or {}).get("app_desc"),
+            "declarative": False,
+        })
+    for decl in _declarative_apps():  # 声明式应用: 一份 YAML 一个应用
+        state = store.app_state(decl.app_code)
+        try:
+            ready: bool | None = authkit.ready(decl)
+        except Exception:
+            ready = None
+        apps.append({
+            "name": decl.app_code,
+            "kind": "web",
+            "display": (state or {}).get("app_name") or decl.display,
+            "app_name": (state or {}).get("app_name"),
+            "ready": ready,
+            "config": web_apps.raw_declaration(decl.app_code),
+            "times": times_by_domain.get(decl.app_code, []),
+            "enabled": bool((state or {}).get("enabled", 1)),
+            "region": (state or {}).get("region") or decl.region,
+            "app_desc": (state or {}).get("app_desc"),
+            "declarative": True,
         })
     return {"apps": apps, "generated_at": _now()}
 
@@ -151,6 +183,17 @@ class AppStateUpdate(BaseModel):
     app_desc: str | None = None
 
 
+def _is_known_app(name: str) -> bool:
+    """应用名是否可操作: 注册表域 或 声明式应用编码。"""
+    if name in config_api.known_domains():
+        return True
+    return any(decl.app_code == name for decl in _declarative_apps())
+
+
+def _is_declarative(name: str) -> bool:
+    return any(decl.app_code == name for decl in _declarative_apps())
+
+
 @router.put("/apps/{name}/state")
 def update_app_state(name: str, body: AppStateUpdate) -> dict[str, Any]:
     """更新应用主档(总开关/显示名/描述);下次静默调度触发时生效。
@@ -158,7 +201,7 @@ def update_app_state(name: str, body: AppStateUpdate) -> dict[str, Any]:
     停用语义: 静默(调度)触发整个域跳过(不执行、不落库);手动执行
     永远放行。已注册的系统定时任务不注销——关开关比动 launchd 轻得多。
     """
-    if name not in config_api.known_domains():
+    if not _is_known_app(name):
         raise HTTPException(404, f"未知域: {name}")
     row = store.set_app_state(name, enabled=body.enabled,
                               app_name=body.app_name, app_desc=body.app_desc)
@@ -175,6 +218,8 @@ class AppUpdate(BaseModel):
 @router.get("/apps/{name}/config")
 def get_app_config(name: str) -> dict[str, Any]:
     """应用配置的字段视图(表单化编辑取数;纯读取不落盘)。"""
+    if _is_declarative(name):
+        return {"domain": name, "fields": web_apps.raw_declaration(name)}
     if name not in config_api.known_domains():
         raise HTTPException(404, f"未知域: {name}")
     return {"domain": name, "fields": config_api.load_data(name)}
@@ -182,15 +227,27 @@ def get_app_config(name: str) -> dict[str, Any]:
 
 @router.put("/apps/{name}")
 def update_app(name: str, body: AppUpdate) -> dict[str, Any]:
-    """表单化编辑应用配置: 深合并 → pydantic 校验 → 原子写盘。
+    """表单化编辑应用配置: 深合并 → 校验 → 原子写盘。
 
-    不触发重建: 配置在命令运行时读取,下次运行生效。注意重写会移除
-    YAML 里的注释——需要保留注释的精细编辑走「配置」页的 YAML 文本编辑。
+    常规域: pydantic 域配置校验;声明式应用: AppDeclaration 校验
+    (extra=forbid,字段拼错当场报)。不触发重建: 配置在命令运行时读取,
+    下次运行生效。注意重写会移除 YAML 里的注释——需要保留注释的精细
+    编辑走「配置」页的 YAML 文本编辑。
     """
-    if name not in config_api.known_domains():
+    if not _is_known_app(name):
         raise HTTPException(404, f"未知域: {name}")
     if not body.updates:
         raise HTTPException(422, "没有要修改的字段")
+    if _is_declarative(name):
+        from auto_signin_kit.core.errors import ConfigError
+
+        merged = config_api.deep_merge(web_apps.raw_declaration(name), body.updates)
+        try:
+            path = web_apps.save_declaration(name, merged)
+        except ConfigError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        return {"ok": True, "path": str(path),
+                "message": "已保存: 下次运行 web_signin 命令时生效(YAML 注释已被重写移除)"}
     data = config_api.load_data(name)
     merged = config_api.deep_merge(data, body.updates)
     config_api.validate_data(name, merged)
@@ -208,10 +265,24 @@ def sync_apps() -> dict[str, Any]:
     ``ensure_app`` 建主档行(含 region)→ ``ensure_account`` 补 default 户 →
     档案落 ask_accounts(合并 machine_info);未安装的跳过、不建档。
     单域失败如实进 failed,不中断其他域。即时生效,无重建。
+
+    声明式应用(config/apps/*.yaml)走同一套主档: 就绪 = 登录态探测
+    (authkit.ready,不解锁凭据),region 取声明值,无 client_info 采集。
     """
     synced: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
     failed: list[dict[str, Any]] = []
+
+    def ensure(self_name: str, region: str, info: dict[str, Any] | None,
+               *, want_account: bool) -> None:
+        """主档 + default 户 + 档案;声明式应用无 client_info 采集仍建账户。"""
+        store.ensure_app(self_name, region)
+        if want_account:
+            store.ensure_account(self_name, "default")
+        if info:
+            store.set_account_client_info(self_name, "default",
+                                          {**machine_info(), **info})
+
     for name, meta in providers():
         collect = getattr(meta, "client_info", None)
         try:
@@ -232,15 +303,26 @@ def sync_apps() -> dict[str, Any]:
             region = str(info.pop("region", "") or "cn")  # region 进主档,不入档案
             version = info.get("version")
         try:
-            store.ensure_app(name, region)
-            if info:
-                store.ensure_account(name, "default")
-                store.set_account_client_info(name, "default",
-                                              {**machine_info(), **info})
+            ensure(name, region, info, want_account=bool(info))
         except AutoSignInKitError as exc:
             failed.append({"domain": name, "error": str(exc)})
             continue
         synced.append({"domain": name, "region": region,
                        "profile": bool(info), "version": version})
+    for decl in _declarative_apps():
+        try:
+            ready = authkit.ready(decl)
+        except Exception:
+            ready = None
+        if not ready:
+            skipped.append({"domain": decl.app_code, "reason": "登录态未就绪"})
+            continue
+        try:
+            ensure(decl.app_code, decl.region, None, want_account=True)
+        except AutoSignInKitError as exc:
+            failed.append({"domain": decl.app_code, "error": str(exc)})
+            continue
+        synced.append({"domain": decl.app_code, "region": decl.region,
+                       "profile": False, "version": None})
     return {"result": "OK" if not failed else "PARTIAL",
             "synced": synced, "skipped": skipped, "failed": failed}

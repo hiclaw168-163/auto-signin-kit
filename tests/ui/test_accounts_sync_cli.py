@@ -10,10 +10,16 @@ from auto_signin_kit.ui import cli as ui_cli
 
 
 def _patch_providers(monkeypatch, collect) -> None:
-    """注册表只出一个声明了 client_info 的假域,采集真实落 tmp 台账。"""
+    """注册表只出一个声明了 client_info 的假域,采集真实落 tmp 台账。
+
+    声明式应用一并清空——否则本机 config/apps/*.yaml(如 trae)会混进
+    同步结果,测试结论就不只取决于注入的假域了。
+    """
     meta = types.SimpleNamespace(client_info=collect)
     monkeypatch.setattr("auto_signin_kit.ui.apps_api.providers",
                         lambda: iter([("qoder", meta)]))
+    monkeypatch.setattr("auto_signin_kit.ui.apps_api._declarative_apps",
+                        lambda: [])
 
 
 def test_accounts_sync_prints_summary(monkeypatch):
