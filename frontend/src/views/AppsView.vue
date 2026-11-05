@@ -49,6 +49,41 @@ async function toggleApp(a: AppInfo, enabled: boolean) {
   }
 }
 
+// ---------------- 主档编辑(ask_apps: 显示名覆盖/描述,即时生效) ----------------
+
+const editingProfile = ref(false)
+const savingProfile = ref(false)
+const profileForm = reactive({ name: '', app_name: '', app_desc: '' })
+
+function regionLabel(region: string): string {
+  return region === 'intl' ? '国际版' : '国内版'
+}
+
+function openProfile(a: AppInfo) {
+  profileForm.name = a.name
+  profileForm.app_name = a.app_name ?? ''
+  profileForm.app_desc = a.app_desc ?? ''
+  editingProfile.value = true
+}
+
+async function saveProfile() {
+  savingProfile.value = true
+  try {
+    // 空串 = 显式清空(回落注册表展示名);接口语义: None 是不改
+    const out = await appsApi.updateState(profileForm.name, {
+      app_name: profileForm.app_name,
+      app_desc: profileForm.app_desc,
+    })
+    message.success(out.message)
+    editingProfile.value = false
+    await load()
+  } catch (e) {
+    message.error(String(e))
+  } finally {
+    savingProfile.value = false
+  }
+}
+
 function kindTag(kind: string | null): { label: string; type: 'success' | 'info' | 'default' } {
   if (kind === 'web') return { label: '网页版签', type: 'info' }
   if (kind === 'client') return { label: '客户端签到', type: 'success' }
@@ -229,7 +264,16 @@ onMounted(load)
         <tr v-for="a in apps" :key="a.name">
           <td>
             <span style="font-weight: 600" :style="a.enabled ? '' : 'opacity: 0.5'">{{ a.display }}</span>
-            <n-text depth="3" style="margin-left: 8px; font-size: 12px">{{ a.name }}</n-text>
+            <n-tag size="tiny" :bordered="false" style="margin-left: 8px"
+                   :type="a.region === 'intl' ? 'warning' : 'default'">
+              {{ regionLabel(a.region) }}
+            </n-tag>
+            <div>
+              <n-text depth="3" style="font-size: 12px">{{ a.name }}</n-text>
+              <n-text v-if="a.app_desc" depth="3" style="margin-left: 8px; font-size: 12px">
+                {{ a.app_desc }}
+              </n-text>
+            </div>
           </td>
           <td>
             <n-tag :type="kindTag(a.kind).type" size="small">{{ kindTag(a.kind).label }}</n-tag>
@@ -263,6 +307,7 @@ onMounted(load)
           </td>
           <td>
             <n-space size="small">
+              <n-button size="tiny" @click="openProfile(a)">主档</n-button>
               <n-button size="tiny" type="primary" ghost @click="openEdit(a)">编辑配置</n-button>
               <n-popconfirm :show-icon="false">
                 <template #trigger>
@@ -275,7 +320,7 @@ onMounted(load)
           </td>
         </tr>
         <tr v-if="!apps.length && !loading">
-          <td colspan="6" style="text-align: center">
+          <td colspan="7" style="text-align: center">
             <n-text depth="3">还没有应用,点"新建应用"开始</n-text>
           </td>
         </tr>
@@ -309,6 +354,32 @@ onMounted(load)
           <n-button @click="creating = false">取消</n-button>
           <n-button type="primary" :loading="working" @click="create">
             生成并重建生效
+          </n-button>
+        </n-space>
+      </template>
+    </n-modal>
+
+    <n-modal v-model:show="editingProfile" preset="card"
+             :title="`应用主档: ${profileForm.name}`" style="max-width: 480px">
+      <n-alert type="info" :show-icon="false" style="margin-bottom: 12px">
+        主档是应用的全库锚点(关联键 <code>app_code</code>)。显示名留空 = 用
+        注册表内置名;描述随意,便于多人/多机管理时识别应用。
+      </n-alert>
+      <n-form label-placement="left" label-width="92">
+        <n-form-item label="显示名">
+          <n-input v-model:value="profileForm.app_name"
+                   placeholder="留空 = 用注册表内置名" />
+        </n-form-item>
+        <n-form-item label="描述">
+          <n-input v-model:value="profileForm.app_desc" type="textarea"
+                   :rows="2" placeholder="应用用途/备注" />
+        </n-form-item>
+      </n-form>
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="editingProfile = false">取消</n-button>
+          <n-button type="primary" :loading="savingProfile" @click="saveProfile">
+            保存
           </n-button>
         </n-space>
       </template>

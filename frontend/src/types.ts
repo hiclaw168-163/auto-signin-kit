@@ -5,7 +5,8 @@
 export interface AppInfo {
   name: string
   kind: string | null // web | client | null(未声明 KIND 的域)
-  display: string
+  display: string // 生效显示名: ask_apps.app_name 覆盖,缺省用注册表 DISPLAY_NAME
+  app_name: string | null // 显示名覆盖原文(null = 未覆盖,用注册表名)
   ready: boolean | null
   config: Record<string, unknown> | null // 域 YAML 字段视图;null = 配置文件不存在
   times: string[] // 该域全部定时任务的触发时间(已套 schedule.yaml 覆盖)
