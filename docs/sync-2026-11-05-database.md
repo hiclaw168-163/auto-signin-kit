@@ -116,6 +116,14 @@ Windows 用 schtasks,同理删旧任务名再 `schedule install`。
 迁移全部幂等且单事务,中断重连即可重来。若报 `data/sql/ 目录定位失败`,
 说明不是 editable 安装——按第三节第 3 步重装 tool。
 
+> **Windows 机同步实测补充(2026-11-06)**: 库文件从 `data/` 根迁入
+> `data/database/` 没有自动搬运逻辑,老库要手动挪(macOS 当时是手动 mv 的);
+> 搬前先 `ui stop` 杀干净进程(残留进程会锁文件,`mv` 报 Device or resource
+> busy 时用 `cp` 兜底)。老库若已在新 schema 下建过 `ask_apps`,app_code
+> `_cn` 规整改名会被跳过/撞 UNIQUE——已在 `store_migrations` 修为
+> `PRAGMA user_version` 门闩 + 账户碰撞合并,两边拉到最新代码后重连一次
+> 自动收敛。
+
 架构门禁自检(改过代码的话):
 
 ```bash

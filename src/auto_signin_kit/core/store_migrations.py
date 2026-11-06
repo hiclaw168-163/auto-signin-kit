@@ -72,6 +72,9 @@ _APP_COLUMN_ORDER = ("id", "app_code", "app_name", "app_desc", "kind",
 _APP_CODE_RENAMES = (("doubao", "doubao_cn"), ("trae", "trae_cn"),
                      ("workbuddy", "workbuddy_cn"))
 
+#: app_code 规整迁移的 user_version 门闩值(完成本迁移的库标到这个版本)。
+_APP_CODE_RENAME_VERSION = 1
+
 #: 列名规约: 避开数据库关键字——SQLite 官方关键字表里有 ACTION,
 #: MySQL 官方关键字表里有 ACTION/ACCOUNT;ask_apps 业务键统一 app_ 前缀
 #: (domain/display/note 是 2026-11-05 首版命名,重设计为 app_code 等)。
@@ -186,6 +189,41 @@ def _reorder_table(conn: sqlite3.Connection, table: str,
         conn.execute("DROP TABLE %s_old" % table)
 
 
+#: ask_accounts 合并改名时允许从旧行补进新行的档案字段(仅目标行该列为
+#: NULL 才补——旧行来自真实执行,信息更全;created_at/updated_at 保留目标行自己的)。
+_ACCOUNT_FILL_COLUMNS = ("uid", "device_id", "client_version", "daily_potential",
+                         "install_path", "client_info", "info_synced_at")
+
+
+def _merge_account_renames(conn: sqlite3.Connection) -> None:
+    """账户域改名(碰撞感知): 无同名目标行直接改名;有则补空后删旧行。
+
+    2026-11-06 Windows 机实测踩坑: 老引擎执行时按旧名(workbuddy 等)建过
+    账户行,应用同步又按新名(workbuddy_cn)建了占位行——直接 UPDATE 改名
+    撞 UNIQUE(domain, name)。旧行档案字段更全(uid/设备号/客户端版本),
+    合并方向 = 旧行补新行空位,再删旧行。
+    """
+    renames = dict(_APP_CODE_RENAMES)
+    rows = conn.execute("SELECT * FROM ask_accounts WHERE domain IN (?, ?, ?)",
+                        tuple(renames)).fetchall()
+    for row in rows:
+        new_domain = renames[row["domain"]]
+        target = conn.execute(
+            "SELECT * FROM ask_accounts WHERE domain = ? AND name = ?",
+            (new_domain, row["name"])).fetchone()
+        with conn:
+            if target is None:
+                conn.execute("UPDATE ask_accounts SET domain = ? WHERE id = ?",
+                             (new_domain, row["id"]))
+                continue
+            for col in _ACCOUNT_FILL_COLUMNS:
+                if target[col] is None and row[col] is not None:
+                    conn.execute(
+                        "UPDATE ask_accounts SET %s = ? WHERE id = ?" % col,  # noqa: S608
+                        (row[col], target["id"]))
+            conn.execute("DELETE FROM ask_accounts WHERE id = ?", (row["id"],))
+
+
 def _migrate(conn: sqlite3.Connection) -> None:
     """老库补列/改名 + 存量行规整(全部幂等): CREATE TABLE IF NOT EXISTS 不会动已有表。"""
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(ask_signin_runs)")}
@@ -255,22 +293,42 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if apps_columns and "kind" not in apps_columns:
         with conn:
             conn.execute("ALTER TABLE ask_apps ADD COLUMN kind TEXT")
-        # 存量行规整(挂在 kind 迁移上一次性执行,幂等且不反复改写):
-        # 国内版 app_code 统一 _cn 后缀(2026-11-05 命名规约,见
-        # ask_apps.sql 头注释)——全库关联键三表一起改名(ask_apps.app_code /
-        # ask_accounts.domain / ask_signin_runs.domain);国际版保持裸名(qoder)。
-        for table, column in (("ask_apps", "app_code"), ("ask_accounts", "domain"),
-                              ("ask_signin_runs", "domain")):
-            tcols = {row["name"] for row in
-                     conn.execute("PRAGMA table_info(%s)" % table)}
-            if not tcols or column not in tcols:
-                continue
-            for old, new in _APP_CODE_RENAMES:
-                with conn:
+    # 国内版 app_code 统一 _cn 后缀(2026-11-05 命名规约,见 ask_apps.sql 头
+    # 注释)——全库关联键三表一起改名(ask_apps.app_code / ask_accounts.domain /
+    # ask_signin_runs.domain);国际版保持裸名(qoder)。
+    # 门闩 = PRAGMA user_version(SQLite 内置库版本号): 每库只跑一次。
+    # 不能无条件常跑——测试往新库写旧名样本数据,常跑改名会把测试数据一起
+    # 改掉;也不能挂在 kind 补列这类一次性分支——ask_apps 表本身可能是新
+    # schema 直建的(老库从没建过 ask_apps),那样 kind 恒在、改名永远跳过
+    # (2026-11-06 Windows 机实测两种姿势各踩一遍: 前者历史行留旧域名连签
+    # 断档,后者 26 个测试挂)。
+    if conn.execute("PRAGMA user_version").fetchone()[0] < _APP_CODE_RENAME_VERSION:
+        with conn:
+            for table, column in (("ask_apps", "app_code"),
+                                  ("ask_signin_runs", "domain"),
+                                  ("ask_accounts", "domain")):
+                tcols = {row["name"] for row in
+                         conn.execute("PRAGMA table_info(%s)" % table)}
+                if not tcols or column not in tcols:
+                    continue
+                if table == "ask_accounts":
+                    _merge_account_renames(conn)
+                    continue
+                for old, new in _APP_CODE_RENAMES:
+                    # ask_accounts 特殊: UNIQUE(domain, name) 会撞——新引擎/
+                    # 应用同步可能已用新名建过占位行,由 _merge_account_renames
+                    # 合并(旧行档案字段补新行空位后删旧行)。
                     conn.execute("UPDATE %s SET %s = ? WHERE %s = ?"  # noqa: S608
                                  % (table, column, column), (new, old))
-        # 引擎/基础设施域(web_signin/schedule)是代码形态不是应用,历史误建
-        # 的主档行清掉;ask_accounts 只在应用执行时建档,引擎域本就没有
+            # 引擎/基础设施域(web_signin/schedule)是代码形态不是应用,历史
+            # 误建的主档行清掉;ask_accounts 只在应用执行时建档,引擎域本没有
+            if apps_columns:
+                conn.execute("DELETE FROM ask_apps"
+                             " WHERE app_code IN ('web_signin', 'schedule')")
+            conn.execute("PRAGMA user_version = %d" % _APP_CODE_RENAME_VERSION)
+    # 引擎/基础设施域(web_signin/schedule)是代码形态不是应用,历史误建
+    # 的主档行清掉;ask_accounts 只在应用执行时建档,引擎域本就没有
+    if apps_columns:
         with conn:
             conn.execute(
                 "DELETE FROM ask_apps WHERE app_code IN ('web_signin', 'schedule')")
