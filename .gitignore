@@ -35,3 +35,4 @@ frontend/node_modules/
 # 桌面壳(Electron)打包产物(desktop/,PROPOSAL-01 P1)
 desktop/release/
 desktop/node_modules/
+.gstack/

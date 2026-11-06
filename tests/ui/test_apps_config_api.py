@@ -146,7 +146,7 @@ class TestSyncApps:
                 "trae": types.SimpleNamespace(client_info=boom),
                 "doubao_cn": types.SimpleNamespace(client_info=lambda: None, ready=lambda: False),
                 "workbuddy_cn": None}  # 未声明采集器、无 ready → 未安装处理
-        monkeypatch.setattr("auto_signin_kit.ui.apps_api.providers",
+        monkeypatch.setattr("auto_signin_kit.ui.apps_sync.providers",
                             lambda: iter(fake.items()))
         out = got.post("/api/apps/sync").json()
         assert out["result"] == "PARTIAL"
@@ -174,6 +174,6 @@ class TestSyncApps:
 
         got, _config_dir = client
         meta = types.SimpleNamespace(client_info=lambda: {"version": "1.0"})
-        monkeypatch.setattr("auto_signin_kit.ui.apps_api.providers",
+        monkeypatch.setattr("auto_signin_kit.ui.apps_sync.providers",
                             lambda: iter([("trae", meta)]))
         assert got.post("/api/apps/sync").json()["result"] == "OK"

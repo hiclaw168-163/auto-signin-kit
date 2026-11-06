@@ -295,6 +295,9 @@ onMounted(load)
             <n-tag :type="a.region === 'intl' ? 'warning' : 'default'" size="small">
               {{ regionLabel(a.region) }}
             </n-tag>
+            <n-text v-if="a.version" depth="3" style="font-size: 11px; margin-left: 6px">
+              v{{ a.version }}
+            </n-text>
           </td>
           <td>
             <n-text style="font-size: 12px">{{ a.credits_refresh || '00:00' }}</n-text>

@@ -158,8 +158,10 @@ class TestLegacyMigration:
             # 口径一次性规整为 client(凭据来自 Trae 桌面端本地存储)
             assert row["kind"] == "client"
             assert row["credits_refresh_time"] == "00:00"  # 积分刷新: 一次性回填默认值
+            # version: 2026-11-06 补列(NULL——老库无探测数据,等下次同步落值)
+            assert row["version"] is None
             cols = [r["name"] for r in
                     conn.execute("PRAGMA table_info(ask_apps)")]
-        assert cols == ["id", "app_code", "app_name", "app_desc", "kind",
+        assert cols == ["id", "app_code", "app_name", "app_desc", "kind", "version",
                         "region", "credits_refresh_time", "enabled", "source",
                         "created_at", "updated_at"]

@@ -89,9 +89,8 @@ export interface paths {
          * Sync Apps
          * @description 应用同步(新用户初始化第一步): 探测本机已装应用 → ask_apps 建主档。
          *
-         *     逐注册表域 ``ready()`` 探测 + ``client_info()`` 采集档案,``ensure_app``
-         *     建主档行 → ``ensure_account`` 补 default 户;未安装跳过,单域失败如实进
-         *     failed 不中断。声明式应用走同一套主档(就绪 = authkit 登录态探测)。
+         *     同步动作在 :mod:`auto_signin_kit.ui.apps_sync`(行数门禁拆分);version/
+         *     region 是本机探测的权威值,随同步落主档。
          */
         post: operations["sync_apps_api_apps_sync_post"];
         delete?: never;
@@ -686,6 +685,8 @@ export interface components {
              * @default []
              */
             times: string[];
+            /** Version */
+            version?: string | null;
         };
         /**
          * AppStateUpdate

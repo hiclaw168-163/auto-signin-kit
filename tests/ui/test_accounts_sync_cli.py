@@ -16,9 +16,9 @@ def _patch_providers(monkeypatch, collect) -> None:
     同步结果,测试结论就不只取决于注入的假域了。
     """
     meta = types.SimpleNamespace(client_info=collect)
-    monkeypatch.setattr("auto_signin_kit.ui.apps_api.providers",
+    monkeypatch.setattr("auto_signin_kit.ui.apps_sync.providers",
                         lambda: iter([("qoder", meta)]))
-    monkeypatch.setattr("auto_signin_kit.ui.apps_api._declarative_apps",
+    monkeypatch.setattr("auto_signin_kit.ui.apps_sync._declarative_apps",
                         lambda: [])
 
 

@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS ask_apps (
     app_name    TEXT,              -- 应用显示名(NULL/空 = 用注册表 DISPLAY_NAME/声明 display)
     app_desc    TEXT,              -- 应用描述/备注(NULL/空 = 用注册表 DESCRIPTION/声明 desc)
     kind        TEXT,              -- 类别: web(网页版签) / client(客户端签到)(NULL = 未登记)
+    version     TEXT,              -- 客户端版本(如 qoder 0.4.8): 同步探测的权威值,有值即覆盖(NULL = 探测不到/声明式)
     region      TEXT    NOT NULL DEFAULT 'cn',  -- 版本区: cn / intl(国内版/国际版)
     credits_refresh_time TEXT,     -- 积分刷新时刻 HH:MM(NULL/空 = 00:00;Qoder 是 10:00,调度/提示按它判天)
     enabled     INTEGER NOT NULL DEFAULT 1,  -- 应用总开关(压在账户级 enabled 之上)

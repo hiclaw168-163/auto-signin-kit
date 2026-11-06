@@ -63,7 +63,7 @@ _RUNS_COLUMN_ORDER = ("id", "domain", "account_name", "executed_at", "operation"
                       "updated_at")
 
 #: ask_apps 的目标列序(主键 → 编码 → 展示档案 → 类别与版本区 → 刷新 → 开关 → 来源 → 审计)。
-_APP_COLUMN_ORDER = ("id", "app_code", "app_name", "app_desc", "kind",
+_APP_COLUMN_ORDER = ("id", "app_code", "app_name", "app_desc", "kind", "version",
                      "region", "credits_refresh_time", "enabled", "source",
                      "created_at", "updated_at")
 
@@ -293,6 +293,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if apps_columns and "kind" not in apps_columns:
         with conn:
             conn.execute("ALTER TABLE ask_apps ADD COLUMN kind TEXT")
+    # ask_apps.version: 应用主档的客户端版本列(2026-11-06 补;sync 探测的
+    # 权威值此前只进响应不落库,老库幂等补列)
+    if apps_columns and "version" not in apps_columns:
+        with conn:
+            conn.execute("ALTER TABLE ask_apps ADD COLUMN version TEXT")
     # 国内版 app_code 统一 _cn 后缀(2026-11-05 命名规约,见 ask_apps.sql 头
     # 注释)——全库关联键三表一起改名(ask_apps.app_code / ask_accounts.domain /
     # ask_signin_runs.domain);国际版保持裸名(qoder)。

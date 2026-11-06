@@ -254,6 +254,7 @@ class AppRow(BaseModel):
     times: list[str] = []
     enabled: bool = True
     region: str = "cn"
+    version: str | None = None
     credits_refresh: str = "00:00"
     source: str = "auto"
     declarative: bool = False
