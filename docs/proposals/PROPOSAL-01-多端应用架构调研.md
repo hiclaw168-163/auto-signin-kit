@@ -28,7 +28,7 @@ App 需要推送)才引入按端 BFF。
 |---|---|---|---|
 | CLI | Python typer / Rust clap | typer 已在用,子命令+工厂注册成熟 | ✅ 已有(`core/kit/cli.py` 工厂) |
 | Web | Vue3/React SPA | Vue3 + naive-ui 已在用 | ✅ 已有(`frontend/`) |
-| 桌面 | **Tauri** vs Electron | Tauri: <3MB、Rust 安全、可复用 Web 前端;Electron: 生态最成熟但体积/内存大。结论: **Tauri 壳 + 现有 Vue 管理台 = 桌面端几乎零增量** | ⭐ 最低成本路径 |
+| 桌面 | **Electron**(2026-11-06 决策,原选 Tauri) | Electron: 生态最成熟、纯 JS 壳零新工具链、与前端技能栈同构;Tauri: <3MB 体积/内存优势明显但需 Rust 工具链与双语言维护。**决策: 本项目桌面端用 Electron**(壳 = 窗口+托盘+自动拉起本地服务,无性能敏感原生代码,Rust 收益兑现不了);Tauri 降为备选——体积/内存成为真实痛点时迁移,壳形态与契约不变,迁移成本=重写一个 ~200 行壳 | ⭐ 与前端同栈,避免双语言维护 |
 | 小程序 | **Taro**(React 系) vs **uni-app**(Vue 系) | 2025 两者都是编译时多端方案;uni-app 生态最全(微信/支付宝/抖音/H5/App 全覆盖),Vue3 语法与现有前端技能栈一致 | ⭐ 一套代码编译微信小程序 + App |
 | App(原生级) | uni-app(App 端) vs React Native vs Flutter | 性能差距已缩到感知不到;uni-app 一套代码同时产出小程序+App,H5/管理台还能复用组件 | ⭐ 与小程序同栈,避免双栈维护 |
 
@@ -129,12 +129,14 @@ App 需要推送)才引入按端 BFF。
 - **演示**: 改一个接口字段 → `npm run gen:api` → 前端类型报错 → 全链路可见
 - **验收**: 门禁三绿 + Web 全功能回归
 
-### P1 桌面端(最便宜的新端,~2 天)
-- [ ] `desktop/` 加 Tauri 工程: devUrl 指 Web 管理台构建产物;sidecar 方式
-      拉起 FastAPI(或要求用户先装 CLI 服务,壳只做窗口)
-- [ ] 系统托盘: 下次签到时间/今日状态一屏(数据来自同一契约)
-- **演示**: 双击桌面图标 → 原生窗口出管理台 → 托盘显签到状态 → 体积对比 Electron
-- **验收**: Win/mac 双平台打包成功,功能与 Web 管理台等价
+### P1 桌面端(最便宜的新端,~2 天)—— 2026-11-06 起按 Electron 实施
+- [x] `desktop/` Electron 壳: 窗口加载本机 Web 管理台(8688);服务未起时
+      自动拉起 `auto-signin-kit ui serve` 并轮询就绪(不依赖 Rust/MSVC)
+- [x] 系统托盘: 今日签到 n/m 轮询到托盘提示,快捷菜单(显示主窗口/
+      重启服务/退出),关窗驻留托盘
+- [ ] electron-builder 打包 NSIS 安装包(可选,`npm run dist`)
+- **演示**: 双击桌面图标(或 `npm start`)→ 原生窗口出管理台 → 服务未起自动拉起 → 托盘显"今日 n/m"
+- **验收**: Win 打包成功,功能与 Web 管理台等价
 
 ### P2 小程序 + App(云端形态,~4-6 天)
 - [ ] 服务核部署形态: Dockerfile + 反代 + JWT 鉴权(设备码绑定) + Postgres 端口适配器

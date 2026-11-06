@@ -1,0 +1,37 @@
+{
+  "name": "auto-signin-kit-desktop",
+  "productName": "签到管理台",
+  "version": "0.1.0",
+  "private": true,
+  "description": "auto-signin-kit 桌面壳: 窗口 + 托盘 + 本机服务自动拉起(P1,PROPOSAL-01)",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "^33.3.1",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "cn.autosigninkit.desktop",
+    "productName": "签到管理台",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "icon.png"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "签到管理台"
+    }
+  }
+}
