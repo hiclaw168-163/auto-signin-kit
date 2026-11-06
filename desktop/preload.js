@@ -12,6 +12,7 @@ const { contextBridge } = require('electron')
 contextBridge.exposeInMainWorld('askDesktop', {
   /** 壳标识与版本,页面可用于区分"浏览器打开"和"桌面壳打开"。 */
   shell: 'electron',
-  version: process.env.npm_package_version || '0.1.0',
-  serviceUrl: process.env.ASK_SERVICE_URL || `http://127.0.0.1:${process.env.ASK_SERVICE_PORT || '8688'}`,
+  version: process.env.npm_package_version || '0.2.0',
+  /** 桌面壳专属端口(默认 8690,与 Web 端 8688 并行)。 */
+  serviceUrl: process.env.ASK_SERVICE_URL || `http://127.0.0.1:${process.env.ASK_DESKTOP_PORT || '8690'}`,
 })

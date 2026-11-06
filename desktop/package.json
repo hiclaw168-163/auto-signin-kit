@@ -1,7 +1,7 @@
 {
   "name": "auto-signin-kit-desktop",
   "productName": "签到管理台",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "auto-signin-kit 桌面壳: 窗口 + 托盘 + 本机服务自动拉起(P1,PROPOSAL-01)",
   "main": "main.js",

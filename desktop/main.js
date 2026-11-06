@@ -21,8 +21,14 @@ const { app, BrowserWindow, Tray, Menu, nativeImage, shell } = require('electron
 const { spawn } = require('child_process')
 const http = require('node:http')
 const path = require('node:path')
+const fs = require('node:fs')
 
-const PORT = process.env.ASK_SERVICE_PORT || '8688'
+/**
+ * 桌面壳专属端口(默认 8690): 与 Web 端 8688 并行——两个 ui serve 实例
+ * 写同一个 SQLite 台账,WAL 模式多进程安全(写入频度是每天几行,毫无压力)。
+ * 这样浏览器开 8688、桌面壳跑 8690 互不干扰,可多个地方同时用。
+ */
+const PORT = process.env.ASK_DESKTOP_PORT || '8690'
 const SERVICE_URL = process.env.ASK_SERVICE_URL || `http://127.0.0.1:${PORT}`
 const POLL_MS = 60_000
 const BOOT_TIMEOUT_MS = 20_000
@@ -33,6 +39,36 @@ let win = null
 let tray = null
 /** quitting 标志: 关窗驻留托盘与真正退出共用一条路径。 */
 let quitting = false
+
+// ---------------------------------------------------------------- CLI 定位
+
+/**
+ * 定位 auto-signin-kit CLI(绝对路径优先,不赌 PATH):
+ * 1. env ASK_CLI 显式指定;
+ * 2. uv tool 默认安装位置 %USERPROFILE%\.local\bin\(从开始菜单/安装目录
+ *    启动时,GUI 进程的 PATH 可能不含这里——这是"装了不能用"的首因);
+ * 3. 兜底裸命令名(仍走 PATH,交给 where 解析)。
+ */
+let cliPathCache = /** @type {string | null} */ (null)
+
+function findCli() {
+  if (cliPathCache) return cliPathCache
+  const candidates = []
+  if (process.env.ASK_CLI) candidates.push(process.env.ASK_CLI)
+  if (process.env.USERPROFILE) {
+    candidates.push(path.join(process.env.USERPROFILE, '.local', 'bin', 'auto-signin-kit.exe'))
+  }
+  candidates.push('auto-signin-kit')
+  for (const c of candidates) {
+    if (c.includes(path.sep)) {
+      if (fs.existsSync(c)) { cliPathCache = c; return c }
+      continue // 显式路径不存在就跳过,不猜
+    }
+    cliPathCache = c // 裸命令名交给 PATH
+    return c
+  }
+  return null
+}
 
 // ---------------------------------------------------------------- 服务探测
 
@@ -48,42 +84,95 @@ function probe(timeoutMs = 1500) {
 }
 
 /**
+ * 服务日志落盘(userData 目录): spawn 的 stdout/stderr 之前是 stdio:'ignore',
+ * 服务起不来时用户和壳都不知道为什么——现在兜底页能给出真实报错。
+ *
+ * 注意必须用 openSync 拿**数值 fd**: createWriteStream 是异步打开,
+ * fd 还没就绪就传给 spawn 会抛 ERR_INVALID_ARG_VALUE(fd: null)——
+ * 这正是 0.2.0 首测"壳拉不起服务"的直接原因(2026-11-06 实测踩坑)。
+ */
+function openServiceLog() {
+  try {
+    const dir = app.getPath('userData')
+    fs.mkdirSync(dir, { recursive: true })
+    const logPath = path.join(dir, 'serve.log')
+    const fd = fs.openSync(logPath, 'a')
+    fs.writeSync(fd, `\n[${new Date().toISOString()}] --- 桌面壳拉起服务 (port ${PORT}) ---\n`)
+    return { fd, logPath }
+  } catch (e) {
+    lastBootError = `服务日志文件打不开: ${e.message}`
+    return { fd: null, logPath: '(日志不可写)' }
+  }
+}
+
+/** @type {string | null} 最近一次拉起失败的诊断信息(兜底页展示)。 */
+let lastBootError = null
+
+/**
  * 确保服务就绪: 先探测;不在则拉起 tool 的 ui serve(独立进程组,壳退出
  * 不杀服务——服务归调度/CLI 管,壳只是它的一个客户端),轮询到就绪或超时。
+ * 失败时把诊断写进 lastBootError(兜底页渲染)。
  */
 async function ensureService() {
   if (await probe()) return true
-  const child = spawn('auto-signin-kit', ['ui', 'serve', '--no-open'], {
-    shell: true,
-    detached: true,
-    stdio: 'ignore',
-    windowsHide: true,
-  })
-  child.unref()
+  const cli = findCli()
+  if (!cli) {
+    lastBootError = '没有找到 auto-signin-kit CLI。请先安装: uv tool install ".[web]" --force,' +
+      '或设置环境变量 ASK_CLI 指向 auto-signin-kit.exe 的绝对路径。'
+    return false
+  }
+  const { fd, logPath } = openServiceLog()
+  try {
+    const child = spawn(cli, ['ui', 'serve', `--port=${PORT}`, '--no-open'], {
+      detached: true,
+      windowsHide: true,
+      stdio: ['ignore', fd ?? 'ignore', fd ?? 'ignore'],
+    })
+    child.unref()
+    // 监听异步 spawn 错误(ENOENT/权限等在 exec 阶段才冒出来)
+    child.on('error', (e) => { lastBootError = `服务进程异常退出: ${e.message}` })
+  } catch (e) {
+    lastBootError = `拉起服务进程失败: ${e.message} (CLI: ${cli})`
+    if (fd != null) fs.closeSync(fd)
+    return false
+  }
   const deadline = Date.now() + BOOT_TIMEOUT_MS
+  let ok = false
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 800))
-    if (await probe(800)) return true
+    if (await probe(800)) { ok = true; break }
   }
-  return false
+  if (fd != null) fs.closeSync(fd) // 服务已接管 fd,父进程这头关掉
+  if (!ok) {
+    lastBootError =
+      `服务在 ${Math.round(BOOT_TIMEOUT_MS / 1000)} 秒内没有就绪 (端口 ${PORT})。` +
+      `常见原因: 端口被占用;配置或登录态校验失败。服务日志: ${logPath}`
+  }
+  return ok
 }
 
 // ---------------------------------------------------------------- 窗口
 
-const RETRY_HTML = `<!doctype html><html lang="zh"><head><meta charset="utf-8">
+function retryHtml() {
+  return `<!doctype html><html lang="zh"><head><meta charset="utf-8">
 <style>
   body { font-family: system-ui, sans-serif; background: #0f172a; color: #f8fafc;
          display: grid; place-items: center; height: 100vh; margin: 0; }
-  .card { text-align: center; max-width: 460px; line-height: 1.7; }
+  .card { text-align: left; max-width: 560px; line-height: 1.7; }
   h1 { font-size: 20px; } code { background: #1b2336; padding: 2px 6px; border-radius: 4px; }
-  button { margin-top: 18px; padding: 8px 22px; border: 0; border-radius: 8px;
+  .err { background: #1b2336; border: 1px solid #475569; border-radius: 8px;
+         padding: 12px 14px; margin: 14px 0; font-size: 13px; white-space: pre-wrap;
+         color: #fca5a5; }
+  button { margin-top: 6px; padding: 8px 22px; border: 0; border-radius: 8px;
            background: #22c55e; color: #052e16; font-size: 14px; cursor: pointer; }
 </style></head><body><div class="card">
 <h1>本地服务未就绪</h1>
-<p>已尝试自动拉起 <code>auto-signin-kit ui serve</code> 但没有成功。<br>
-请手动在终端执行上面的命令看报错,或检查端口 <code>${PORT}</code> 是否被占用。</p>
+<div class="err">${(lastBootError || '原因未知').replace(/</g, '&lt;')}</div>
+<p style="font-size:13px;color:#94a3b8">桌面壳使用独立端口 <code>${PORT}</code>(浏览器版是 8688,互不影响)。<br>
+也可以手动验证: <code>auto-signin-kit ui serve --port=${PORT} --no-open</code></p>
 <button onclick="location.reload()">重试</button>
 </div></body></html>`
+}
 
 function createWindow() {
   win = new BrowserWindow({
@@ -117,9 +206,10 @@ function createWindow() {
 async function loadApp() {
   if (!win) return
   if (await ensureService()) {
+    lastBootError = null
     await win.loadURL(SERVICE_URL)
   } else {
-    await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(RETRY_HTML)}`)
+    await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(retryHtml())}`)
   }
 }
 
@@ -227,11 +317,9 @@ function rebuildTrayMenu() {
 }
 
 async function restartService() {
-  // 壳不 kill 旧服务进程(不持有句柄);直接再拉一份——serve 侧 daemon 清单
-  // 兜底单实例,冲突时 UI 侧有既有的报错呈现
-  spawn('auto-signin-kit', ['ui', 'serve', '--no-open'], {
-    shell: true, detached: true, stdio: 'ignore', windowsHide: true,
-  }).unref()
+  // 壳不 kill 旧服务进程(不持有句柄);直接再拉一份(桌面壳自己的端口),
+  // serve 侧 daemon 清单兜底单实例,冲突时兜底页呈现真实报错
+  await ensureService()
   await loadApp()
   pollOverview()
 }
