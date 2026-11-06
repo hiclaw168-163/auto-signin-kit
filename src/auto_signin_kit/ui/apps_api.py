@@ -25,7 +25,7 @@ from auto_signin_kit.domains.schedule.data import app_label, providers
 from auto_signin_kit.domains.schedule.schema import ScheduleDomainConfig
 from auto_signin_kit.scaffolding import service as scaffolding
 from auto_signin_kit.scaffolding.rebuild import spawn_rebuild
-from auto_signin_kit.ui import config_api, daemon
+from auto_signin_kit.ui import config_api, contracts, daemon
 
 router = APIRouter()
 
@@ -71,7 +71,7 @@ def _declarative_apps() -> list[AppDeclaration]:
     return decl_apps.all_apps_safe()[0]
 
 
-@router.get("/apps")
+@router.get("/apps", response_model=contracts.AppsResponse)
 def list_apps() -> dict[str, Any]:
     """注册表发现的应用清单;档案列以 ask_apps 主档为准(关联键 app_code = 台账 domain 列)。"""
     times_by_domain = _schedule_times_by_domain()
@@ -174,7 +174,7 @@ def _delete_declaration(app_code: str) -> None:
     (decl_apps.apps_dir() / f"{app_code}.yaml").unlink(missing_ok=True)
 
 
-@router.post("/apps")
+@router.post("/apps", response_model=contracts.AppCreateResult)
 def create_app(body: AppCreate) -> dict[str, Any]:
     """生成域骨架(网页版签)或声明 YAML(客户端签到)并后台重建生效;响应返回后服务会短暂离线。"""
     from auto_signin_kit.core.declarative.constants import valid_refresh_time
@@ -222,7 +222,7 @@ def create_app(body: AppCreate) -> dict[str, Any]:
     }
 
 
-@router.delete("/apps/{name}")
+@router.delete("/apps/{name}", response_model=contracts.AppCreateResult)
 def delete_app(name: str) -> dict[str, Any]:
     """物理删除一个域(前端负责输入域名二次确认)并后台重建生效。"""
     try:
@@ -260,7 +260,7 @@ def _is_declarative(name: str) -> bool:
     return any(decl.app_code == name for decl in _declarative_apps())
 
 
-@router.put("/apps/{name}/state")
+@router.put("/apps/{name}/state", response_model=contracts.AppStateUpdateResult)
 def update_app_state(name: str, body: AppStateUpdate) -> dict[str, Any]:
     """更新应用主档(总开关/显示名/描述);下次静默调度触发时生效。
 
@@ -288,7 +288,7 @@ class AppUpdate(BaseModel):
     updates: dict[str, Any]
 
 
-@router.get("/apps/{name}/config")
+@router.get("/apps/{name}/config", response_model=contracts.AppConfigView)
 def get_app_config(name: str) -> dict[str, Any]:
     """应用配置的字段视图(表单化编辑取数;纯读取不落盘)。"""
     if _is_declarative(name):
@@ -298,7 +298,7 @@ def get_app_config(name: str) -> dict[str, Any]:
     return {"domain": name, "fields": config_api.load_data(name)}
 
 
-@router.put("/apps/{name}")
+@router.put("/apps/{name}", response_model=contracts.AppUpdateResult)
 def update_app(name: str, body: AppUpdate) -> dict[str, Any]:
     """表单化编辑应用配置: 深合并 → 校验 → 原子写盘。
 
@@ -329,7 +329,7 @@ def update_app(name: str, body: AppUpdate) -> dict[str, Any]:
             "message": "已保存: 下次运行 %s 命令时生效(YAML 注释已被重写移除)" % name}
 
 
-@router.post("/apps/sync")
+@router.post("/apps/sync", response_model=contracts.AppSyncResponse)
 def sync_apps() -> dict[str, Any]:
     """应用同步(新用户初始化第一步): 探测本机已装应用 → ask_apps 建主档。
 

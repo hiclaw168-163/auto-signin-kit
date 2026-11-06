@@ -140,7 +140,7 @@ onMounted(load)
         一天多个触发时间是断签兜底(撞上关机/断网还有后续机会),保存后立即重新注册。
       </n-alert>
       <n-space vertical size="small">
-        <n-space v-for="(time, i) in editTimes" :key="i" align="center" size="small">
+        <n-space v-for="(_, i) in editTimes" :key="i" align="center" size="small">
           <n-time-picker v-model:formatted-value="editTimes[i]" format="HH:mm"
                          value-format="HH:mm" style="width: 120px" />
           <n-button size="tiny" quaternary type="error" :disabled="editTimes.length <= 1"

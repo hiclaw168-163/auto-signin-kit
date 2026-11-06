@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, h, ref } from 'vue'
+import { computed, h, ref, type VNode } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NIcon, type MenuOption } from 'naive-ui'
 import {
@@ -27,7 +27,7 @@ const router = useRouter()
 // 折叠初始值来自设置页;用户手动收展即时生效并回写为默认态。
 const collapsed = ref(settings.siderCollapsed)
 
-function icon(render: () => typeof NIcon) {
+function icon(render: () => VNode) {
   return () => h(NIcon, null, { default: render })
 }
 

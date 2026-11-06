@@ -1,9 +1,7 @@
 import type {
-  AccountRow,
   AccountsInfo,
   AppCreateResult,
   AppConfigInfo,
-  AppInfo,
   AppUpdateResult,
   AppsInfo,
   ConfigItem,

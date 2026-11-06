@@ -6,7 +6,6 @@ import { resultLabel } from '../api/meta'
 import { useJob } from '../composables/useJob'
 import DomainCard from '../components/dashboard/DomainCard.vue'
 import StatCard from '../components/dashboard/StatCard.vue'
-import StatusTag from '../components/common/StatusTag.vue'
 import type { EventRow, Overview, ScheduleInfo } from '../types'
 
 // 签到总览 = 汇总统计卡 + 每域状态卡(14 天色块/连签/积分) + 最近运行时间线。

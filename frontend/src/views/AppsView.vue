@@ -60,7 +60,7 @@ function regionLabel(region: string): string {
   return REGION_LABELS[region] ?? region
 }
 
-function kindTag(kind: string | null): { label: string; type: 'success' | 'info' | 'default' } {
+function kindTag(kind: string | null | undefined): { label: string; type: 'success' | 'info' | 'default' } {
   if (kind === 'web') return { label: KIND_SHORT_LABELS.web, type: 'info' }
   if (kind === 'client') return { label: KIND_SHORT_LABELS.client, type: 'success' }
   return { label: '未分类', type: 'default' }

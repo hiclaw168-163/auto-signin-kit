@@ -22,6 +22,7 @@ from pydantic import BaseModel, ValidationError
 from auto_signin_kit.core.config import resolve_config_dir
 from auto_signin_kit.core.config.schema import DomainConfig
 from auto_signin_kit.core.errors import ConfigError
+from auto_signin_kit.ui import contracts
 
 router = APIRouter()
 
@@ -137,7 +138,7 @@ def atomic_write_data(domain: str, data: dict[str, Any]) -> Any:
     return path
 
 
-@router.get("/config")
+@router.get("/config", response_model=list[contracts.ConfigListItem])
 def list_configs() -> list[dict[str, Any]]:
     """各域配置的存在情况(按 entry_points 全量列出,与 CLI 同源)。"""
     return [
@@ -146,20 +147,20 @@ def list_configs() -> list[dict[str, Any]]:
     ]
 
 
-@router.get("/config/{domain}")
+@router.get("/config/{domain}", response_model=contracts.ConfigContent)
 def get_config(domain: str) -> dict[str, Any]:
     """读域配置原文(YAML 文本,编辑器直接展示)。"""
     return {"domain": domain, "content": _read(domain)}
 
 
-@router.post("/config/{domain}/validate")
+@router.post("/config/{domain}/validate", response_model=contracts.OkResult)
 def validate_config(domain: str, body: ConfigBody) -> dict[str, Any]:
     """只校验不落盘;返回 ok=true 或 422(带逐字段错误)。"""
     _validate(domain, body.content)
     return {"ok": True}
 
 
-@router.put("/config/{domain}")
+@router.put("/config/{domain}", response_model=contracts.OkPathResult)
 def save_config(domain: str, body: ConfigBody) -> dict[str, Any]:
     """校验通过后原子写回主 YAML;生效时机 = 下次对应命令运行。"""
     if domain not in _known_domains():

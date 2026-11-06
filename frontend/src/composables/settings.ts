@@ -6,7 +6,7 @@
  * 落地是两件事——naive-ui 的 n-config-provider theme(见 App.vue)+ CSS token
  * 切换(documentElement.dataset.theme,见 styles/index.css 双套 --ask-* 变量)。
  */
-import { reactive, watch } from 'vue'
+import { reactive, ref, watch } from 'vue'
 
 export type ThemeMode = 'system' | 'light' | 'dark'
 
@@ -56,17 +56,14 @@ watch(settings, (value) => {
   } catch { /* 持久化失败只影响下次打开的默认值,不挡使用 */ }
 }, { deep: true })
 
-/** 系统当前是否深色(仅在 theme === 'system' 时有意义);实时监听并写回 ref。 */
-export const prefersDark = matchMedia('(prefers-color-scheme: dark)')
+/** 系统当前是否深色(仅在 theme === 'system' 时有意义);响应式 ref,
+ *  系统切换外观时自动更新——effectiveDark 的 computed 因此实时跟随,
+ *  不需要调用方手动 watch 回写(旧写法对只读 computed 赋值,类型即报错)。 */
+const MQL = matchMedia('(prefers-color-scheme: dark)')
+export const prefersDark = ref(MQL.matches)
+MQL.addEventListener('change', (e) => { prefersDark.value = e.matches })
 
-/**
- * 实际生效的主题:'system' 时跟随系统并随系统切换实时更新
- * (App.vue 据此切 naive 主题与 data-theme)。
- */
-export function watchSystemTheme(onChange: (dark: boolean) => void): void {
-  prefersDark.addEventListener('change', (e) => onChange(e.matches))
-}
-
+/** 实际生效的主题:'system' 时跟随系统并随系统切换实时更新。 */
 export function effectiveDark(): boolean {
-  return settings.theme === 'dark' || (settings.theme === 'system' && prefersDark.matches)
+  return settings.theme === 'dark' || (settings.theme === 'system' && prefersDark.value)
 }

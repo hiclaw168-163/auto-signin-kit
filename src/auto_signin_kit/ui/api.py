@@ -23,7 +23,7 @@ from auto_signin_kit.core.errors import AutoSignInKitError
 from auto_signin_kit.core.report import RESULT_LABELS, RESULT_OK
 from auto_signin_kit.domains.schedule import service as schedule_service
 from auto_signin_kit.domains.schedule.schema import ScheduleDomainConfig
-from auto_signin_kit.ui import runner
+from auto_signin_kit.ui import contracts, runner
 from auto_signin_kit.ui.schema import ScheduleOp
 
 router = APIRouter()
@@ -48,7 +48,7 @@ def meta_results() -> dict[str, str]:
     return dict(RESULT_LABELS)
 
 
-@router.get("/overview")
+@router.get("/overview", response_model=contracts.OverviewResponse)
 def overview() -> dict[str, Any]:
     """看板首页数据: 每个签到域一张卡(今日状态 + 14 天色块 + 连签/积分统计)。
 
@@ -92,7 +92,7 @@ def history(
     domain: str | None = Query(None),
     result: str | None = Query(None),
     account: str | None = Query(None),
-) -> list[dict[str, Any]]:
+) -> list[contracts.DailyRow]:
     """每日折叠视图(每天每域每账户最后一次运行 = 当天最终状态)。"""
     return store.daily_status(days, domain=domain, result=result, account=account)
 
@@ -105,7 +105,7 @@ def events(
     result: str | None = Query(None),
     account: str | None = Query(None),
     limit: int = Query(50, ge=1, le=500),
-) -> list[dict[str, Any]]:
+) -> list[contracts.EventRow]:
     """运行明细,最新在前;attention_only=1 只看需要人工介入的。"""
     return store.events(
         date=date, domain=domain, attention_only=attention_only,
@@ -120,7 +120,7 @@ class AccountToggle(BaseModel):
     enabled: bool
 
 
-@router.get("/accounts")
+@router.get("/accounts", response_model=contracts.AccountsResponse)
 def accounts_list(days: int = Query(14, ge=1, le=90)) -> dict[str, Any]:
     """账户视图(SPEC-12 P3): 登记账户 × 近 N 天逐账户统计合并。
 
@@ -142,7 +142,7 @@ def accounts_list(days: int = Query(14, ge=1, le=90)) -> dict[str, Any]:
             "window_days": summary["window_days"], "accounts": items}
 
 
-@router.post("/accounts/enabled")
+@router.post("/accounts/enabled", response_model=contracts.AccountToggleResult)
 def account_toggle(body: AccountToggle) -> dict[str, Any]:
     """账户启停开关(SPEC-12 P3): 只改台账登记态。
 
@@ -158,13 +158,13 @@ def account_toggle(body: AccountToggle) -> dict[str, Any]:
             "enabled": body.enabled}
 
 
-@router.get("/credits/stats")
+@router.get("/credits/stats", response_model=contracts.CreditsStatsResponse)
 def credits_stats(days: int = Query(30, ge=7, le=180)) -> dict[str, Any]:
     """积分统计页(2026-11-05): 趋势/按域汇总/当前余额快照。"""
     return store.credits_stats(days)
 
 
-@router.get("/credits/summary")
+@router.get("/credits/summary", response_model=contracts.CreditsSummaryResponse)
 def credits_summary() -> dict[str, Any]:
     """积分总览(三问一端点): 每应用每日所得 / 账户活跃 / 可获取 vs 实际。"""
     return {
@@ -174,7 +174,7 @@ def credits_summary() -> dict[str, Any]:
     }
 
 
-@router.get("/schedule")
+@router.get("/schedule", response_model=contracts.ScheduleStatusResponse)
 def schedule_status() -> dict[str, Any]:
     """各定时任务注册状态;"未注册"是正常状态,不是错误。"""
     active = get_scheduler()
@@ -207,19 +207,19 @@ def _schedule_op(op_name: str, body: ScheduleOp) -> dict[str, Any]:
     }
 
 
-@router.post("/schedule/install")
+@router.post("/schedule/install", response_model=contracts.ScheduleOpResult)
 def schedule_install(body: ScheduleOp) -> dict[str, Any]:
     """注册定时任务(幂等,已存在则覆盖);客户端未就绪的任务不注册、如实上报。"""
     return _schedule_op("install", body)
 
 
-@router.post("/schedule/uninstall")
+@router.post("/schedule/uninstall", response_model=contracts.ScheduleOpResult)
 def schedule_uninstall(body: ScheduleOp) -> dict[str, Any]:
     """注销定时任务(幂等,原本没注册也算成功)。"""
     return _schedule_op("uninstall", body)
 
 
-@router.post("/run/{domain}")
+@router.post("/run/{domain}", response_model=contracts.JobEnvelope)
 def run_task(domain: str, action: str = Query("auto"),
              account: str | None = Query(None)) -> dict[str, Any]:
     """手动触发一个动作(auto/doctor),立即返回 job;前端轮询 /jobs/{id}。
@@ -248,7 +248,7 @@ def run_task(domain: str, action: str = Query("auto"),
     return {"job": job.public()}
 
 
-@router.get("/jobs/{job_id}")
+@router.get("/jobs/{job_id}", response_model=contracts.JobEnvelope)
 def job_status(job_id: str) -> dict[str, Any]:
     """查询一个手动触发的 job;被挤出历史(MAX_JOBS)视为不存在。"""
     job = runner.runner.get(job_id)

@@ -48,7 +48,7 @@ onMounted(async () => {
     <template v-if="job()">
       <n-alert :type="job()!.status === 'ok' ? 'success' : job()!.status === 'running' ? 'info' : 'error'"
                :title="`doctor ${job()!.action} · ${job()!.status}`">
-        <template v-if="job()!.result?.report">{{ job()!.result.report }}</template>
+        <template v-if="job()!.result?.report">{{ (job()!.result?.report as string) }}</template>
         <template v-else-if="job()!.status === 'running'">子进程运行中…</template>
         <template v-else>退出码 {{ job()!.exit_code ?? '?' }}</template>
       </n-alert>

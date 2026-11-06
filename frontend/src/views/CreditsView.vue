@@ -4,7 +4,7 @@ import { NCard, NText, type DataTableColumns } from 'naive-ui'
 import { useMessage } from 'naive-ui'
 import { creditsApi } from '../api'
 import { settings } from '../composables/settings'
-import type { CreditsStats } from '../types'
+import type { CreditsStats, DomainBalance } from '../types'
 
 // 积分统计页(SPEC-13): 数据全部来自本地 SQLite 台账(ask_daily_credits 视图
 // + 成功行 response 的余额快照),不调官方接口——参考 workbuddy-switch 的
@@ -14,8 +14,8 @@ interface DomainRow {
   domain: string
   total: number
   window_total: number
-  last_day: string | null
-  balance: { total_credits: number; updated_at: string } | undefined
+  last_day?: string | null
+  balance: DomainBalance | undefined
 }
 
 const message = useMessage()
@@ -50,7 +50,8 @@ const domainColumns: DataTableColumns<DomainRow> = [
   {
     title: '累计所得快照', key: 'balance', width: 140,
     render: (row) => h(NText, { strong: true },
-      { default: () => row.balance ? row.balance.total_credits.toLocaleString() : '—' }),
+      { default: () => row.balance?.total_credits != null
+          ? row.balance.total_credits.toLocaleString() : '—' }),
   },
   {
     title: '窗口内所得', key: 'window_total', width: 140,
@@ -86,10 +87,10 @@ function barHeight(credits: number): string {
               style="width: 235px; background: var(--ask-surface)">
         <n-statistic :label="`${row.domain} · 累计所得快照`">
           <span class="balance-num">
-            {{ row.balance ? row.balance.total_credits.toLocaleString() : '—' }}
+            {{ row.balance?.total_credits != null ? row.balance.total_credits.toLocaleString() : '—' }}
           </span>
           <n-text depth="3" style="font-size: 11px; display: block; margin-top: 4px">
-            {{ row.balance
+            {{ row.balance?.updated_at
               ? `更新于 ${row.balance.updated_at}`
               : `暂无累计快照 · 累计所得 ${row.total.toLocaleString()}` }}
           </n-text>

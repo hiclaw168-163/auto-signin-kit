@@ -1,0 +1,2668 @@
+{
+ "components": {
+  "schemas": {
+   "AccountCard": {
+    "description": "账户视图行(登记档案 × 运行统计合并)。",
+    "properties": {
+     "active": {
+      "default": false,
+      "title": "Active",
+      "type": "boolean"
+     },
+     "client_info": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Client Info"
+     },
+     "client_version": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Client Version"
+     },
+     "credits": {
+      "default": 0,
+      "title": "Credits",
+      "type": "number"
+     },
+     "credits_recent": {
+      "default": 0,
+      "title": "Credits Recent",
+      "type": "number"
+     },
+     "daily_potential": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Daily Potential"
+     },
+     "days14": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/DayBlock"
+      },
+      "title": "Days14",
+      "type": "array"
+     },
+     "device_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Device Id"
+     },
+     "domain": {
+      "title": "Domain",
+      "type": "string"
+     },
+     "enabled": {
+      "title": "Enabled",
+      "type": "boolean"
+     },
+     "info_synced_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Info Synced At"
+     },
+     "install_path": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Install Path"
+     },
+     "last_earned_day": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Earned Day"
+     },
+     "last_run": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Run"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "streak": {
+      "default": 0,
+      "title": "Streak",
+      "type": "integer"
+     },
+     "today_credits": {
+      "default": 0,
+      "title": "Today Credits",
+      "type": "number"
+     },
+     "uid": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Uid"
+     }
+    },
+    "required": [
+     "domain",
+     "name",
+     "enabled"
+    ],
+    "title": "AccountCard",
+    "type": "object"
+   },
+   "AccountToggle": {
+    "description": "账户启停请求体;domain/name 组合必须在台账已登记。",
+    "properties": {
+     "domain": {
+      "title": "Domain",
+      "type": "string"
+     },
+     "enabled": {
+      "title": "Enabled",
+      "type": "boolean"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     }
+    },
+    "required": [
+     "domain",
+     "name",
+     "enabled"
+    ],
+    "title": "AccountToggle",
+    "type": "object"
+   },
+   "AccountToggleResult": {
+    "description": "账户启用/停用的写回结果。",
+    "properties": {
+     "domain": {
+      "title": "Domain",
+      "type": "string"
+     },
+     "enabled": {
+      "title": "Enabled",
+      "type": "boolean"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "ok": {
+      "title": "Ok",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "ok",
+     "domain",
+     "name",
+     "enabled"
+    ],
+    "title": "AccountToggleResult",
+    "type": "object"
+   },
+   "AccountsResponse": {
+    "description": "账户清单响应(总数/活跃数/窗口天数/行集合)。",
+    "properties": {
+     "accounts": {
+      "items": {
+       "$ref": "#/components/schemas/AccountCard"
+      },
+      "title": "Accounts",
+      "type": "array"
+     },
+     "active": {
+      "title": "Active",
+      "type": "integer"
+     },
+     "total": {
+      "title": "Total",
+      "type": "integer"
+     },
+     "window_days": {
+      "title": "Window Days",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "total",
+     "active",
+     "window_days",
+     "accounts"
+    ],
+    "title": "AccountsResponse",
+    "type": "object"
+   },
+   "AppConfigView": {
+    "description": "应用配置的字段视图(YAML 透传,非稳定契约)。",
+    "properties": {
+     "domain": {
+      "title": "Domain",
+      "type": "string"
+     },
+     "fields": {
+      "additionalProperties": true,
+      "title": "Fields",
+      "type": "object"
+     }
+    },
+    "required": [
+     "domain",
+     "fields"
+    ],
+    "title": "AppConfigView",
+    "type": "object"
+   },
+   "AppCreate": {
+    "description": "新建应用请求体。",
+    "properties": {
+     "base_url": {
+      "title": "Base Url",
+      "type": "string"
+     },
+     "credits_refresh_time": {
+      "default": "00:00",
+      "title": "Credits Refresh Time",
+      "type": "string"
+     },
+     "daily_time": {
+      "default": "09:05",
+      "title": "Daily Time",
+      "type": "string"
+     },
+     "desc": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Desc"
+     },
+     "display": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Display"
+     },
+     "kind": {
+      "default": "web",
+      "title": "Kind",
+      "type": "string"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "region": {
+      "default": "cn",
+      "title": "Region",
+      "type": "string"
+     }
+    },
+    "required": [
+     "name",
+     "base_url"
+    ],
+    "title": "AppCreate",
+    "type": "object"
+   },
+   "AppCreateResult": {
+    "description": "新建/删除应用的结果(新建带 files,删除带 removed)。",
+    "properties": {
+     "domain": {
+      "title": "Domain",
+      "type": "string"
+     },
+     "files": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Files"
+     },
+     "message": {
+      "title": "Message",
+      "type": "string"
+     },
+     "removed": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Removed"
+     },
+     "result": {
+      "title": "Result",
+      "type": "string"
+     }
+    },
+    "required": [
+     "result",
+     "domain",
+     "message"
+    ],
+    "title": "AppCreateResult",
+    "type": "object"
+   },
+   "AppRow": {
+    "description": "应用清单行(注册表域 + 声明式应用)。",
+    "properties": {
+     "app_desc": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "App Desc"
+     },
+     "app_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "App Name"
+     },
+     "config": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Config"
+     },
+     "credits_refresh": {
+      "default": "00:00",
+      "title": "Credits Refresh",
+      "type": "string"
+     },
+     "declarative": {
+      "default": false,
+      "title": "Declarative",
+      "type": "boolean"
+     },
+     "desc": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Desc"
+     },
+     "display": {
+      "title": "Display",
+      "type": "string"
+     },
+     "enabled": {
+      "default": true,
+      "title": "Enabled",
+      "type": "boolean"
+     },
+     "kind": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Kind"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "ready": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Ready"
+     },
+     "region": {
+      "default": "cn",
+      "title": "Region",
+      "type": "string"
+     },
+     "source": {
+      "default": "auto",
+      "title": "Source",
+      "type": "string"
+     },
+     "times": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Times",
+      "type": "array"
+     }
+    },
+    "required": [
+     "name",
+     "display"
+    ],
+    "title": "AppRow",
+    "type": "object"
+   },
+   "AppStateUpdate": {
+    "description": "PUT /apps/{name}/state 请求体: 应用主档部分更新(None = 不改)。",
+    "properties": {
+     "app_desc": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "App Desc"
+     },
+     "app_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "App Name"
+     },
+     "credits_refresh_time": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Credits Refresh Time"
+     },
+     "enabled": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Enabled"
+     }
+    },
+    "title": "AppStateUpdate",
+    "type": "object"
+   },
+   "AppStateUpdateResult": {
+    "description": "应用主档更新结果(返回更新后的主档行)。",
+    "properties": {
+     "app": {
+      "additionalProperties": true,
+      "title": "App",
+      "type": "object"
+     },
+     "message": {
+      "title": "Message",
+      "type": "string"
+     },
+     "result": {
+      "title": "Result",
+      "type": "string"
+     }
+    },
+    "required": [
+     "result",
+     "app",
+     "message"
+    ],
+    "title": "AppStateUpdateResult",
+    "type": "object"
+   },
+   "AppSyncFail": {
+    "description": "应用同步失败的单条。",
+    "properties": {
+     "domain": {
+      "title": "Domain",
+      "type": "string"
+     },
+     "error": {
+      "title": "Error",
+      "type": "string"
+     }
+    },
+    "required": [
+     "domain",
+     "error"
+    ],
+    "title": "AppSyncFail",
+    "type": "object"
+   },
+   "AppSyncItem": {
+    "description": "应用同步成功的单条(domain/区域/登录态探测/客户端版本)。",
+    "properties": {
+     "domain": {
+      "title": "Domain",
+      "type": "string"
+     },
+     "profile": {
+      "title": "Profile",
+      "type": "boolean"
+     },
+     "region": {
+      "title": "Region",
+      "type": "string"
+     },
+     "version": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Version"
+     }
+    },
+    "required": [
+     "domain",
+     "region",
+     "profile"
+    ],
+    "title": "AppSyncItem",
+    "type": "object"
+   },
+   "AppSyncResponse": {
+    "description": "应用同步结果(主档自动建档/补档)。",
+    "properties": {
+     "failed": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/AppSyncFail"
+      },
+      "title": "Failed",
+      "type": "array"
+     },
+     "result": {
+      "title": "Result",
+      "type": "string"
+     },
+     "skipped": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/AppSyncSkip"
+      },
+      "title": "Skipped",
+      "type": "array"
+     },
+     "synced": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/AppSyncItem"
+      },
+      "title": "Synced",
+      "type": "array"
+     }
+    },
+    "required": [
+     "result"
+    ],
+    "title": "AppSyncResponse",
+    "type": "object"
+   },
+   "AppSyncSkip": {
+    "description": "应用同步跳过的单条(不可同步的形态,如国际版无客户端)。",
+    "properties": {
+     "domain": {
+      "title": "Domain",
+      "type": "string"
+     },
+     "reason": {
+      "title": "Reason",
+      "type": "string"
+     }
+    },
+    "required": [
+     "domain",
+     "reason"
+    ],
+    "title": "AppSyncSkip",
+    "type": "object"
+   },
+   "AppUpdate": {
+    "description": "PUT /apps/{name} 请求体: 只传要改的字段(部分更新,深合并)。",
+    "properties": {
+     "updates": {
+      "additionalProperties": true,
+      "title": "Updates",
+      "type": "object"
+     }
+    },
+    "required": [
+     "updates"
+    ],
+    "title": "AppUpdate",
+    "type": "object"
+   },
+   "AppUpdateResult": {
+    "description": "应用配置保存结果。",
+    "properties": {
+     "message": {
+      "title": "Message",
+      "type": "string"
+     },
+     "ok": {
+      "title": "Ok",
+      "type": "boolean"
+     },
+     "path": {
+      "title": "Path",
+      "type": "string"
+     }
+    },
+    "required": [
+     "ok",
+     "path",
+     "message"
+    ],
+    "title": "AppUpdateResult",
+    "type": "object"
+   },
+   "AppsResponse": {
+    "description": "应用清单响应。",
+    "properties": {
+     "apps": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/AppRow"
+      },
+      "title": "Apps",
+      "type": "array"
+     },
+     "generated_at": {
+      "title": "Generated At",
+      "type": "string"
+     }
+    },
+    "required": [
+     "generated_at"
+    ],
+    "title": "AppsResponse",
+    "type": "object"
+   },
+   "CapacityRow": {
+    "description": "单日产能行(实际所得 earned × 潜力 potential → 达成率 rate)。",
+    "properties": {
+     "day": {
+      "title": "Day",
+      "type": "string"
+     },
+     "earned": {
+      "title": "Earned",
+      "type": "number"
+     },
+     "potential": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Potential"
+     },
+     "rate": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Rate"
+     }
+    },
+    "required": [
+     "day",
+     "earned"
+    ],
+    "title": "CapacityRow",
+    "type": "object"
+   },
+   "ConfigBody": {
+    "description": "PUT /config/{domain} 的请求体: 整份 YAML 文本。",
+    "properties": {
+     "content": {
+      "title": "Content",
+      "type": "string"
+     }
+    },
+    "required": [
+     "content"
+    ],
+    "title": "ConfigBody",
+    "type": "object"
+   },
+   "ConfigContent": {
+    "description": "配置原文(YAML 文本,原样透传)。",
+    "properties": {
+     "content": {
+      "title": "Content",
+      "type": "string"
+     },
+     "domain": {
+      "title": "Domain",
+      "type": "string"
+     }
+    },
+    "required": [
+     "domain",
+     "content"
+    ],
+    "title": "ConfigContent",
+    "type": "object"
+   },
+   "ConfigListItem": {
+    "description": "配置文件清单项(域 + 是否存在)。",
+    "properties": {
+     "domain": {
+      "title": "Domain",
+      "type": "string"
+     },
+     "exists": {
+      "title": "Exists",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "domain",
+     "exists"
+    ],
+    "title": "ConfigListItem",
+    "type": "object"
+   },
+   "CreditDailyRow": {
+    "description": "积分日明细行(checkin_day, domain, credits)。",
+    "properties": {
+     "checkin_day": {
+      "title": "Checkin Day",
+      "type": "string"
+     },
+     "credits": {
+      "title": "Credits",
+      "type": "number"
+     },
+     "domain": {
+      "title": "Domain",
+      "type": "string"
+     }
+    },
+    "required": [
+     "checkin_day",
+     "domain",
+     "credits"
+    ],
+    "title": "CreditDailyRow",
+    "type": "object"
+   },
+   "CreditDomainRow": {
+    "description": "分域积分汇总行(累计/窗口内/最近所得日)。",
+    "properties": {
+     "domain": {
+      "title": "Domain",
+      "type": "string"
+     },
+     "last_day": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Day"
+     },
+     "total": {
+      "title": "Total",
+      "type": "number"
+     },
+     "window_total": {
+      "title": "Window Total",
+      "type": "number"
+     }
+    },
+    "required": [
+     "domain",
+     "total",
+     "window_total"
+    ],
+    "title": "CreditDomainRow",
+    "type": "object"
+   },
+   "CreditTrendPoint": {
+    "description": "积分趋势的单日点(day,所得 credits)。",
+    "properties": {
+     "credits": {
+      "title": "Credits",
+      "type": "number"
+     },
+     "day": {
+      "title": "Day",
+      "type": "string"
+     }
+    },
+    "required": [
+     "day",
+     "credits"
+    ],
+    "title": "CreditTrendPoint",
+    "type": "object"
+   },
+   "CreditsStatsResponse": {
+    "description": "积分统计响应(趋势 + 分域 + 累计所得快照)。",
+    "properties": {
+     "balances": {
+      "additionalProperties": {
+       "$ref": "#/components/schemas/DomainBalance"
+      },
+      "default": {},
+      "title": "Balances",
+      "type": "object"
+     },
+     "by_domain": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/CreditDomainRow"
+      },
+      "title": "By Domain",
+      "type": "array"
+     },
+     "trend": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/CreditTrendPoint"
+      },
+      "title": "Trend",
+      "type": "array"
+     },
+     "window_days": {
+      "title": "Window Days",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "window_days"
+    ],
+    "title": "CreditsStatsResponse",
+    "type": "object"
+   },
+   "CreditsSummaryResponse": {
+    "description": "积分总览响应(日明细 + 账户汇总 + 产能)。",
+    "properties": {
+     "accounts": {
+      "$ref": "#/components/schemas/AccountsResponse"
+     },
+     "capacity": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/CapacityRow"
+      },
+      "title": "Capacity",
+      "type": "array"
+     },
+     "daily": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/CreditDailyRow"
+      },
+      "title": "Daily",
+      "type": "array"
+     }
+    },
+    "required": [
+     "accounts"
+    ],
+    "title": "CreditsSummaryResponse",
+    "type": "object"
+   },
+   "DailyRow": {
+    "description": "``ask_daily_checkins`` 视图行(每天每域每账户最终状态),对齐\n``core.dto.DailyCheckinRow``。",
+    "properties": {
+     "account_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Account Name"
+     },
+     "checkin_day": {
+      "title": "Checkin Day",
+      "type": "string"
+     },
+     "domain": {
+      "title": "Domain",
+      "type": "string"
+     },
+     "executed_at": {
+      "title": "Executed At",
+      "type": "string"
+     },
+     "needs_attention": {
+      "default": 0,
+      "title": "Needs Attention",
+      "type": "integer"
+     },
+     "report": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Report"
+     },
+     "result": {
+      "title": "Result",
+      "type": "string"
+     },
+     "source": {
+      "title": "Source",
+      "type": "string"
+     }
+    },
+    "required": [
+     "checkin_day",
+     "domain",
+     "result",
+     "source",
+     "executed_at"
+    ],
+    "title": "DailyRow",
+    "type": "object"
+   },
+   "DayBlock": {
+    "description": "14 天色块的单日项(day=日期,ok=当天是否签到成功)。",
+    "properties": {
+     "day": {
+      "title": "Day",
+      "type": "string"
+     },
+     "ok": {
+      "title": "Ok",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "day",
+     "ok"
+    ],
+    "title": "DayBlock",
+    "type": "object"
+   },
+   "DomainBalance": {
+    "description": "累计所得快照(口径警示见 store.credits_stats: 不是可用余额)。",
+    "properties": {
+     "total_credits": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Total Credits"
+     },
+     "updated_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Updated At"
+     }
+    },
+    "title": "DomainBalance",
+    "type": "object"
+   },
+   "EventRow": {
+    "description": "运行明细行,对齐 ``core.dto.SigninRunRow`` 的对外子集\n(request/response 是入参与结果的 JSON 文本,原样透传)。",
+    "properties": {
+     "account_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Account Name"
+     },
+     "domain": {
+      "title": "Domain",
+      "type": "string"
+     },
+     "executed_at": {
+      "title": "Executed At",
+      "type": "string"
+     },
+     "needs_attention": {
+      "default": 0,
+      "title": "Needs Attention",
+      "type": "integer"
+     },
+     "operation": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Operation"
+     },
+     "report": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Report"
+     },
+     "request": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Request"
+     },
+     "response": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Response"
+     },
+     "result": {
+      "title": "Result",
+      "type": "string"
+     },
+     "source": {
+      "title": "Source",
+      "type": "string"
+     }
+    },
+    "required": [
+     "executed_at",
+     "domain",
+     "source",
+     "result"
+    ],
+    "title": "EventRow",
+    "type": "object"
+   },
+   "HTTPValidationError": {
+    "properties": {
+     "detail": {
+      "items": {
+       "$ref": "#/components/schemas/ValidationError"
+      },
+      "title": "Detail",
+      "type": "array"
+     }
+    },
+    "title": "HTTPValidationError",
+    "type": "object"
+   },
+   "JobEnvelope": {
+    "description": "触发/查询 job 的响应信封。",
+    "properties": {
+     "job": {
+      "$ref": "#/components/schemas/JobInfo"
+     }
+    },
+    "required": [
+     "job"
+    ],
+    "title": "JobEnvelope",
+    "type": "object"
+   },
+   "JobInfo": {
+    "description": "手动触发 job 的对外视图,对齐 ``ui.runner.Job.public()``。",
+    "properties": {
+     "account": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Account"
+     },
+     "action": {
+      "title": "Action",
+      "type": "string"
+     },
+     "argv": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Argv",
+      "type": "array"
+     },
+     "domain": {
+      "title": "Domain",
+      "type": "string"
+     },
+     "exit_code": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Exit Code"
+     },
+     "finished_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Finished At"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "output": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Output"
+     },
+     "result": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Result"
+     },
+     "started_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Started At"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "domain",
+     "action",
+     "status"
+    ],
+    "title": "JobInfo",
+    "type": "object"
+   },
+   "OkPathResult": {
+    "description": "带路径的布尔结果(保存落盘位置)。",
+    "properties": {
+     "ok": {
+      "title": "Ok",
+      "type": "boolean"
+     },
+     "path": {
+      "title": "Path",
+      "type": "string"
+     }
+    },
+    "required": [
+     "ok",
+     "path"
+    ],
+    "title": "OkPathResult",
+    "type": "object"
+   },
+   "OkResult": {
+    "description": "通用布尔结果。",
+    "properties": {
+     "ok": {
+      "title": "Ok",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "ok"
+    ],
+    "title": "OkResult",
+    "type": "object"
+   },
+   "OverviewCard": {
+    "description": "看板域卡片(今日状态 + 14 天色块 + 连签/积分统计)。",
+    "properties": {
+     "credits": {
+      "default": 0,
+      "title": "Credits",
+      "type": "number"
+     },
+     "days14": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/DayBlock"
+      },
+      "title": "Days14",
+      "type": "array"
+     },
+     "domain": {
+      "title": "Domain",
+      "type": "string"
+     },
+     "last_run": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Run"
+     },
+     "streak": {
+      "default": 0,
+      "title": "Streak",
+      "type": "integer"
+     },
+     "today": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/DailyRow"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "today_attention": {
+      "default": false,
+      "title": "Today Attention",
+      "type": "boolean"
+     },
+     "today_credits": {
+      "default": 0,
+      "title": "Today Credits",
+      "type": "number"
+     },
+     "today_signed": {
+      "default": false,
+      "title": "Today Signed",
+      "type": "boolean"
+     },
+     "week_ok": {
+      "default": 0,
+      "title": "Week Ok",
+      "type": "integer"
+     },
+     "week_total": {
+      "default": 0,
+      "title": "Week Total",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "domain"
+    ],
+    "title": "OverviewCard",
+    "type": "object"
+   },
+   "OverviewResponse": {
+    "description": "看板总览响应(域卡片集合)。",
+    "properties": {
+     "cards": {
+      "items": {
+       "$ref": "#/components/schemas/OverviewCard"
+      },
+      "title": "Cards",
+      "type": "array"
+     },
+     "generated_at": {
+      "title": "Generated At",
+      "type": "string"
+     }
+    },
+    "required": [
+     "cards",
+     "generated_at"
+    ],
+    "title": "OverviewResponse",
+    "type": "object"
+   },
+   "ScheduleOp": {
+    "description": "调度 install/uninstall 的请求体;``domains`` 缺省 = 全部。",
+    "properties": {
+     "domains": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "只操作这些域(如 [\"doubao\"]);缺省=全部",
+      "title": "Domains"
+     }
+    },
+    "title": "ScheduleOp",
+    "type": "object"
+   },
+   "ScheduleOpItem": {
+    "description": "install/uninstall 的单任务结果项(失败带 error,成功带 times)。",
+    "properties": {
+     "error": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Error"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "times": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Times"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "title": "ScheduleOpItem",
+    "type": "object"
+   },
+   "ScheduleOpResult": {
+    "description": "调度批量操作结果(全成功 OK / 部分 PARTIAL / 全败 FAILED)。",
+    "properties": {
+     "done": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/ScheduleOpItem"
+      },
+      "title": "Done",
+      "type": "array"
+     },
+     "failed": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/ScheduleOpItem"
+      },
+      "title": "Failed",
+      "type": "array"
+     },
+     "platform": {
+      "title": "Platform",
+      "type": "string"
+     },
+     "result": {
+      "title": "Result",
+      "type": "string"
+     }
+    },
+    "required": [
+     "result",
+     "platform"
+    ],
+    "title": "ScheduleOpResult",
+    "type": "object"
+   },
+   "ScheduleStatusResponse": {
+    "description": "调度状态响应(平台 + 任务清单)。",
+    "properties": {
+     "platform": {
+      "title": "Platform",
+      "type": "string"
+     },
+     "tasks": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/ScheduleTask"
+      },
+      "title": "Tasks",
+      "type": "array"
+     }
+    },
+    "required": [
+     "platform"
+    ],
+    "title": "ScheduleStatusResponse",
+    "type": "object"
+   },
+   "ScheduleTask": {
+    "description": "调度任务状态行(注册表声明 × schtasks/launchd 实况)。",
+    "properties": {
+     "detail": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Detail"
+     },
+     "installed": {
+      "title": "Installed",
+      "type": "boolean"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "times": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Times",
+      "type": "array"
+     }
+    },
+    "required": [
+     "name",
+     "installed"
+    ],
+    "title": "ScheduleTask",
+    "type": "object"
+   },
+   "ValidationError": {
+    "properties": {
+     "ctx": {
+      "title": "Context",
+      "type": "object"
+     },
+     "input": {
+      "title": "Input"
+     },
+     "loc": {
+      "items": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "integer"
+        }
+       ]
+      },
+      "title": "Location",
+      "type": "array"
+     },
+     "msg": {
+      "title": "Message",
+      "type": "string"
+     },
+     "type": {
+      "title": "Error Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "loc",
+     "msg",
+     "type"
+    ],
+    "title": "ValidationError",
+    "type": "object"
+   }
+  }
+ },
+ "info": {
+  "title": "auto-signin-kit 管理台",
+  "version": "0.1.0"
+ },
+ "openapi": "3.1.0",
+ "paths": {
+  "/api/accounts": {
+   "get": {
+    "description": "账户视图(SPEC-12 P3): 登记账户 × 近 N 天逐账户统计合并。\n\n登记态来自 ``ask_accounts``(enabled/daily_potential/档案列),运行态\n(连签/14 天色块/积分)来自 ``overview_by_account``——两份都是现算,\n合并后一行一个 (domain, account)。",
+    "operationId": "accounts_list_api_accounts_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "days",
+      "required": false,
+      "schema": {
+       "default": 14,
+       "maximum": 90,
+       "minimum": 1,
+       "title": "Days",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AccountsResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Accounts List"
+   }
+  },
+  "/api/accounts/enabled": {
+   "post": {
+    "description": "账户启停开关(SPEC-12 P3): 只改台账登记态。\n\n调度执行的启停真相在各域 YAML ``accounts[].enabled``(run_action 读配置),\n面板改登记态后请同步配置页——两处不一致时以配置为准,登记态只影响展示\n与容量计算,这里如实说明不做静默同步。",
+    "operationId": "account_toggle_api_accounts_enabled_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AccountToggle"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AccountToggleResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Account Toggle"
+   }
+  },
+  "/api/apps": {
+   "get": {
+    "description": "注册表发现的应用清单;档案列以 ask_apps 主档为准(关联键 app_code = 台账 domain 列)。",
+    "operationId": "list_apps_api_apps_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AppsResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Apps"
+   },
+   "post": {
+    "description": "生成域骨架(网页版签)或声明 YAML(客户端签到)并后台重建生效;响应返回后服务会短暂离线。",
+    "operationId": "create_app_api_apps_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AppCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AppCreateResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create App"
+   }
+  },
+  "/api/apps/sync": {
+   "post": {
+    "description": "应用同步(新用户初始化第一步): 探测本机已装应用 → ask_apps 建主档。\n\n逐注册表域 ``ready()`` 探测 + ``client_info()`` 采集档案,``ensure_app``\n建主档行 → ``ensure_account`` 补 default 户;未安装跳过,单域失败如实进\nfailed 不中断。声明式应用走同一套主档(就绪 = authkit 登录态探测)。",
+    "operationId": "sync_apps_api_apps_sync_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AppSyncResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Sync Apps"
+   }
+  },
+  "/api/apps/{name}": {
+   "delete": {
+    "description": "物理删除一个域(前端负责输入域名二次确认)并后台重建生效。",
+    "operationId": "delete_app_api_apps__name__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "name",
+      "required": true,
+      "schema": {
+       "title": "Name",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AppCreateResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete App"
+   },
+   "put": {
+    "description": "表单化编辑应用配置: 深合并 → 校验 → 原子写盘。\n\n常规域: pydantic 域配置校验;声明式应用: AppDeclaration 校验\n(extra=forbid,字段拼错当场报)。不触发重建: 配置在命令运行时读取,\n下次运行生效。注意重写会移除 YAML 里的注释——需要保留注释的精细\n编辑走「配置」页的 YAML 文本编辑。",
+    "operationId": "update_app_api_apps__name__put",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "name",
+      "required": true,
+      "schema": {
+       "title": "Name",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AppUpdate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AppUpdateResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Update App"
+   }
+  },
+  "/api/apps/{name}/config": {
+   "get": {
+    "description": "应用配置的字段视图(表单化编辑取数;纯读取不落盘)。",
+    "operationId": "get_app_config_api_apps__name__config_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "name",
+      "required": true,
+      "schema": {
+       "title": "Name",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AppConfigView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get App Config"
+   }
+  },
+  "/api/apps/{name}/state": {
+   "put": {
+    "description": "更新应用主档(总开关/显示名/描述);下次静默调度触发时生效。\n\n停用语义: 静默(调度)触发整个域跳过(不执行、不落库);手动执行\n永远放行。已注册的系统定时任务不注销——关开关比动 launchd 轻得多。",
+    "operationId": "update_app_state_api_apps__name__state_put",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "name",
+      "required": true,
+      "schema": {
+       "title": "Name",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AppStateUpdate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AppStateUpdateResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Update App State"
+   }
+  },
+  "/api/config": {
+   "get": {
+    "description": "各域配置的存在情况(按 entry_points 全量列出,与 CLI 同源)。",
+    "operationId": "list_configs_api_config_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/ConfigListItem"
+         },
+         "title": "Response List Configs Api Config Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Configs"
+   }
+  },
+  "/api/config/{domain}": {
+   "get": {
+    "description": "读域配置原文(YAML 文本,编辑器直接展示)。",
+    "operationId": "get_config_api_config__domain__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "domain",
+      "required": true,
+      "schema": {
+       "title": "Domain",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConfigContent"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Config"
+   },
+   "put": {
+    "description": "校验通过后原子写回主 YAML;生效时机 = 下次对应命令运行。",
+    "operationId": "save_config_api_config__domain__put",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "domain",
+      "required": true,
+      "schema": {
+       "title": "Domain",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ConfigBody"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/OkPathResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Save Config"
+   }
+  },
+  "/api/config/{domain}/validate": {
+   "post": {
+    "description": "只校验不落盘;返回 ok=true 或 422(带逐字段错误)。",
+    "operationId": "validate_config_api_config__domain__validate_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "domain",
+      "required": true,
+      "schema": {
+       "title": "Domain",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ConfigBody"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/OkResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Validate Config"
+   }
+  },
+  "/api/credits/stats": {
+   "get": {
+    "description": "积分统计页(2026-11-05): 趋势/按域汇总/当前余额快照。",
+    "operationId": "credits_stats_api_credits_stats_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "days",
+      "required": false,
+      "schema": {
+       "default": 30,
+       "maximum": 180,
+       "minimum": 7,
+       "title": "Days",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CreditsStatsResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Credits Stats"
+   }
+  },
+  "/api/credits/summary": {
+   "get": {
+    "description": "积分总览(三问一端点): 每应用每日所得 / 账户活跃 / 可获取 vs 实际。",
+    "operationId": "credits_summary_api_credits_summary_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CreditsSummaryResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Credits Summary"
+   }
+  },
+  "/api/events": {
+   "get": {
+    "description": "运行明细,最新在前;attention_only=1 只看需要人工介入的。",
+    "operationId": "events_api_events_get",
+    "parameters": [
+     {
+      "description": "YYYY-MM-DD",
+      "in": "query",
+      "name": "date",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "YYYY-MM-DD",
+       "title": "Date"
+      }
+     },
+     {
+      "in": "query",
+      "name": "domain",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Domain"
+      }
+     },
+     {
+      "in": "query",
+      "name": "attention_only",
+      "required": false,
+      "schema": {
+       "default": false,
+       "title": "Attention Only",
+       "type": "boolean"
+      }
+     },
+     {
+      "in": "query",
+      "name": "result",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Result"
+      }
+     },
+     {
+      "in": "query",
+      "name": "account",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Account"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 50,
+       "maximum": 500,
+       "minimum": 1,
+       "title": "Limit",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/EventRow"
+         },
+         "title": "Response Events Api Events Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Events"
+   }
+  },
+  "/api/history": {
+   "get": {
+    "description": "每日折叠视图(每天每域每账户最后一次运行 = 当天最终状态)。",
+    "operationId": "history_api_history_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "days",
+      "required": false,
+      "schema": {
+       "default": 7,
+       "maximum": 90,
+       "minimum": 1,
+       "title": "Days",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "domain",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Domain"
+      }
+     },
+     {
+      "in": "query",
+      "name": "result",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Result"
+      }
+     },
+     {
+      "in": "query",
+      "name": "account",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Account"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/DailyRow"
+         },
+         "title": "Response History Api History Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "History"
+   }
+  },
+  "/api/jobs/{job_id}": {
+   "get": {
+    "description": "查询一个手动触发的 job;被挤出历史(MAX_JOBS)视为不存在。",
+    "operationId": "job_status_api_jobs__job_id__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "job_id",
+      "required": true,
+      "schema": {
+       "title": "Job Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/JobEnvelope"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Job Status"
+   }
+  },
+  "/api/meta/results": {
+   "get": {
+    "description": "结果标准词表(core.report.RESULT_LABELS);UI 的标签渲染以这里为准。",
+    "operationId": "meta_results_api_meta_results_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": {
+          "type": "string"
+         },
+         "title": "Response Meta Results Api Meta Results Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Meta Results"
+   }
+  },
+  "/api/overview": {
+   "get": {
+    "description": "看板首页数据: 每个签到域一张卡(今日状态 + 14 天色块 + 连签/积分统计)。\n\n``today`` 优先取当天最新**签到成功行**(signed_today_by_domain),没有\n成功行才回退到视图最后一行——status/doctor 探测也落台账,最后一行会被\n它们占据,不能当签到状态。\"today_attention\" 仍看最后一行(成功之后\n出现的失败不该被藏掉)。",
+    "operationId": "overview_api_overview_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/OverviewResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Overview"
+   }
+  },
+  "/api/run/{domain}": {
+   "post": {
+    "description": "手动触发一个动作(auto/doctor),立即返回 job;前端轮询 /jobs/{id}。\n\n``account``(SPEC-12 P3): 指定账户触发,子进程带 ``--account``。\n声明式应用没有自己的域命令,按其 kind 路由到所属引擎\n(client_signin / web_signin)经 ``run --app`` 运行。",
+    "operationId": "run_task_api_run__domain__post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "domain",
+      "required": true,
+      "schema": {
+       "title": "Domain",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "action",
+      "required": false,
+      "schema": {
+       "default": "auto",
+       "title": "Action",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "account",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Account"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/JobEnvelope"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Run Task"
+   }
+  },
+  "/api/schedule": {
+   "get": {
+    "description": "各定时任务注册状态;\"未注册\"是正常状态,不是错误。",
+    "operationId": "schedule_status_api_schedule_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ScheduleStatusResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Schedule Status"
+   }
+  },
+  "/api/schedule/install": {
+   "post": {
+    "description": "注册定时任务(幂等,已存在则覆盖);客户端未就绪的任务不注册、如实上报。",
+    "operationId": "schedule_install_api_schedule_install_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ScheduleOp"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ScheduleOpResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Schedule Install"
+   }
+  },
+  "/api/schedule/uninstall": {
+   "post": {
+    "description": "注销定时任务(幂等,原本没注册也算成功)。",
+    "operationId": "schedule_uninstall_api_schedule_uninstall_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ScheduleOp"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ScheduleOpResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Schedule Uninstall"
+   }
+  }
+ }
+}

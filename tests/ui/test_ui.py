@@ -71,7 +71,12 @@ def _patch_history(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 
     def events(**kwargs: Any) -> list[dict]:
         calls["events"] = kwargs
-        return [{"executed_at": "t", "domain": "doubao_cn", "result": "CLAIMED"}]
+        # 形状对齐 store.events 真实输出(EventRow 契约): 契约校验会拒绝
+        # 缺必填字段的桩行——桩撒谎比契约报错更糟
+        return [{"executed_at": "t", "domain": "doubao_cn", "account_name": None,
+                 "operation": "auto", "source": "run", "result": "CLAIMED",
+                 "needs_attention": 0, "report": "ok",
+                 "request": None, "response": None}]
 
     def signed_today() -> dict[str, dict]:
         rows: dict[str, dict] = {}
@@ -183,7 +188,10 @@ class TestScheduleRoutes:
                                            "error": "未检测到"}]))
         payload = client.post("/api/schedule/install", json={}).json()
         assert payload["result"] == "PARTIAL"
-        assert payload["failed"] == [{"name": "WorkBuddyAutoSignin", "error": "未检测到"}]
+        # response_model 按契约补默认字段(times=None)——按关键字段断言,
+        # 不做全字典严格相等
+        assert [{"name": f["name"], "error": f["error"]} for f in payload["failed"]] \
+            == [{"name": "WorkBuddyAutoSignin", "error": "未检测到"}]
         assert {d["name"] for d in payload["done"]} >= {"DoubaoDailyCheckin"}
 
     def test_uninstall_idempotent(self, client, monkeypatch):

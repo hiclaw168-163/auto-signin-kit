@@ -2,7 +2,7 @@
 import { computed, watch } from 'vue'
 import { darkTheme, dateZhCN, zhCN, type GlobalThemeOverrides } from 'naive-ui'
 import { loadResultLabels } from './api/meta'
-import { effectiveDark, settings, watchSystemTheme } from './composables/settings'
+import { effectiveDark } from './composables/settings'
 
 // 词表加载失败不挡界面: StatusTag 会退回显示原始值(如 OK),可自愈重试。
 loadResultLabels().catch(() => undefined)
@@ -39,9 +39,6 @@ const isDark = computed(effectiveDark)
 watch(isDark, (dark) => {
   document.documentElement.dataset.theme = dark ? 'dark' : 'light'
 }, { immediate: true })
-
-// 跟随系统: 系统切换外观时实时生效(设置页选"系统"时的核心体验)。
-watchSystemTheme(() => { isDark.value = effectiveDark() })
 </script>
 
 <template>

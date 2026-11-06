@@ -19,6 +19,7 @@
 
 > 相关: as-built 架构/实现文档在 `docs/superpowers/specs/`(SPEC-01~07),
 > 架构决策记录在 `docs/adr/`,逆向取证与上游分析在 `docs/notes/`(NOTE-01~03,
-> 与域 SPEC 一一对应),动手操作步骤在 `docs/guides/`(GUIDE-01~03)——本目录
+> 与域 SPEC 一一对应),动手操作步骤在 `docs/guides/`(GUIDE-01~03),
+> 架构提案/调研在 `docs/proposals/`(PROPOSAL-01 起步)——本目录
 > 回答"应该是什么样",那边回答"实际是什么样""为什么知道该这么写"以及
 > "具体怎么动手"。

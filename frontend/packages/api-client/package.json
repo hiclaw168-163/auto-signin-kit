@@ -1,0 +1,16 @@
+{
+  "name": "@ask/api-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "OpenAPI 契约生成的 TS 类型 + 请求封装(五端共用单一事实源)",
+  "scripts": {
+    "gen": "uv run python ../../../scripts/export_openapi.py openapi.json && openapi-typescript openapi.json -o src/schema.d.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.6.1"
+  }
+}
