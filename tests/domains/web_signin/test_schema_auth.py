@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -232,20 +233,31 @@ _CHROMIUM_KEY = hashlib.pbkdf2_hmac("sha1", b"test-pass", b"saltysalt", 1003,
 
 
 def _enc_cookie(value: str, *, key: bytes = _CHROMIUM_KEY) -> bytes:
-    """按标准 Chromium os_crypt(mac 分支)造一条加密 cookie 值(测试夹具)。"""
+    """造一条加密 cookie 值(测试夹具)。
+
+    版本标记用 ``v11``: 两平台都走 CBC 分支——Windows 的 ``v10`` 被
+    适配器分派到 AES-256-GCM(真机形态),夹具造不出 GCM 三元组也要能
+    在 win/mac 两台开发机跑同一份密文。
+    """
     from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
     data = value.encode("utf-8")
     pad = 16 - len(data) % 16
     enc = Cipher(algorithms.AES(key), modes.CBC(chromium._CBC_IV)).encryptor()
-    return b"v10" + enc.update(data + bytes([pad]) * pad) + enc.finalize()
+    return b"v11" + enc.update(data + bytes([pad]) * pad) + enc.finalize()
 
 
 def _make_client_dir(tmp_path, cookies: dict[str, str], *, host: str = ".demo.cn",
                      profile: str = "Default", root_name: str = "client") -> str:
-    """一个假客户端数据目录: <root>/<profile>/Cookies sqlite。"""
+    """一个假客户端数据目录: <root>/<profile>/Cookies sqlite。
+
+    库的相对布局跟随适配器当前的平台分支(Windows 是
+    ``<profile>/Network/Cookies``,macOS/Linux 是 ``<profile>/Cookies``)，
+    夹具在两台开发机(mac/win)上都能过。
+    """
+    rel = Path(chromium.COOKIES_REL)  # 形如 Default/Network/Cookies 或 Default/Cookies
     root = tmp_path / root_name
-    db = root / profile / "Cookies"
+    db = root / profile / Path(*rel.parts[1:])
     db.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db))
     try:
@@ -273,7 +285,11 @@ class TestChromiumCookies:
     """客户端 Chromium Cookie 库适配器(mac 分支实测;win 分支见 mock 用例)。"""
 
     def _patch_key(self, monkeypatch):
-        monkeypatch.setattr(chromium, "_mac_key", lambda service: _CHROMIUM_KEY)
+        """密钥读取打桩按平台分派: win 走 Local State/_win_key,mac 走 Keychain。"""
+        if chromium.IS_WINDOWS:
+            monkeypatch.setattr(chromium, "_win_key", lambda root: _CHROMIUM_KEY)
+        else:
+            monkeypatch.setattr(chromium, "_mac_key", lambda service: _CHROMIUM_KEY)
 
     def test_resolve_builds_cookie_header(self, tmp_path, monkeypatch):
         self._patch_key(monkeypatch)
