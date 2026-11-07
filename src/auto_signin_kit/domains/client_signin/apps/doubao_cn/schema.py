@@ -24,3 +24,7 @@ class DoubaoDomainConfig(BudgetedConfig):
     #: CDP 调试端口(macOS 唯一 Cookie 通道);须与客户端启动参数
     #: ``--remote-debugging-port`` 一致。环境变量 DOUBAO_CDP_PORT 仍优先。
     cdp_port: int = 9222
+    #: 签到通道: ``auto``(默认,客户端在跑就用界面点击)/ ``ui`` / ``http``。
+    #: 界面通道由客户端 JS 发请求(带 a_bogus 签名与设备参数);裸接口缺这层,
+    #: 反复请求会让该会话后续(含客户端手工点)全部失败,故仅在客户端不可用时才用。
+    checkin_channel: str = "auto"

@@ -15,6 +15,7 @@ from auto_signin_kit.core.httpclient import Budget
 from auto_signin_kit.domains.client_signin.apps.doubao_cn import cdp as cdp_mod
 from auto_signin_kit.domains.client_signin.apps.doubao_cn import cookies as cookies_mod
 from auto_signin_kit.domains.client_signin.apps.doubao_cn import service
+from auto_signin_kit.domains.client_signin.apps.doubao_cn import uiaction as uiaction_mod
 from auto_signin_kit.domains.client_signin.apps.doubao_cn.api import COMMON_QUERY, DoubaoApi
 from auto_signin_kit.domains.client_signin.apps.doubao_cn.cli import app
 from auto_signin_kit.domains.client_signin.apps.doubao_cn.schema import DoubaoDomainConfig
@@ -297,6 +298,33 @@ class TestCdpIdentity:
         assert cdp_mod.resolve_port(None) == 9222
 
 
+class TestUiAction:
+    """界面通道: 只负责"把点击送达",不臆断业务结果;失败要给可读原因。"""
+
+    def test_unreachable_port_reports_reason(self, monkeypatch):
+        monkeypatch.setattr(uiaction_mod.cdp, "probe", lambda port=None: False)
+        out = uiaction_mod.signin_via_ui(9223)
+        assert out["clicked"] is False
+        assert "9223" in out["reason"] and "remote-debugging-port" in out["reason"]
+
+    def test_pick_target_prefers_campaign_page(self):
+        targets = [
+            {"type": "page", "url": "https://www.doubao.com/chat",
+             "webSocketDebuggerUrl": "ws://main"},
+            {"type": "page", "url": "https://www.doubao.com/pc/agent-explore",
+             "webSocketDebuggerUrl": "ws://panel"},
+            {"type": "page", "url": "https://qoder.example/ide",
+             "webSocketDebuggerUrl": "ws://foreign"},
+        ]
+        assert uiaction_mod._pick_target(targets)["webSocketDebuggerUrl"] == "ws://panel"
+
+    def test_pick_target_none_for_foreign_browser(self):
+        # 9222 被别的 Chromium 应用占用: 找不到豆包页面就如实返回 None
+        assert uiaction_mod._pick_target(
+            [{"type": "page", "url": "https://qoder.example/ide",
+              "webSocketDebuggerUrl": "ws://foreign"}]) is None
+
+
 class TestDoubaoApi:
     def test_urls_carry_full_common_query(self, monkeypatch):
         captured = {}
@@ -343,9 +371,17 @@ class TestDoubaoApi:
         assert DoubaoApi("sessionid=x", budget=shared).budget is shared  # 不重复包
 
 
-def _config(tmp_path):
-    return DoubaoDomainConfig(campaign_code="pc_incentive_task_mvp_v3",
-                              user_data_dir=str(tmp_path), budget_seconds=60)
+def _config(tmp_path, **over):
+    """测试配置: 默认钉死 ``checkin_channel="http"``。
+
+    不钉死会让 ``auto`` 去探测本机 9222/9223——开发机真开着豆包时用例会
+    意外走界面通道(点击真实客户端),测试就不再是 hermetic 的。
+    """
+    base = {"campaign_code": "pc_incentive_task_mvp_v3",
+            "user_data_dir": str(tmp_path), "budget_seconds": 60,
+            "checkin_channel": "http"}
+    base.update(over)
+    return DoubaoDomainConfig(**base)
 
 
 @pytest.fixture
@@ -424,6 +460,27 @@ class TestServiceActions:
         assert service.run_action("claim", _config(no_cookies)) == 0
         assert emitted[0]["result"] == "ALREADY"  # 领取失败不误报为 CLAIMED
         assert any("领取失败" in part for part in emitted[0]["report"].split("; "))
+
+    def test_claim_not_eligible_is_not_reported_as_failure(self, monkeypatch, no_cookies,
+                                                           emitted):
+        """实测: 里程碑标了可领,服务端回"当前暂不符合领取条件"——不是故障。
+
+        这类回执若写进"领取失败",每次签到都会挂一行告警,真故障反被淹掉。
+        """
+        detail = ("/v3/detail", (200, {"code": 0, "data": {"tasks": [
+            {"title": "每日签到", "campaign_code": "daily_signin", "task_status": 3}],
+            "milestones": [
+                {"title": "累计获得 500 点额度",
+                 "campaign_code": "points_milestone_500", "task_status": 2,
+                 "reward_summaries": [{"reward_amount": 200}]}]}}, None))
+        not_eligible = ("/reward/claim", (200, {"code": 0, "data": {"biz_error": {
+            "code": 3, "message": "当前暂不符合领取条件"}}}, None))
+        monkeypatch.setattr(_API_CALL, _router([CHECKIN_ALREADY, detail, not_eligible]))
+        assert service.run_action("claim", _config(no_cookies)) == 0
+        report = emitted[0]["report"]
+        assert "领取失败" not in report
+        assert "暂不符合条件" in report
+        assert emitted[0]["result"] == "ALREADY"  # 没领到东西就不是 CLAIMED
 
     def test_fresh_checkin_is_claimed(self, monkeypatch, no_cookies, emitted):
         monkeypatch.setattr("auto_signin_kit.domains.client_signin.apps.doubao_cn.api.call",
@@ -534,6 +591,118 @@ class TestAccountProfile:
 
 
 
+
+
+class TestCheckinChannel:
+    """通道选择(2026-11-07): 客户端在跑就点界面,把 a_bogus 签名交还客户端。
+
+    裸接口缺签名,服务端一旦强校验就必然失败,且反复请求会让整个会话受限
+    (连客户端手工点都失效)——所以默认通道不是"先试接口、失败再兜底"。
+    """
+
+    DETAIL_SIGNED = ("/v3/detail", (200, {"code": 0, "data": {"tasks": [
+        {"title": "每日签到", "campaign_code": "daily_signin", "task_status": 3,
+         "daily_checkin": {"checked_in_today": True, "continuous_days": 3,
+                           "last_checkin_date": "2026-11-07",
+                           "reward": {"reward_amount": 200}}}]}}, None))
+    DETAIL_UNSIGNED = ("/v3/detail", (200, {"code": 0, "data": {"tasks": [
+        {"title": "每日签到", "campaign_code": "daily_signin", "task_status": 1,
+         "daily_checkin": {"checked_in_today": False}}]}}, None))
+    CHECKIN_SYSERR = ("/landing/checkin",
+                      (200, {"code": 710010702, "msg": "系统错误", "data": None}, None))
+
+    def _click(self, monkeypatch, clicked=True, button="立即签到"):
+        seen = []
+
+        def fake(port=None, **kw):
+            seen.append(port)
+            return {"clicked": clicked, "button": button,
+                    "reason": "已在客户端界面点击「%s」" % button if clicked else "端口不可达"}
+
+        monkeypatch.setattr(service.uiaction, "signin_via_ui", fake)
+        return seen
+
+    def test_auto_uses_ui_when_client_reachable(self, monkeypatch, no_cookies, emitted):
+        monkeypatch.setattr(service.cdp, "probe", lambda port=None: True)
+        clicks = self._click(monkeypatch)
+        seen = {"detail": 0}
+
+        def fake_call(url, **kwargs):
+            if "/v3/detail" in url:
+                seen["detail"] += 1
+                # 点之前未签,点之后复查已签
+                return (self.DETAIL_UNSIGNED if seen["detail"] == 1
+                        else self.DETAIL_SIGNED)[1]
+            return 200, {"code": 0, "data": {}}, None
+
+        monkeypatch.setattr(_API_CALL, fake_call)
+        assert service.run_action("claim", _config(no_cookies, checkin_channel="auto")) == 0
+        assert clicks, "客户端可达时必须走界面点击"
+        assert emitted[0]["result"] == "CLAIMED"
+        assert emitted[0]["channel"] == "ui-click"
+        assert emitted[0]["credits"] == 200  # 额度从 detail 读,不从空响应读
+
+    def test_auto_falls_back_to_http_when_client_down(self, monkeypatch, no_cookies,
+                                                     emitted):
+        monkeypatch.setattr(service.cdp, "probe", lambda port=None: False)
+        clicks = self._click(monkeypatch, clicked=False)
+        monkeypatch.setattr(_API_CALL, _router([CHECKIN_FRESH, DETAIL_MIXED, CLAIM_OK]))
+        assert service.run_action("claim", _config(no_cookies, checkin_channel="auto")) == 0
+        assert clicks == []  # 客户端不可达时一次界面点击都不该发
+        assert emitted[0]["result"] == "CLAIMED"
+
+    def test_ui_channel_short_circuits_when_already_signed(self, monkeypatch, no_cookies,
+                                                          emitted):
+        clicks = self._click(monkeypatch)
+        monkeypatch.setattr(_API_CALL, _router([self.DETAIL_SIGNED]))
+        assert service.run_action("claim", _config(no_cookies, checkin_channel="ui")) == 0
+        assert clicks == []  # 已签就不再点按钮
+        assert emitted[0]["result"] == "ALREADY"
+        assert emitted[0]["streak_days"] == 3
+
+    def test_ui_click_not_confirmed_is_attention(self, monkeypatch, no_cookies, emitted):
+        self._click(monkeypatch)
+        monkeypatch.setattr(_API_CALL, _router([self.DETAIL_UNSIGNED]))
+        assert service.run_action("claim", _config(no_cookies, checkin_channel="ui")) == 1
+        assert emitted[0]["result"] == "ERROR"
+        assert "仍未标记已签" in emitted[0]["report"]
+
+    def test_ui_channel_unavailable_reports_reason(self, monkeypatch, no_cookies, emitted):
+        self._click(monkeypatch, clicked=False)
+        monkeypatch.setattr(_API_CALL, _router([self.DETAIL_UNSIGNED]))
+        assert service.run_action("claim", _config(no_cookies, checkin_channel="ui")) == 1
+        assert "界面通道不可用" in emitted[0]["report"]
+        assert "checkin_channel: http" in emitted[0]["report"]  # 给出可行动出口
+
+    def test_http_error_but_detail_says_signed_is_already(self, monkeypatch, no_cookies,
+                                                          emitted):
+        """接口回业务错误 ≠ 没签到: 以 detail 的 checked_in_today 为准。"""
+        monkeypatch.setattr(_API_CALL, _router([self.CHECKIN_SYSERR, self.DETAIL_SIGNED]))
+        assert service.run_action("claim", _config(no_cookies)) == 0
+        assert emitted[0]["result"] == "ALREADY"
+        assert emitted[0]["channel"] == "detail-verify"
+
+    def test_http_error_falls_back_to_ui_click(self, monkeypatch, no_cookies, emitted):
+        """裸接口失败且复查未签 → 走界面兜底,点击后复查已签即算成功。"""
+        self._click(monkeypatch)
+        states = iter([self.DETAIL_UNSIGNED, self.DETAIL_SIGNED])
+
+        def fake_call(url, **kwargs):
+            if "/landing/checkin" in url:
+                return self.CHECKIN_SYSERR[1]
+            return next(states, self.DETAIL_SIGNED)[1]
+
+        monkeypatch.setattr(_API_CALL, fake_call)
+        assert service.run_action("claim", _config(no_cookies)) == 0
+        assert emitted[0]["result"] == "CLAIMED"
+        assert "界面兜底" in emitted[0]["report"]
+
+    def test_http_error_without_ui_keeps_error(self, monkeypatch, no_cookies, emitted):
+        self._click(monkeypatch, clicked=False)
+        monkeypatch.setattr(_API_CALL, _router([self.CHECKIN_SYSERR, self.DETAIL_UNSIGNED]))
+        assert service.run_action("claim", _config(no_cookies)) == 1
+        assert emitted[0]["result"] == "ERROR"
+        assert "界面兜底" in emitted[0]["report"]  # 兜底失败原因不吞掉
 
 
 class TestCli:

@@ -9,5 +9,9 @@ campaign_code: pc_incentive_task_mvp_v3
 # CDP 调试端口(macOS 唯一 Cookie 通道): 须与豆包客户端启动参数
 # --remote-debugging-port 一致;环境变量 DOUBAO_CDP_PORT 仍优先。
 cdp_port: 9223
+# 签到通道: auto(默认) = 客户端带调试端口在跑就点界面按钮(签名由客户端生成),
+# 客户端不可达才退回裸接口 http;也可强制 ui / http。
+# 裸接口缺 a_bogus 签名,反复请求会让整个会话受限(连手工点都失效),见 NOTE-04 §4.3。
+checkin_channel: auto
 # 时间预算(秒),计划任务 PT5M 上限 240。
 budget_seconds: 240

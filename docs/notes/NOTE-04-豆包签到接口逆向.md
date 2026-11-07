@@ -31,8 +31,12 @@
 - 活动详情: `POST /alice/ug/campaign/v3/detail/`
   body `{"campaign_group_code": "pc_incentive_task_mvp_v3"}`;
   code=2 "campaign not found" = 活动换季(改 config 的 campaign_code)。
-- 鉴权完全靠 Cookie;无 a_bogus/msToken 签名要求。业务错误码:
+- 鉴权靠 Cookie;业务错误码:
   710012001=登录已过期(cookie 旧),710010702=system error(参数/活动态)。
+  **2026-11-07 更正**: "无 a_bogus/msToken 签名要求"只在 2026-11-02 那次取证
+  成立;活动页前端 SDK 现在的请求已带 `a_bogus`/`msToken`/`web_id`/`tea_uuid`/
+  `pc_version` 等签名与设备指纹参数,裸 HTTP 缺这一层,服务端一旦强校验即失效。
+  详见 §4.3。
 
 - 领任务奖励(2026-11-02 实测):
   `POST /alice/ug/campaign/item/reward/claim/` body
@@ -49,6 +53,9 @@
 - `domains/doubao/cookies.py`: 多 profile 合并(库 mtime 新者优先)+ 32 字节
   前缀剥离 + CDP 兜底(`cdp.py`,客户端带 `--remote-debugging-port` 运行时
   取实时 Cookie,优先级最高);缺 cookie 时报错给可行动指引。
+- `domains/doubao/uiaction.py`(2026-11-07 新增): 签到主通道——在客户端界面上
+  做受信任点击,签名交给客户端 JS;`checkin_channel: auto|ui|http` 控制,
+  见 §4.3。
 - **已知边界**: `Profile N` 运行期读不了,而 `Default` 可能持有已被服务端
   判过期的旧会话(实测: 更新客户端重登后 Default 仍旧)——所以客户端带调试
   端口运行时最稳;或关闭客户端让 Cookie 落盘后再跑。CDP 端口默认 9222,
@@ -103,16 +110,57 @@
 - 修复后 CDP 取到内存实时会话(detail/status 全链路通),`710012001`
   登录过期映射为 NO_AUTH(台账词表有标签,report 给重开客户端指引)。
 
-**服务层(非我方问题,2026-11-03 当日实测)**:
+**服务层(2026-11-03 当日结论,已被 §4.3 推翻一半)**:
 - 会话有效(过了登录关)、活动在期、`checked_in_today=false` 的前提下,
   checkin 接口仍回 `710010702`;
 - **决定性实验**: 在豆包页面上下文内用浏览器原生 fetch(同源+真实 cookie+真实头)
   发同样请求,服务端照样报错——非请求构造/签名/风控参数问题;
 - 官方客户端界面点「签到」同样 toast「签到失败，请稍后重试」;
 - 前端请求体实为 `{scene, biz_params: undefined}`(序列化省略),与我们一致;
-  先调 `landing/report` 上报事件也不影响结果。结论: 服务端故障,等恢复,
+  先调 `landing/report` 上报事件也不影响结果。结论(当时): 服务端故障,等恢复,
   调度高密度触发 + 接口幂等会自动补签。
 
 **教训**: doctor 的 `session_ok` 只验 cookie 格式(本地能力),验不了服务端
 登录态;"系统错误"类网关码会掩盖真实死因,网关码→result 的映射要前置到
 api 层,不能靠事后猜。
+
+### 4.3 2026-11-07 定论: 裸接口缺签名会牵连整个会话,签到改走客户端界面
+
+**关键现场线索(用户提供)**: 卸载重装豆包后**手工点签到一切正常**,但只要
+跑过一次本工具,之后**手工点也失败**——必须再重装才恢复。
+
+这条线索把方向从"服务端故障"改回"我们的请求把会话搞坏了":
+
+1. 抓活动页真实请求: 前端 SDK 的 checkin/detail/claim 都带 `a_bogus`(签名)、
+   `msToken`、`web_id`、`tea_uuid`、`pc_version` 等参数。**"无签名"的旧结论
+   只在 2026-11-02 那次取证成立**,前端已升级。
+2. 裸 HTTP 只带 Cookie + 公共 query,缺签名与设备指纹 → 服务端判为异常流量。
+   单次可能"容忍"(返回业务错误甚至成功),但**连续裸请求会让该 session 被置为
+   受限**: 此后连客户端自己的 JS 请求、乃至用户手工点击都回
+   `710010702 系统错误`——这正是"重装才好"的原因(重装 = 新 session)。
+3. 复发验证: 只走界面点击的会话,签到、任务领取、手工点全部正常;
+   一旦再用裸接口重试几次,同样的受限现象重现。
+
+**修复(本项目已落地)**:
+
+- 新增 `uiaction.py`: 经 CDP 在客户端页面上做**受信任点击**
+  (`Input.dispatchMouseEvent`,合成事件会被前端的 `isTrusted` 校验丢弃),
+  签名/设备参数由客户端 JS 自己生成;按钮可能在视口外,先 `scrollIntoView`;
+- `_resolve_channel()` 三档 `checkin_channel: auto|ui|http`:
+  **auto(默认)= 客户端调试端口可达就走界面**,只有客户端不可用才退回裸接口;
+  即"只要用户能手工签到,工具就能签到";
+- 签到结果**以 `detail.tasks[daily_signin].daily_checkin.checked_in_today` 为准**,
+  不信签到接口自己的返回(额度/连签天数也从这里读,台账积分不断档);
+- 裸接口报错时按序: ① 复查 detail(已签就如实记 ALREADY)→ ② 界面兜底点一次
+  → ③ 再复查,仍未签才判 ERROR,并把三条通道的真实原因都写进 report;
+- 任务清扫把"当前暂不符合领取条件"归为**暂不可领**(不是失败),避免每次签到
+  都挂一行"领取失败"把真故障淹掉。
+
+**前提与出口**: 界面通道要求客户端带 `--remote-debugging-port=<cdp_port>` 常驻
+(本项目 `config/domains/doubao_cn.yaml` 的 `cdp_port`,当前 9223)。
+客户端起不来时可显式 `checkin_channel: http` 兜底,但**不要反复重试**——
+受限后只能重装客户端恢复。
+
+**方法论**: "接口报错"要先分清是**请求不合法**、**会话被降权**还是**服务端故障**;
+三者现象都是 `710010702`。本案的判别器是用户提供的"重装就好"这条对照——
+它是唯一能把"我们的请求害了会话"与"平台挂了"分开的证据。
