@@ -6,7 +6,8 @@
 本文件只实现 build/claim/status/doctor 四钩子。
 
 签到通道(2026-11-07 定论,见 NOTE-04 §4.3): 默认走**客户端界面**(``uiaction``),
-由客户端 JS SDK 生成 ``a_bogus`` 等签名;裸接口仅在客户端不可达时兜底。
+由客户端 JS SDK 生成 ``a_bogus`` 等签名;客户端不可达时跳过本次(PENDING)——
+裸接口会把会话搞受限,只有显式 ``checkin_channel: http`` 才走。
 """
 
 from __future__ import annotations
@@ -15,13 +16,18 @@ from pathlib import Path
 from typing import Any
 
 from auto_signin_kit.core.dto import RunOutcome
-from auto_signin_kit.core.errors import AutoSignInKitError
+from auto_signin_kit.core.errors import AutoSignInKitError, ConfigError
 from auto_signin_kit.core.httpclient import NO_NETWORK, last_request
 from auto_signin_kit.core.kit.accounts import account_ref
 from auto_signin_kit.core.kit.domain import DomainError, SigninDomain
 from auto_signin_kit.core.logging import result_log_path
 from auto_signin_kit.core.report import make_result
-from auto_signin_kit.domains.client_signin.apps.doubao_cn import cdp, cookies, uiaction
+from auto_signin_kit.domains.client_signin.apps.doubao_cn import (
+    cdp,
+    client_version,
+    cookies,
+    uiaction,
+)
 from auto_signin_kit.domains.client_signin.apps.doubao_cn.api import DoubaoApi
 from auto_signin_kit.domains.client_signin.apps.doubao_cn.schema import DoubaoDomainConfig
 
@@ -96,18 +102,33 @@ def _today_state(api: DoubaoApi, config: DoubaoDomainConfig) -> bool | None:
 
 
 def _resolve_channel(config: DoubaoDomainConfig) -> str:
-    """签到通道: ``ui``(客户端自己发)或 ``http``(裸接口)。
+    """签到通道: ``ui``(客户端自己发)、``http``(裸接口)或 ``skip``(本次不做)。
 
     2026-11-07 定论: 活动页 SDK 的请求带 ``a_bogus`` 签名与 ``web_id``/
     ``tea_uuid``/``pc_version`` 等设备参数;裸 HTTP 缺这一层,服务端判为异常。
     现场现象更严重——反复发裸请求会牵连整个会话,**连客户端手工点都失效、
-    重装客户端才恢复**。所以默认 ``auto``: 客户端带调试端口在跑就用 ``ui``,
-    把签名交还客户端;只有客户端不可达才退回裸接口。
+    重装客户端才恢复**。
+
+    所以 ``auto`` 在客户端不可达时**不再退回裸接口**(2026-11-07 复盘: 调度时
+    客户端没开,当天 5 次裸请求把会话搞受限,界面通道也救不回来),返回
+    ``skip`` 如实上报"客户端未就绪";只有用户显式 ``checkin_channel: http``
+    才走裸接口(自担风险)。
     """
     channel = (getattr(config, "checkin_channel", None) or "auto").lower()
     if channel in ("ui", "http"):
         return channel
-    return "ui" if cdp.probe(cdp.resolve_port(config.cdp_port)) else "http"
+    return "ui" if cdp.probe(cdp.resolve_port(config.cdp_port)) else "skip"
+
+
+def _skip_result(config: DoubaoDomainConfig) -> tuple[RunOutcome, int]:
+    """客户端不可达时的如实上报(PENDING,不降噪): 指引恢复界面通道。"""
+    return make_result(
+        "PENDING",
+        "豆包客户端未带调试端口运行,界面通道不可达;为免裸接口把会话搞受限"
+        "(反复裸请求会连手工签到都失效,重装客户端才恢复),本次跳过不签。"
+        "恢复: 完全退出豆包后带 --remote-debugging-port=%s 启动(见 NOTE-04 §4.1),"
+        "或显式 checkin_channel: http 自担风险" % cdp.resolve_port(config.cdp_port),
+        needs_attention=True, domain="doubao_cn", channel="skip"), 1
 
 
 def _checkin(api: DoubaoApi, config: DoubaoDomainConfig, *,
@@ -121,9 +142,13 @@ def _checkin(api: DoubaoApi, config: DoubaoDomainConfig, *,
             "空跑: 活动落地页可达" if ok else "空跑失败: 网络/服务异常 %s" % (err or scode),
             dry_run=True, domain="doubao_cn", http=scode, needs_attention=not ok), 0 if ok else 1
 
-    # 通道选择(2026-11-07): 客户端在跑就绝不用裸接口碰签到——见 _resolve_channel。
-    if _resolve_channel(config) == "ui":
+    # 通道选择(2026-11-07): 客户端在跑就绝不用裸接口碰签到;不可达时跳过
+    # 而不是裸接口兜底——兜底会把会话搞受限,见 _resolve_channel。
+    channel = _resolve_channel(config)
+    if channel == "ui":
         return _checkin_via_ui(api, config)
+    if channel == "skip":
+        return _skip_result(config)
     return _checkin_via_http(api, config)
 
 
@@ -145,7 +170,9 @@ def _checkin_via_ui(api: DoubaoApi,
     if not ui.get("clicked"):
         return make_result(
             "ERROR",
-            "界面通道不可用: %s;若客户端无法启动可设 checkin_channel: http" % ui.get("reason"),
+            "界面通道不可用: %s;带 --remote-debugging-port 启动客户端后重试"
+            "(见 NOTE-04 §4.1),确需裸接口可显式设 checkin_channel: http(自担风险)"
+            % ui.get("reason"),
             needs_attention=True, domain="doubao_cn", channel="ui"), 1
     state = _daily_checkin(api, config)
     if not (state or {}).get("checked_in_today"):
@@ -312,7 +339,11 @@ class DoubaoDomain(SigninDomain):
             result = "NO_AUTH" if isinstance(exc, cookies.DoubaoCookieError) else "ERROR"
             raise DomainError(result, str(exc), exit_code=exc.exit_code) from exc
         budget = config.budget_seconds or 240.0
-        return DoubaoApi(cookie_header, base_url=config.base_url,
+        try:
+            version, _ = client_version.resolve(config.client_version)
+        except ConfigError as exc:
+            raise DomainError("ERROR", str(exc), exit_code=exc.exit_code) from exc
+        return DoubaoApi(cookie_header, version=version, base_url=config.base_url,
                          budget=budget, retry=not once)
 
     def claim(self, api: DoubaoApi, config: Any, *, dry_run: bool = False,

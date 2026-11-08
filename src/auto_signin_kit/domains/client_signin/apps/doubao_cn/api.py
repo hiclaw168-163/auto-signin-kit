@@ -3,8 +3,10 @@
 请求契约(docs/notes/NOTE-04,2026-11-02 CDP 实测):
 
 - 所有接口都要带**完整公共查询参数**(缺了会报 invalid param/system error):
-  ``version_code=20800&language=zh&device_platform=web&doubao_device_platform=web
-  &aid=497858&real_aid=497858&pkg_type=release_version``;
+  ``version_code=<客户端版本编码>&language=zh&device_platform=web
+  &doubao_device_platform=web&aid=497858&real_aid=497858&pkg_type=release_version``;
+  ``version_code`` 由 ``client_version`` 从本机客户端运行时派生(写死会在客户端
+  升级后回 ``710010702``,见 NOTE-04 §4.5);
 - 鉴权完全靠 Cookie(sessionid 等会话 cookie),无 a_bogus/msToken 签名;
 - ``POST /alice/ug/campaign/landing/checkin/`` body ``{"scene": <campaign_code>}``
   → 服务端幂等: 已签时回 ``idempotent: true`` + 当日已领信息;
@@ -17,10 +19,11 @@ from __future__ import annotations
 from typing import Any
 
 from auto_signin_kit.core.httpclient import Budget, RetryPolicy, call
+from auto_signin_kit.domains.client_signin.apps.doubao_cn import client_version
 
-#: Web 端 AGW 公共查询参数(2026-11-02 从活动面板真实请求取证;值域常量)。
+#: Web 端 AGW 公共查询参数(2026-11-02 从活动面板真实请求取证)。
+#: ``version_code`` 不在此列: 它随客户端版本变化,由 client_version 派生。
 COMMON_QUERY = (
-    "version_code=20800",
     "language=zh",
     "device_platform=web",
     "doubao_device_platform=web",
@@ -40,14 +43,18 @@ _RETRY_POLICY = RetryPolicy(network_delays=(0.0, 2.0, 4.0), server_delays=(2.0,)
 class DoubaoApi:
     """豆包签到接口客户端;cookie 头由 cookies 模块解出后注入。"""
 
-    def __init__(self, cookie_header: str, *, base_url: str = "https://www.doubao.com",
+    def __init__(self, cookie_header: str, *, version: str,
+                 base_url: str = "https://www.doubao.com",
                  budget: Budget | float | None = None, retry: bool = True) -> None:
-        """注入会话 Cookie 头与预算;``retry=False`` 供计划任务的 ``--once`` 语义。
+        """注入会话 Cookie 头、客户端版本与预算;``retry=False`` 供 ``--once`` 语义。
 
+        ``version`` 是客户端版本原文(如 ``2.35.8``),``version_code`` 由它派生;
         ``budget`` 接受秒数或 Budget 对象,边界处统一归一化——调用方
         (service.build) 传的是配置里的裸秒数,不能透传给 httpclient.call。
         """
         self.cookie_header = cookie_header
+        self.version = version
+        self.version_code = client_version.version_to_code(version)
         self.base_url = base_url.rstrip("/")
         self.budget = budget if isinstance(budget, Budget) else Budget(budget or 240.0)
         self.retry = retry
@@ -60,12 +67,14 @@ class DoubaoApi:
             "Referer": self.base_url + "/pc/agent-explore",
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                "(KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+                "(KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 "
+                "SamanthaDoubao/" + self.version
             ),
         }
 
     def _post(self, path: str, body: dict[str, Any]) -> tuple[int, Any, str | None]:
-        url = "%s%s?%s" % (self.base_url, path, "&".join(COMMON_QUERY))
+        query = "&".join(("version_code=%d" % self.version_code, *COMMON_QUERY))
+        url = "%s%s?%s" % (self.base_url, path, query)
         return call(url, headers=self._headers(), method="POST", payload=body,
                     budget=self.budget, policy=_RETRY_POLICY, retry=self.retry)
 

@@ -10,9 +10,10 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from auto_signin_kit.core.errors import AutoSignInKitError
+from auto_signin_kit.core.errors import AutoSignInKitError, ConfigError
 from auto_signin_kit.core.httpclient import Budget
 from auto_signin_kit.domains.client_signin.apps.doubao_cn import cdp as cdp_mod
+from auto_signin_kit.domains.client_signin.apps.doubao_cn import client_version as cv_mod
 from auto_signin_kit.domains.client_signin.apps.doubao_cn import cookies as cookies_mod
 from auto_signin_kit.domains.client_signin.apps.doubao_cn import service
 from auto_signin_kit.domains.client_signin.apps.doubao_cn import uiaction as uiaction_mod
@@ -324,6 +325,29 @@ class TestUiAction:
             [{"type": "page", "url": "https://qoder.example/ide",
               "webSocketDebuggerUrl": "ws://foreign"}]) is None
 
+    def test_pick_target_ignores_internal_scheme_pages(self):
+        # doubao:// 内部页同样含 "doubao" 但不是 web 页——2026-11-07 实测客户端
+        # 刚启动只有内部页时被误抓,报"页面上找不到签到按钮"。必须按域匹配。
+        assert uiaction_mod._pick_target([
+            {"type": "page", "url": "doubao://doubao-chat/chat",
+             "webSocketDebuggerUrl": "ws://chat"},
+            {"type": "page", "url": "doubao://new-tab-page/",
+             "webSocketDebuggerUrl": "ws://blank"},
+        ]) is None
+
+    def test_no_page_triggers_auto_open_and_reports_failure(self, monkeypatch):
+        """活动页没开时先自动打开(_open_activity_page),失败如实报。"""
+        monkeypatch.setattr(uiaction_mod.cdp, "probe", lambda port=None: True)
+        monkeypatch.setattr(uiaction_mod, "_targets", lambda port: [])
+        monkeypatch.setattr(uiaction_mod, "_pick_target", lambda targets: None)
+        opened = []
+        monkeypatch.setattr(uiaction_mod, "_open_activity_page",
+                            lambda port: opened.append(port) or False)
+        out = uiaction_mod.signin_via_ui(9223)
+        assert out["clicked"] is False
+        assert opened == [9223]  # 确实尝试过自动开页
+        assert "自动打开活动页" in out["reason"]
+
 
 class TestDoubaoApi:
     def test_urls_carry_full_common_query(self, monkeypatch):
@@ -334,10 +358,13 @@ class TestDoubaoApi:
             return 200, {"code": 0, "data": {}}, None
 
         monkeypatch.setattr(_API_CALL, fake_call)
-        DoubaoApi("sessionid=x").checkin("pc_incentive_task_mvp_v3")
+        DoubaoApi("sessionid=x", version="2.35.8").checkin("pc_incentive_task_mvp_v3")
         assert "/alice/ug/campaign/landing/checkin/" in captured["url"]
         for part in COMMON_QUERY:  # 公共参数缺一不可(取证: 缺了报 system error)
             assert part in captured["url"]
+        # version_code 由客户端版本派生(2.35.8 → 23508),不再写死 20800
+        assert "version_code=23508" in captured["url"]
+        assert "version_code=20800" not in captured["url"]
 
     def test_checkin_body_uses_scene(self, monkeypatch):
         captured = {}
@@ -347,7 +374,7 @@ class TestDoubaoApi:
             return 200, {"code": 0, "data": {}}, None
 
         monkeypatch.setattr(_API_CALL, fake_call)
-        DoubaoApi("sessionid=x").checkin("pc_incentive_task_mvp_v3")
+        DoubaoApi("sessionid=x", version="2.35.8").checkin("pc_incentive_task_mvp_v3")
         assert captured["payload"] == {"scene": "pc_incentive_task_mvp_v3"}
 
     def test_once_disables_retry(self, monkeypatch):
@@ -358,17 +385,46 @@ class TestDoubaoApi:
             return 200, {"code": 0, "data": {}}, None
 
         monkeypatch.setattr(_API_CALL, fake_call)
-        DoubaoApi("sessionid=x", retry=False).checkin("s")
+        DoubaoApi("sessionid=x", version="2.35.8", retry=False).checkin("s")
         assert captured["retry"] is False
 
     def test_budget_seconds_are_normalized_to_budget_object(self):
         """回归: service.build 传裸秒数,必须归一化成 Budget(否则
         httpclient.call 调 budget.remaining() 直接 AttributeError)。"""
-        assert isinstance(DoubaoApi("sessionid=x", budget=60.0).budget, Budget)
-        assert DoubaoApi("sessionid=x", budget=60.0).budget.remaining() > 0
-        assert DoubaoApi("sessionid=x").budget.remaining() > 239  # 缺省 240
+        assert isinstance(DoubaoApi("sessionid=x", version="2.35.8", budget=60.0).budget, Budget)
+        assert DoubaoApi("sessionid=x", version="2.35.8", budget=60.0).budget.remaining() > 0
+        assert DoubaoApi("sessionid=x", version="2.35.8").budget.remaining() > 239  # 缺省 240
         shared = Budget(30.0)
-        assert DoubaoApi("sessionid=x", budget=shared).budget is shared  # 不重复包
+        assert DoubaoApi("sessionid=x", version="2.35.8",
+                         budget=shared).budget is shared  # 不重复包
+
+
+class TestClientVersion:
+    """version_code 运行时派生: 写死客户端版本是 710010702 的已知成因。"""
+
+    @pytest.mark.parametrize("version,code", [
+        ("2.35.8", 23508), ("2.32.6", 23206), ("2.35", 23500), ("1.0.0", 10000),
+    ])
+    def test_version_to_code(self, version, code):
+        assert cv_mod.version_to_code(version) == code
+
+    @pytest.mark.parametrize("bad", ["", "2", "2.35.8.9", "a.b.c", "2.35.100", "5.74.15.1"])
+    def test_bad_shape_returns_none(self, bad):
+        assert cv_mod.version_to_code(bad) is None
+
+    def test_resolve_prefers_configured(self, monkeypatch):
+        monkeypatch.setattr(cv_mod, "installed_version", lambda: "9.9.9")
+        assert cv_mod.resolve("2.35.8") == ("2.35.8", 23508)
+
+    def test_resolve_reads_installed_when_unset(self, monkeypatch):
+        monkeypatch.setattr(cv_mod, "installed_version", lambda: "2.35.8")
+        assert cv_mod.resolve(None) == ("2.35.8", 23508)
+
+    def test_resolve_errors_without_version(self, monkeypatch):
+        """读不到版本就显式报错,绝不回落到历史 version_code。"""
+        monkeypatch.setattr(cv_mod, "installed_version", lambda: None)
+        with pytest.raises(ConfigError, match="client_version"):
+            cv_mod.resolve(None)
 
 
 def _config(tmp_path, **over):
@@ -379,7 +435,9 @@ def _config(tmp_path, **over):
     """
     base = {"campaign_code": "pc_incentive_task_mvp_v3",
             "user_data_dir": str(tmp_path), "budget_seconds": 60,
-            "checkin_channel": "http"}
+            "checkin_channel": "http",
+            # 钉死版本: 否则 build 会去读本机真实客户端(开发机/CI 结果不一致)
+            "client_version": "2.35.8"}
     base.update(over)
     return DoubaoDomainConfig(**base)
 
@@ -642,14 +700,21 @@ class TestCheckinChannel:
         assert emitted[0]["channel"] == "ui-click"
         assert emitted[0]["credits"] == 200  # 额度从 detail 读,不从空响应读
 
-    def test_auto_falls_back_to_http_when_client_down(self, monkeypatch, no_cookies,
-                                                     emitted):
+    def test_auto_skips_when_client_down(self, monkeypatch, no_cookies, emitted):
+        """客户端不可达时跳过而非裸接口兜底: 反复裸请求会把会话搞受限(§4.3 复盘
+        ——2026-11-07 调度当天 5 次裸请求,连界面点击都被服务端拒绝)。"""
         monkeypatch.setattr(service.cdp, "probe", lambda port=None: False)
         clicks = self._click(monkeypatch, clicked=False)
-        monkeypatch.setattr(_API_CALL, _router([CHECKIN_FRESH, DETAIL_MIXED, CLAIM_OK]))
-        assert service.run_action("claim", _config(no_cookies, checkin_channel="auto")) == 0
+
+        def forbidden(url, **kwargs):
+            raise AssertionError("客户端不可达时绝不该发裸接口请求: %s" % url)
+
+        monkeypatch.setattr(_API_CALL, forbidden)
+        assert service.run_action("claim", _config(no_cookies, checkin_channel="auto")) == 1
         assert clicks == []  # 客户端不可达时一次界面点击都不该发
-        assert emitted[0]["result"] == "CLAIMED"
+        assert emitted[0]["result"] == "PENDING"
+        assert "--remote-debugging-port" in emitted[0]["report"]
+        assert "checkin_channel: http" in emitted[0]["report"]  # 给出自担风险的出口
 
     def test_ui_channel_short_circuits_when_already_signed(self, monkeypatch, no_cookies,
                                                           emitted):

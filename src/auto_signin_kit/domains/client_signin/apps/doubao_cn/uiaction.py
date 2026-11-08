@@ -28,6 +28,9 @@ from auto_signin_kit.domains.client_signin.apps.doubao_cn import cdp
 #: 页面里签到按钮的可能文案(精确匹配,避免点到"签到领额度"等标题)。
 _BUTTON_TEXTS = ("立即签到", "今日签到", "签到")
 
+#: 活动面板页(客户端没开这个页时,经浏览器级 CDP 自动打开,见 _open_activity_page)。
+_ACTIVITY_URL = "https://www.doubao.com/pc/agent-explore"
+
 #: 找按钮 + 滚到视口中央并返回可点击坐标。
 _FIND_JS = """
 (() => {
@@ -66,16 +69,61 @@ def _targets(port: int) -> list[dict]:
 
 
 def _pick_target(targets: list[dict]) -> dict | None:
-    """优先活动页(URL 含 campaign/agent-explore),其次任一 doubao 页面。"""
+    """只要 web 页(https://*.doubao.com),优先活动页。
+
+    注意不能用 ``"doubao" in url`` 匹配: 客户端内部页是 ``doubao://`` 协议
+    (launcher/chat 等),同样含 "doubao"——2026-11-07 实测客户端刚启动只有
+    内部页时,通道误抓内部页找按钮,报"页面上找不到签到按钮"。
+    """
     pages = [t for t in targets
-             if t.get("type") in ("page", "webview") and "doubao" in (t.get("url") or "")]
-    if not pages:
-        return None
+             if t.get("type") in ("page", "webview")
+             and "doubao.com" in (t.get("url") or "")
+             and t.get("webSocketDebuggerUrl")]
     for key in ("campaign", "agent-explore", "incentive"):
         for t in pages:
-            if key in (t.get("url") or "") and t.get("webSocketDebuggerUrl"):
+            if key in (t.get("url") or ""):
                 return t
-    return next((t for t in pages if t.get("webSocketDebuggerUrl")), None)
+    return pages[0] if pages else None
+
+
+def _open_activity_page(port: int) -> bool:
+    """活动页没开时经浏览器级 CDP 打开(_ACTIVITY_URL);就绪返回 True。
+
+    走浏览器级 WebSocket 的 ``Target.createTarget``(HTTP /json/new 建的
+    about:blank 会被客户端吞掉,实测不可行);建完轮询 target 列表等页面出现。
+    """
+    try:
+        import websocket
+    except ImportError:  # 依赖缺失时如实说不可用,不伪装成"客户端没开"
+        return False
+    try:
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open("http://127.0.0.1:%s/json/version" % port, timeout=3) as resp:
+            ws_url = (json.loads(resp.read() or b"{}") or {}).get("webSocketDebuggerUrl")
+        if not ws_url:
+            return False
+        ws = websocket.create_connection(ws_url, timeout=10, suppress_origin=True)
+        try:
+            ws.send(json.dumps({"id": 1, "method": "Target.createTarget",
+                                "params": {"url": _ACTIVITY_URL}}))
+            deadline = time.time() + 5
+            while time.time() < deadline:
+                if json.loads(ws.recv()).get("id") == 1:
+                    break
+        finally:
+            with contextlib.suppress(Exception):
+                ws.close()
+    except (OSError, ValueError, websocket.WebSocketException):
+        return False
+    deadline = time.time() + 15  # 页面出现并挂上 WS 调试端点需要几秒
+    while time.time() < deadline:
+        time.sleep(2)
+        try:
+            if _pick_target(_targets(port)):
+                return True
+        except (OSError, ValueError):
+            pass
+    return False
 
 
 def signin_via_ui(port: int | None = None, *, settle: float = 3.0) -> dict:
@@ -99,8 +147,20 @@ def signin_via_ui(port: int | None = None, *, settle: float = 3.0) -> dict:
     except (OSError, ValueError) as exc:
         return {"clicked": False, "button": None, "reason": "读取调试端口页面列表失败: %s" % exc}
     if not target:
-        return {"clicked": False, "button": None,
-                "reason": "客户端里没有豆包页面(先把客户端切到豆包主界面)"}
+        # 客户端刚启动往往只有内部页(doubao://),活动页没开: 自动打开再取
+        # (2026-11-07 实测: 此前直接报"没有豆包页面",调度时没人手动开页)
+        if not _open_activity_page(port):
+            return {"clicked": False, "button": None,
+                    "reason": "客户端里没有豆包网页(自动打开活动页也未就绪;"
+                              "可先把客户端切到豆包主界面再试)"}
+        try:
+            target = _pick_target(_targets(port))
+        except (OSError, ValueError) as exc:
+            return {"clicked": False, "button": None,
+                    "reason": "读取调试端口页面列表失败: %s" % exc}
+        if not target:
+            return {"clicked": False, "button": None,
+                    "reason": "客户端里没有豆包网页(可先把客户端切到豆包主界面再试)"}
 
     ws = None
     msg_id = 0
@@ -122,9 +182,14 @@ def signin_via_ui(port: int | None = None, *, settle: float = 3.0) -> dict:
                     return msg.get("result") or {}
             return None
 
-        found = call("Runtime.evaluate", {"expression": _FIND_JS, "returnByValue": True,
-                                          "awaitPromise": True}, wait=20)
-        raw = ((found or {}).get("result") or {}).get("value")
+        raw = None
+        for _attempt in range(3):  # 活动页可能还在加载: 找不到按钮先等再试
+            found = call("Runtime.evaluate", {"expression": _FIND_JS, "returnByValue": True,
+                                              "awaitPromise": True}, wait=20)
+            raw = ((found or {}).get("result") or {}).get("value")
+            if raw:
+                break
+            time.sleep(3)
         if not raw:
             return {"clicked": False, "button": None,
                     "reason": "页面上找不到签到按钮(可能今日已签,或界面已改版)"}
