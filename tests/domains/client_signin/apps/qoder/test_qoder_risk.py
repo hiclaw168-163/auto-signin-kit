@@ -6,7 +6,6 @@ import time
 import pytest
 
 import auto_signin_kit.core.adapters.native_helper as native_helper
-from auto_signin_kit.core.adapters.platform_info import IS_WINDOWS
 from auto_signin_kit.domains.client_signin.apps.qoder import risk as risk_mod
 from auto_signin_kit.domains.client_signin.apps.qoder.risk import (
     find_device_component,
@@ -22,6 +21,8 @@ def _isolate(monkeypatch, tmp_path):
     monkeypatch.setattr(risk_mod, "_cache", {"at": 0.0, "root": None, "headers": {}})
     # machine-id 兜底扫描钉到空列表,登录后的真实数据目录不得混入测试头。
     monkeypatch.setattr(risk_mod, "find_auth_dirs_safe", lambda: [])
+    # 安装根也钉空: 测试不得碰本机真实客户端组件(Windows/macOS 均适用)。
+    monkeypatch.setattr(risk_mod, "_umid_roots", lambda: [])
     return tmp_path
 
 
@@ -42,6 +43,27 @@ def _fake_component(tmp_path, monkeypatch, identity):
     fake_run_capture.count = 0
     monkeypatch.setattr(native_helper, "run_capture", fake_run_capture)
     return fake_run_capture
+
+
+class TestPlatformHeaders:
+    def test_macos_uses_sdk_arch_and_os(self, monkeypatch):
+        """macOS 头按 SDK 的 process.arch/platform 拼: arm64_darwin。"""
+        monkeypatch.setattr(risk_mod, "IS_MACOS", True)
+        monkeypatch.setattr(risk_mod, "machine_arch", lambda: "aarch64")
+        monkeypatch.setattr(risk_mod, "hostname", lambda: "host-1")
+        assert risk_mod._platform_headers() == {
+            "Cosy-MachineOS": "arm64_darwin", "Cosy-MachineHostname": "host-1"}
+
+    def test_macos_umid_relative_path_inside_app_bundle(self, tmp_path, monkeypatch):
+        """macOS 组件位于 <App>.app/Contents/Resources/umid/runtime-info。"""
+        app = tmp_path / "Qoder.app"
+        exe = app / "Contents" / "Resources" / "umid" / "runtime-info"
+        exe.parent.mkdir(parents=True)
+        exe.write_bytes(b"")
+        monkeypatch.setattr(risk_mod, "IS_MACOS", True)
+        monkeypatch.delenv("QODER_UMID_EXE", raising=False)
+        monkeypatch.setattr(risk_mod, "_umid_roots", lambda: [app])
+        assert risk_mod._umid_candidates() == [exe]
 
 
 class TestFindDeviceComponent:
@@ -88,39 +110,39 @@ class TestRunUmid:
 
 
 class TestRiskHeaders:
-    @pytest.mark.skipif(IS_WINDOWS, reason="Windows 会额外带 MachineOS/Hostname 头")
     def test_builds_headers_from_manifest_and_umid(self, tmp_path, monkeypatch):
         """manifest 版本 + 组件输出三件套 → 对应 Cosy 头,缺字段不填空串。"""
         _fake_component(tmp_path, monkeypatch, {
             "machineToken": "tok", "machineCode": "code", "machineType": "pc"})
         assert risk_headers() == {
+            **risk_mod._platform_headers(),
             "Cosy-Version": "9.9.9",
             "Cosy-MachineToken": "tok",
             "Cosy-MachineCode": "code",
             "Cosy-MachineType": "pc",
         }
 
-    @pytest.mark.skipif(IS_WINDOWS, reason="Windows 会额外带 MachineOS/Hostname 头")
     def test_partial_identity_only_maps_present_fields(self, tmp_path, monkeypatch):
         """组件只回部分字段时只映射存在的头,不出现空值头。"""
         _fake_component(tmp_path, monkeypatch, {"machineToken": "tok"})
-        assert risk_headers() == {"Cosy-Version": "9.9.9", "Cosy-MachineToken": "tok"}
+        assert risk_headers() == {
+            **risk_mod._platform_headers(), "Cosy-Version": "9.9.9", "Cosy-MachineToken": "tok"}
 
-    @pytest.mark.skipif(IS_WINDOWS, reason="Windows 会额外带 MachineOS/Hostname 头")
     def test_machine_id_from_auth_dir(self, tmp_path, monkeypatch):
         """auth.machine-id 读取自指定数据目录并去首尾空白。"""
         auth_dir = tmp_path / "auth-dir"
         auth_dir.mkdir()
         (auth_dir / "auth.machine-id").write_text("mid-123\n", encoding="utf-8")
-        assert risk_headers(str(auth_dir)) == {"Cosy-MachineId": "mid-123"}
+        assert risk_headers(str(auth_dir)) == {
+            **risk_mod._platform_headers(), "Cosy-MachineId": "mid-123"}
 
-    @pytest.mark.skipif(IS_WINDOWS, reason="Windows 会额外带 MachineOS/Hostname 头")
     def test_cache_hit_within_ttl_returns_copy(self, tmp_path, monkeypatch):
         """30 分钟内命中缓存且不再起子进程;返回副本,改返回值不污染缓存。"""
         fake = _fake_component(tmp_path, monkeypatch, {"machineToken": "tok"})
         first = risk_headers()
         first["Cosy-MachineToken"] = "tampered"
-        assert risk_headers() == {"Cosy-Version": "9.9.9", "Cosy-MachineToken": "tok"}
+        assert risk_headers() == {
+            **risk_mod._platform_headers(), "Cosy-Version": "9.9.9", "Cosy-MachineToken": "tok"}
         assert fake.count == 1
 
     def test_cache_expires_after_ttl(self, tmp_path, monkeypatch):

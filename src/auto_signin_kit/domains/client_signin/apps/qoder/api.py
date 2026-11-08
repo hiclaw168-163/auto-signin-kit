@@ -6,7 +6,6 @@ import os
 from pathlib import Path
 from typing import Any
 
-from auto_signin_kit.core.adapters.platform_info import IS_WINDOWS
 from auto_signin_kit.core.httpclient import Budget, RetryPolicy, call
 from auto_signin_kit.core.kit.budget import parse_budget as core_parse_budget
 from auto_signin_kit.core.logging import result_log_path
@@ -117,7 +116,8 @@ def build_api(config: Any, auth_dir: str | None = None) -> tuple[Api, dict | Non
         return Api(token, base_url), sess, "EXPIRED"
     from auto_signin_kit.domains.client_signin.apps.qoder.risk import risk_headers
 
-    risk = risk_headers(sess.get("_auth_dir")) if (IS_WINDOWS and sess) else {}
+    # 兼容 Windows 与 macOS: 活动接口要求机器身份,两平台都按安装目录取组件。
+    risk = risk_headers(sess.get("_auth_dir")) if sess else {}
     api = Api(token, base_url, risk)
     if sess is not None and sess.get("expiresAt"):
         api.token_expires_at = sess.get("expiresAt")
