@@ -12,11 +12,12 @@ from auto_signin_kit.domains.client_signin.apps.qoder.auth import (
 )
 
 
-def run_doctor(auth_dir: str | None = None) -> tuple[dict, int]:
+def run_doctor(auth_dir: str | None = None, *, keychain_service: str = "") -> tuple[dict, int]:
     """产出 ``doctor`` 结果;退出码 0/1/2 由 result 决定。
 
     ``auth_dir``(SPEC-12 P2): 具名账户的显式数据目录;给出时环境变量令牌
     不参与(体检的就是这个账户的登录态)。
+    ``keychain_service``(mac): 该账户的 Keychain 条目名,透传给登录态解析。
     """
     out: dict = {
         "result": "OK",
@@ -32,7 +33,7 @@ def run_doctor(auth_dir: str | None = None) -> tuple[dict, int]:
 
     out["token_source"] = "desktop"
     try:
-        sess = load_session_state(auth_dir)
+        sess = load_session_state(auth_dir, keychain_service=keychain_service)
     except NoAuthError as exc:
         out.update({
             "result": "NO_AUTH", "needs_attention": True, "report": str(exc),

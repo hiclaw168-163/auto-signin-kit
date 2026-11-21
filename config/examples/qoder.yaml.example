@@ -12,3 +12,8 @@ budget_seconds: 240
 #   - name: backup
 #     auth_dir: "D:/clients/qoder-backup"
 #     # enabled: false
+#   - name: cn                 # macOS 两版客户端各一份 Keychain 密钥:
+#     auth_dir: "~/Library/Application Support/com.qodercn.app.stable"
+#     # 默认按数据目录名自动选对(qodercn → 国内版条目);客户端改名或换渠道包时
+#     # 显式指定条目名(acct 由它派生: "X Safe Storage" → "X Key"):
+#     keychain_service: "Qoder CN App Safe Storage"

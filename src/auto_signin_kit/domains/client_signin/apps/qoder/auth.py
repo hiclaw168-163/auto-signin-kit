@@ -39,11 +39,10 @@ AUTH_FILE = "auth.v1.dat"
 LOCAL_STATE_FILE = "Local State"
 
 #: mac 客户端 Keychain 条目(Electron safeStorage 按 app.name 生成,实测固定)。
-#: 两版客户端 app.name 不同,国内版条目多一段 "CN"(2026-11-22 双客户端实测)。
+#: 两版客户端 app.name 不同,国内版多一段 "CN"(2026-11-22 双客户端实测);
+#: 配对的 acct 由 :func:`_keychain_account` 从条目名推出,不再各存一份常量。
 KEYCHAIN_SERVICE = "Qoder App Safe Storage"
-KEYCHAIN_ACCOUNT = "Qoder App Key"
 KEYCHAIN_SERVICE_CN = "Qoder CN App Safe Storage"
-KEYCHAIN_ACCOUNT_CN = "Qoder CN App Key"
 
 #: 活动固定按 UTC+8 刷新,与运行机器的本地时区无关。
 TZ_CN = timezone(timedelta(hours=8))
@@ -123,13 +122,13 @@ def token_expired(sess: dict) -> bool:
     return _core_token_expired(sess, "expiresAt")
 
 
-def _read_store(root: Path) -> dict:
+def _read_store(root: Path, *, keychain_service: str = "") -> dict:
     raw = (root / AUTH_FILE).read_bytes()
     if raw[:3] != b"v10":
         raise AuthFormatError("%s 格式未知（%r）" % (AUTH_FILE, raw[:3]))
     if len(raw) < 3 + 12 + 16 + 2:
         raise AuthFormatError("%s 过短，可能正被客户端改写" % AUTH_FILE)
-    plain = _decrypt_raw(raw, root)
+    plain = _decrypt_raw(raw, root, keychain_service=keychain_service)
     try:
         sess = json.loads(plain.decode("utf-8"))
     except (UnicodeDecodeError, ValueError) as exc:
@@ -142,21 +141,35 @@ def _read_store(root: Path) -> dict:
     return sess
 
 
-def _mac_keychain_entries(data_dir: Path) -> tuple[str, str]:
-    """按数据目录名选 Keychain 条目(bundle id 含 ``qodercn`` = 国内版密钥)。
+def _keychain_account(service: str) -> str:
+    """Electron safeStorage 实测: 配对的 acct 把 " Safe Storage" 换成 " Key"。
+
+    不是该后缀的自定义条目名按 Chromium 惯例走空 acct(与
+    :mod:`core.declarative.chromium_cookies._mac_key` 同一口径)。
+    """
+    suffix = " Safe Storage"
+    return service[: -len(suffix)] + " Key" if service.endswith(suffix) else ""
+
+
+def mac_keychain_service(data_dir: Path) -> str:
+    """按数据目录名推 Keychain 条目名(bundle id 含 ``qodercn`` = 国内版)。
 
     版本区口径与 :mod:`client_info._region` 一致;这里不复用它是因为
     client_info 反向 import 本模块,复用会成环。
     """
-    if "qodercn" in data_dir.name.lower():
-        return KEYCHAIN_SERVICE_CN, KEYCHAIN_ACCOUNT_CN
-    return KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT
+    return KEYCHAIN_SERVICE_CN if "qodercn" in data_dir.name.lower() else KEYCHAIN_SERVICE
 
 
-def _decrypt_raw(raw: bytes, root: Path) -> bytes:
+def _mac_keychain_pair(data_dir: Path, keychain_service: str = "") -> tuple[str, str]:
+    """``(service, acct)``: 账户配置的条目名优先,缺省按数据目录名推导。"""
+    service = (keychain_service or "").strip() or mac_keychain_service(data_dir)
+    return service, _keychain_account(service)
+
+
+def _decrypt_raw(raw: bytes, root: Path, *, keychain_service: str = "") -> bytes:
     """按平台解锁 auth.v1.dat(密文体从 v10 前缀之后)。"""
     if IS_MACOS:
-        service, account = _mac_keychain_entries(root)
+        service, account = _mac_keychain_pair(root, keychain_service)
         try:
             password = mac_keychain.read_password(service, account)
         except AdapterError as exc:
@@ -176,12 +189,12 @@ def _decrypt_raw(raw: bytes, root: Path) -> bytes:
     return decrypt_gcm(key, raw[3:15], raw[15:])
 
 
-def _read_store_retry(root: Path, attempts: int = 3) -> dict:
+def _read_store_retry(root: Path, attempts: int = 3, *, keychain_service: str = "") -> dict:
     """客户端可能正在重写凭据,读到半截就短暂重试。"""
     last: Exception | None = None
     for index in range(attempts):
         try:
-            return _read_store(root)
+            return _read_store(root, keychain_service=keychain_service)
         except (ValueError, OSError, AuthFormatError, DecryptError) as exc:
             last = exc
             if index + 1 < attempts:
@@ -193,12 +206,13 @@ def _read_store_retry(root: Path, attempts: int = 3) -> dict:
     raise AuthFormatError("%s 读取失败（%s: %s）" % (AUTH_FILE, type(last).__name__, last))
 
 
-def load_session(auth_dir: str | None = None) -> dict:
+def load_session(auth_dir: str | None = None, *, keychain_service: str = "") -> dict:
     """读出可用登录态(Windows/macOS 双平台);失败给带 looked_in 的错误。
 
     ``auth_dir``(SPEC-12 P2): 具名账户的显式数据目录——只看这一个目录,
     不做全局扫描兜底(落错账户比没签到严重);目录不存在显式报错。
     缺省(None)走 ``find_auth_dirs()`` 全链路,行为不变。
+    ``keychain_service``(mac): 该账户的 Keychain 条目名,缺省按数据目录名推导。
     """
     if auth_dir:
         root = Path(auth_dir).expanduser()
@@ -220,7 +234,7 @@ def load_session(auth_dir: str | None = None) -> dict:
             continue
         saw_auth_file = True
         try:
-            sess = _read_store_retry(root)
+            sess = _read_store_retry(root, keychain_service=keychain_service)
         except AuthFormatError as exc:
             errors.append("%s: %s" % (root.name, exc))
             continue
@@ -265,16 +279,18 @@ def detect_api_base(sess: dict | None) -> str | None:
     return None
 
 
-def resolve_token(auth_dir: str | None = None) -> tuple[str, dict | None]:
+def resolve_token(auth_dir: str | None = None, *,
+                  keychain_service: str = "") -> tuple[str, dict | None]:
     """令牌来源: 环境变量优先;否则解本地登录态。
 
     ``auth_dir``(SPEC-12 P2): 具名账户显式数据目录——此时**跳过**全局
     ``QODER_TOKEN`` 环境变量(那是 default 户的令牌,混用会拿 A 户令牌
     签 B 户的到),只信该目录里的登录态。
+    ``keychain_service``(mac): 透传给 load_session 的 Keychain 条目名。
     """
     if auth_dir is None:
         token = (os.environ.get("QODER_TOKEN") or "").strip()
         if token:
             return token, None
-    sess = load_session(auth_dir)
+    sess = load_session(auth_dir, keychain_service=keychain_service)
     return sess["token"], sess
