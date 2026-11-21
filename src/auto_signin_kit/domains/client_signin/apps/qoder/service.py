@@ -1,4 +1,4 @@
-"""Qoder CN 每日 Credits: 活动查询 → 分类 → 幂等领取 → 一行 JSON。
+"""Qoder 每日 Credits: 活动查询 → 分类 → 幂等领取 → 一行 JSON。
 
 对策见 NOTE-02(qoder 积分面取证)的结论: /sash/api/v1/me/campaigns;
 缺 ``Cosy-ClientType: 10`` 头服务端返回空列表;领取 POST 默认不重试防重复。
@@ -23,6 +23,7 @@ from auto_signin_kit.domains.client_signin.apps.qoder.api import (
     parse_budget,
 )
 from auto_signin_kit.domains.client_signin.apps.qoder.auth import TZ_CN, NoAuthError, QoderAuthError
+from auto_signin_kit.domains.client_signin.apps.qoder.profile import CN, INTL, QoderProfile
 
 
 def _short(value: Any, limit: int = 200) -> str:
@@ -251,10 +252,16 @@ def run_status(api: Api, budget: Budget) -> tuple[RunOutcome, int]:
 
 
 class QoderDomain(SigninDomain):
-    """qoder 域: 只实现四钩子,流程外壳(命令分发/异常映射/台账/退出码)由基类锁定。"""
+    """qoder 域(国际版): 只实现四钩子,流程外壳(命令分发/异常映射/台账/退出码)由基类锁定。
 
-    name = "qoder"
-    display = "Qoder CN"
+    国内版是 :class:`QoderCnDomain`——本机那两个客户端是两行应用、两条调度,
+    领取逻辑则完全共用这里的一份代码。
+    """
+
+    #: 客户端身份: 决定数据目录模式、环境变量前缀与 mac Keychain 默认条目名。
+    profile: QoderProfile = INTL
+    name = INTL.app_code
+    display = INTL.display
     sensitive = SENSITIVE
     ready_noun = "领取"
     #: 领取窗口按每天 10:00 轮换(非自然日),台账 done_today(自然日)会误判:
@@ -274,7 +281,8 @@ class QoderDomain(SigninDomain):
         try:
             api, sess, staleness = build_api(
                 config, auth_dir=ref.auth_dir if ref else None,
-                keychain_service=ref.keychain_service if ref else "")
+                keychain_service=ref.keychain_service if ref else "",
+                profile=self.profile)
         except NoAuthError as exc:
             raise DomainError("NO_AUTH", str(exc), exit_code=2,
                               extra={"looked_in": exc.looked_in or None}) from exc
@@ -283,7 +291,7 @@ class QoderDomain(SigninDomain):
                               extra={"looked_in": exc.looked_in or None}) from exc
         if staleness == "EXPIRED":
             raise DomainError(
-                "AUTH_REJECTED", "登录态已过期，请打开 Qoder CN 桌面端重新登录",
+                "AUTH_REJECTED", "登录态已过期，请打开 %s 桌面端重新登录" % self.display,
                 exit_code=1,
                 extra={"token_expires_at": sess.get("expiresAt") if sess else None})
         return api
@@ -311,13 +319,23 @@ class QoderDomain(SigninDomain):
 
         ref = account_ref(config, account) if account else None
         return run_doctor(ref.auth_dir if ref else None,
-                          keychain_service=ref.keychain_service if ref else "")
+                          keychain_service=ref.keychain_service if ref else "",
+                          profile=self.profile)
 
     def _budget(self, config: Any) -> tuple[Budget, str | None]:
-        value, warning = parse_budget(config)
+        value, warning = parse_budget(config, self.profile)
         return Budget(value), warning
 
 
+class QoderCnDomain(QoderDomain):
+    """Qoder 国内版: 换的是客户端身份,不是流程(profile/app_code/显示名)。"""
+
+    profile = CN
+    name = CN.app_code
+    display = CN.display
+
+
 domain = QoderDomain()
+domain_cn = QoderCnDomain()
 #: 模块级入口(CLI 工厂与既有调用方引用): 即模板方法绑定。
 run_action = domain.run_action

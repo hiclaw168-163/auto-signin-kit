@@ -1,4 +1,5 @@
-# qoder 域配置;对应 schema.py 的 QoderDomainConfig(extra=forbid)
-base_url: https://openapi.qoder.com.cn
+# qoder 域(国际版)配置;对应 schema.py 的 QoderDomainConfig(extra=forbid)
+# 国内版是另一个域 qoder_cn(本机两个客户端 = 两行应用),配置在 qoder_cn.yaml。
+base_url: https://openapi.qoder.sh
 log_empty: false
 budget_seconds: 240

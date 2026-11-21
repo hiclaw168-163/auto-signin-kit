@@ -18,9 +18,10 @@ def _isolate(monkeypatch, tmp_path):
     """重置模块级缓存与环境变量: 用例互不污染,也不碰本机真实组件与目录。"""
     monkeypatch.delenv("QODER_UMID_EXE", raising=False)
     monkeypatch.delenv("QODER_AUTH_DIR", raising=False)
-    monkeypatch.setattr(risk_mod, "_cache", {"at": 0.0, "root": None, "headers": {}})
+    # 缓存键含客户端身份(见 risk._cache),None 永不等于真实键 → 每例都重算
+    monkeypatch.setattr(risk_mod, "_cache", {"at": 0.0, "key": None, "headers": {}})
     # machine-id 兜底扫描钉到空列表,登录后的真实数据目录不得混入测试头。
-    monkeypatch.setattr(risk_mod, "find_auth_dirs_safe", lambda: [])
+    monkeypatch.setattr(risk_mod, "find_auth_dirs_safe", lambda *a: [])
     # 安装根也钉空: 测试不得碰本机真实客户端组件(Windows/macOS 均适用)。
     monkeypatch.setattr(risk_mod, "_umid_roots", lambda: [])
     return tmp_path

@@ -10,6 +10,7 @@ from auto_signin_kit.core.config.schema import DomainConfig
 from auto_signin_kit.core.httpclient import BUDGET_OUT, NO_NETWORK
 from auto_signin_kit.domains.client_signin.apps.qoder import auth, service
 from auto_signin_kit.domains.client_signin.apps.qoder.cli import app
+from auto_signin_kit.domains.client_signin.apps.qoder.profile import CN, INTL
 
 runner = CliRunner()
 
@@ -423,17 +424,17 @@ class TestMacKeychainEntry:
 
     def test_cn_data_dir_picks_cn_entry(self):
         assert auth._mac_keychain_pair(Path("com.qodercn.app.stable")) == (
-            auth.KEYCHAIN_SERVICE_CN, "Qoder CN App Key")
+            CN.mac_keychain_service, "Qoder CN App Key")
 
     def test_intl_data_dir_picks_intl_entry(self):
         for name in ("com.qoder.app.stable", "com.qoder.app"):
             assert auth._mac_keychain_pair(Path(name)) == (
-                auth.KEYCHAIN_SERVICE, "Qoder App Key")
+                INTL.mac_keychain_service, "Qoder App Key")
 
     def test_region_match_case_insensitive(self):
-        """判定口径与 :func:`client_info._region` 一致(目录名大小写不敏感)。"""
+        """判定口径与 :func:`auth.profile_of_dir` 一致(目录名大小写不敏感)。"""
         assert auth._mac_keychain_pair(Path("com.QoderCN.App.stable"))[0] == (
-            auth.KEYCHAIN_SERVICE_CN)
+            CN.mac_keychain_service)
 
     def test_account_config_overrides_derivation(self):
         """配置指定条目名时不再看目录名——国际版目录也能指到别的密钥。"""
@@ -445,7 +446,7 @@ class TestMacKeychainEntry:
         """空白覆盖值等于没配: 走推导,不拿空条目名去问 Keychain。"""
         for blank in ("", "   "):
             assert auth._mac_keychain_pair(Path("com.qodercn.app"), blank) == (
-                auth.KEYCHAIN_SERVICE_CN, "Qoder CN App Key")
+                CN.mac_keychain_service, "Qoder CN App Key")
 
     def test_custom_service_without_electron_suffix(self):
         """非 ``<App> Safe Storage`` 形态的条目名按 Chromium 惯例用空 acct。"""
@@ -475,8 +476,9 @@ class TestAccountKeychainForwarding:
     def _capture(self, monkeypatch):
         seen = {}
 
-        def fake_build_api(cfg, auth_dir=None, *, keychain_service=""):
+        def fake_build_api(cfg, auth_dir=None, *, keychain_service="", profile=None):
             seen["auth_dir"], seen["keychain_service"] = auth_dir, keychain_service
+            seen["profile"] = profile
             from types import SimpleNamespace
             return SimpleNamespace(token_expires_at=None), {}, "FRESH"
 
@@ -494,7 +496,8 @@ class TestAccountKeychainForwarding:
                 "keychain_service": "Qoder CN App Safe Storage"}]).accounts)
         service.QoderDomain().build(cfg, account="cn")
         assert seen == {"auth_dir": "~/tmp-cn",
-                        "keychain_service": "Qoder CN App Safe Storage"}
+                        "keychain_service": "Qoder CN App Safe Storage",
+                        "profile": INTL}
 
     def test_default_account_sends_empty_string(self, monkeypatch):
         from types import SimpleNamespace
@@ -504,3 +507,4 @@ class TestAccountKeychainForwarding:
                               accounts=[])
         service.QoderDomain().build(cfg, account="")
         assert seen["keychain_service"] == ""
+        assert seen["profile"] is INTL, "不带 --account 时域身份仍是国际版"

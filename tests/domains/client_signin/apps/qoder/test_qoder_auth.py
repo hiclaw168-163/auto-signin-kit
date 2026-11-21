@@ -16,6 +16,7 @@ from auto_signin_kit.domains.client_signin.apps.qoder.auth import (
     resolve_token,
     token_expired,
 )
+from auto_signin_kit.domains.client_signin.apps.qoder.profile import CN, INTL
 
 
 @pytest.fixture(autouse=True)
@@ -68,9 +69,9 @@ class TestTokenExpired:
 class TestFindAuthDirs:
     def test_override_env_wins_without_existence_filter(self, monkeypatch, tmp_path):
         """QODER_AUTH_DIR 覆盖一切,目录不存在也原样返回(供"目录在但未登录"分支)。"""
-        target = tmp_path / "com.qodercn.app0"
+        target = tmp_path / "com.qoder.app0"
         monkeypatch.setenv("QODER_AUTH_DIR", str(target))
-        assert auth.find_auth_dirs() == [target]
+        assert auth.find_auth_dirs(INTL) == [target]
 
     def _force_windows(self, monkeypatch, root):
         """把平台分支钉到 Windows 形状(本测试文件要在任何平台都可跑)。"""
@@ -81,23 +82,28 @@ class TestFindAuthDirs:
         """多个目录按修改时间新→旧排序,客户端最近写的优先。"""
         monkeypatch.delenv("QODER_AUTH_DIR")
         self._force_windows(monkeypatch, tmp_path)
-        old = tmp_path / "com.qodercn.appA"
-        new = tmp_path / "com.qodercn.appB"
+        old = tmp_path / "com.qoder.appA"
+        new = tmp_path / "com.qoder.appB"
         old.mkdir()
         new.mkdir()
         os.utime(old, (1000, 1000))
         os.utime(new, (2000, 2000))
-        assert auth.find_auth_dirs() == [new, old]
+        assert auth.find_auth_dirs(INTL) == [new, old]
 
     def test_missing_appdata_returns_empty(self, monkeypatch, tmp_path):
         """根指向不存在路径时空列表,不抛异常。"""
         monkeypatch.delenv("QODER_AUTH_DIR")
         self._force_windows(monkeypatch, tmp_path / "nope")
-        assert auth.find_auth_dirs() == []
+        assert auth.find_auth_dirs(INTL) == []
 
-    def test_mac_scans_both_bundle_ids(self, monkeypatch, tmp_path):
-        """mac 双模式: 国际版 com.qoder.app* 与 CN 版 com.qodercn.app* 都命中。"""
+    def test_mac_each_profile_scans_only_its_own_bundle(self, monkeypatch, tmp_path):
+        """已拆成两个域: 国际版只扫 com.qoder.app*、国内版只扫 com.qodercn.app*。
+
+        落错客户端的登录态比没签到严重(拿 A 户令牌签 B 户的到),所以两版目录
+        必须互不可见——这也让同机两版各签各的成为可能。
+        """
         monkeypatch.delenv("QODER_AUTH_DIR")
+        monkeypatch.delenv("QODER_CN_AUTH_DIR", raising=False)
         monkeypatch.setattr(auth, "IS_MACOS", True)
         monkeypatch.setattr(auth, "_default_roots", lambda: [tmp_path])
         intl = tmp_path / "com.qoder.app.stable"
@@ -108,7 +114,15 @@ class TestFindAuthDirs:
         os.utime(intl, (1000, 1000))
         os.utime(cn, (2000, 2000))
         os.utime(unrelated, (3000, 3000))
-        assert auth.find_auth_dirs() == [cn, intl]
+        assert auth.find_auth_dirs(INTL) == [intl]
+        assert auth.find_auth_dirs(CN) == [cn]
+
+    def test_env_prefix_is_strictly_per_profile(self):
+        """环境变量按版取: 解国内版只认 QODER_CN_*,不回落国际版。"""
+        assert INTL.env("TOKEN") == "QODER_TOKEN"
+        assert INTL.env("AUTH_DIR") == "QODER_AUTH_DIR"
+        assert CN.env("TOKEN") == "QODER_CN_TOKEN"
+        assert CN.env("AUTH_DIR") == "QODER_CN_AUTH_DIR"
 
 
 class TestMacDecrypt:

@@ -26,6 +26,7 @@ MIN_LIMIT_MINUTES = {
     "WorkBuddyGrowthPoll": 5,
     "WorkBuddyActiveCheck": 5,
     "QoderDailyCredits": 5,
+    "QoderCnDailyCredits": 5,
     "ClientSigninTraeCn": 5,
     "DoubaoDailyCheckin": 5,
 }
@@ -200,8 +201,10 @@ class TestPresenceGate:
 
         code = service.run_action("install", _Config(), scheduler=scheduler, probe=probe)
         assert code == 1
+        # 两版 Qoder 客户端是两个域,各自的任务独立受探测门禁(这里只缺 workbuddy)
         assert scheduler.installed == {
-            "QoderDailyCredits", "ClientSigninTraeCn", "DoubaoDailyCheckin"}
+            "QoderDailyCredits", "QoderCnDailyCredits", "ClientSigninTraeCn",
+            "DoubaoDailyCheckin"}
         assert not scheduler.calls or all(
             not name.startswith("WorkBuddy") for _, name in scheduler.calls)
 
@@ -239,7 +242,7 @@ class TestPresenceGate:
         assert failed == []
         assert len(ready) == len(TASKS)
         # 顺序 = schedule_meta 注册表顺序(entry-point 名字母序,稳定)
-        assert calls == ["client_signin", "doubao_cn", "qoder", "workbuddy_cn"]
+        assert calls == ["client_signin", "doubao_cn", "qoder", "qoder_cn", "workbuddy_cn"]
 
     def test_unknown_domain_passes_gate(self):
         """未登记探测的域(未来新域)照常注册,不挡路。"""
