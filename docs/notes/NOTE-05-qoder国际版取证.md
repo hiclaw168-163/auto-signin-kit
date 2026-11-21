@@ -82,8 +82,18 @@
 3. 台账的历史成功记录(`act-20261102-503`、每日 +100)是"活动存在"的既有证据,
    第一版取证时没回查,教训:下"不存在"结论前先查自家台账。
 
-## 凭据与安全(不变)
+## 凭据与安全
 
 - mac 解锁链:Keychain `Qoder App Safe Storage` → PBKDF2 → AES-128-CBC,直接复用
   仓库 `auth.py`;客户端运行中改写 `auth.v1.dat` 有 `_read_store_retry` 兜底。
+- 2026-11-22 同机补测(国际版 + 国内版客户端都装):国内版是同一条解锁链,但
+  Electron `app.name` 不同,Keychain 条目整体带 `CN`(service
+  `Qoder CN App Safe Storage` / acct `Qoder CN App Key`)。写死国际版条目名时,
+  国内版目录能扫到、能读到 `auth.v1.dat`,却报"PKCS7 填充非法(密钥不对或数据
+  损坏)",看起来像登录过期而重登无效 —— 密钥条目名与数据目录名同源,按目录名
+  (`com.qodercn.app*`)选。Windows 不受影响:两版各带自己的 `Local State`。
+- as-built(修复口径): 推导只是**默认值**,账户配置 `AccountRef.keychain_service`
+  可显式指定条目名(客户端改名/新渠道包时不用改代码),acct 按 Electron 惯例从
+  条目名派生(`X Safe Storage` → `X Key`)。配置项放**账户级**而非域级: 一台机器
+  两版客户端各一份密钥,域级只有一个位置放不下。
 - 本笔记不记录 token/machineToken 等敏感值;设备标识可通过组件重新生成读取。

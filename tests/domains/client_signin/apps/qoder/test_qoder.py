@@ -6,8 +6,9 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from auto_signin_kit.core.config.schema import DomainConfig
 from auto_signin_kit.core.httpclient import BUDGET_OUT, NO_NETWORK
-from auto_signin_kit.domains.client_signin.apps.qoder import service
+from auto_signin_kit.domains.client_signin.apps.qoder import auth, service
 from auto_signin_kit.domains.client_signin.apps.qoder.cli import app
 
 runner = CliRunner()
@@ -400,7 +401,7 @@ class TestScheduleSkip:
         monkeypatch.setattr("auto_signin_kit.core.kit.domain.emit_result",
                             lambda out, **kw: emitted.append(out))
         monkeypatch.setattr(service, "build_api",
-                            lambda cfg, auth_dir=None: (
+                            lambda cfg, auth_dir=None, **kw: (
                                 SimpleNamespace(token_expires_at=None),
                                 {"expiresAt": None}, "FRESH"))
         already = {"result": "ALREADY", "needs_attention": False,
@@ -409,3 +410,97 @@ class TestScheduleSkip:
         cfg = SimpleNamespace(budget_seconds=None, base_url="https://cfg.example")
         assert service.run_action("claim", cfg, silent=True) == 0
         assert [e["result"] for e in emitted] == ["ALREADY"]  # 真跑了,不是静默跳过
+
+
+class TestMacKeychainEntry:
+    """mac 两版客户端的 Electron safeStorage 条目不同名(2026-11-22 同一台
+    机器装了 Qoder 与 Qoder CN 实测): 拿国际版密钥解国内版的 ``auth.v1.dat``
+    报"PKCS7 填充非法",表现成"登录态不可用",重登也修不好。
+
+    口径: 默认按数据目录名推导(开箱即用,两版都对),账户配置
+    ``AccountRef.keychain_service`` 可覆盖(客户端改名/新渠道包时不用改代码)。
+    """
+
+    def test_cn_data_dir_picks_cn_entry(self):
+        assert auth._mac_keychain_pair(Path("com.qodercn.app.stable")) == (
+            auth.KEYCHAIN_SERVICE_CN, "Qoder CN App Key")
+
+    def test_intl_data_dir_picks_intl_entry(self):
+        for name in ("com.qoder.app.stable", "com.qoder.app"):
+            assert auth._mac_keychain_pair(Path(name)) == (
+                auth.KEYCHAIN_SERVICE, "Qoder App Key")
+
+    def test_region_match_case_insensitive(self):
+        """判定口径与 :func:`client_info._region` 一致(目录名大小写不敏感)。"""
+        assert auth._mac_keychain_pair(Path("com.QoderCN.App.stable"))[0] == (
+            auth.KEYCHAIN_SERVICE_CN)
+
+    def test_account_config_overrides_derivation(self):
+        """配置指定条目名时不再看目录名——国际版目录也能指到别的密钥。"""
+        assert auth._mac_keychain_pair(
+            Path("com.qoder.app.stable"), "Qoder Beta App Safe Storage") == (
+            "Qoder Beta App Safe Storage", "Qoder Beta App Key")
+
+    def test_blank_override_falls_back_to_derivation(self):
+        """空白覆盖值等于没配: 走推导,不拿空条目名去问 Keychain。"""
+        for blank in ("", "   "):
+            assert auth._mac_keychain_pair(Path("com.qodercn.app"), blank) == (
+                auth.KEYCHAIN_SERVICE_CN, "Qoder CN App Key")
+
+    def test_custom_service_without_electron_suffix(self):
+        """非 ``<App> Safe Storage`` 形态的条目名按 Chromium 惯例用空 acct。"""
+        assert auth._mac_keychain_pair(Path("com.qoder.app"), "Chromium Safe Storage") == (
+            "Chromium Safe Storage", "Chromium Key")
+        assert auth._keychain_account("some-keychain-item") == ""
+
+
+class TestAccountKeychainField:
+    """``keychain_service`` 是账户级配置项: 同一台机器两版客户端各一份密钥,
+    域级字段只有一个位置放不下;未配置的账户保持空串(即走目录名推导)。"""
+
+    def test_domain_config_accepts_it_per_account(self):
+        cfg = DomainConfig(accounts=[
+            {"name": "default", "auth_dir": "~/Library/Application Support/com.qoder.app.stable"},
+            {"name": "cn", "auth_dir": "~/Library/Application Support/com.qodercn.app.stable",
+             "keychain_service": "Qoder CN App Safe Storage"},
+        ])
+        assert cfg.accounts[0].keychain_service == ""
+        assert cfg.accounts[1].keychain_service == "Qoder CN App Safe Storage"
+
+
+class TestAccountKeychainForwarding:
+    """域侧只负责把账户配置原样交出去: ``--account cn`` 用该账户的条目名,
+    不带 ``--account`` 时给空串(由 auth 层按数据目录名推导)。"""
+
+    def _capture(self, monkeypatch):
+        seen = {}
+
+        def fake_build_api(cfg, auth_dir=None, *, keychain_service=""):
+            seen["auth_dir"], seen["keychain_service"] = auth_dir, keychain_service
+            from types import SimpleNamespace
+            return SimpleNamespace(token_expires_at=None), {}, "FRESH"
+
+        monkeypatch.setattr(service, "build_api", fake_build_api)
+        return seen
+
+    def test_named_account_value_reaches_build_api(self, monkeypatch):
+        from types import SimpleNamespace
+
+        seen = self._capture(monkeypatch)
+        cfg = SimpleNamespace(
+            budget_seconds=None, base_url="https://cfg.example",
+            accounts=DomainConfig(accounts=[{
+                "name": "cn", "auth_dir": "~/tmp-cn",
+                "keychain_service": "Qoder CN App Safe Storage"}]).accounts)
+        service.QoderDomain().build(cfg, account="cn")
+        assert seen == {"auth_dir": "~/tmp-cn",
+                        "keychain_service": "Qoder CN App Safe Storage"}
+
+    def test_default_account_sends_empty_string(self, monkeypatch):
+        from types import SimpleNamespace
+
+        seen = self._capture(monkeypatch)
+        cfg = SimpleNamespace(budget_seconds=None, base_url="https://cfg.example",
+                              accounts=[])
+        service.QoderDomain().build(cfg, account="")
+        assert seen["keychain_service"] == ""

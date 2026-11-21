@@ -267,11 +267,14 @@ class QoderDomain(SigninDomain):
               account: str = "") -> Any:
         """登录态 → Api;三种凭证失败按语义转 DomainError。
 
-        ``account``(SPEC-12 P2): 具名账户按 AccountRef.auth_dir 解析登录态。
+        ``account``(SPEC-12 P2): 具名账户按 AccountRef.auth_dir 解析登录态,
+        mac 上还按 AccountRef.keychain_service 选 Keychain 条目(两版客户端各一份密钥)。
         """
         ref = account_ref(config, account) if account else None
         try:
-            api, sess, staleness = build_api(config, auth_dir=ref.auth_dir if ref else None)
+            api, sess, staleness = build_api(
+                config, auth_dir=ref.auth_dir if ref else None,
+                keychain_service=ref.keychain_service if ref else "")
         except NoAuthError as exc:
             raise DomainError("NO_AUTH", str(exc), exit_code=2,
                               extra={"looked_in": exc.looked_in or None}) from exc
@@ -307,7 +310,8 @@ class QoderDomain(SigninDomain):
         from auto_signin_kit.domains.client_signin.apps.qoder.doctor import run_doctor
 
         ref = account_ref(config, account) if account else None
-        return run_doctor(ref.auth_dir if ref else None)
+        return run_doctor(ref.auth_dir if ref else None,
+                          keychain_service=ref.keychain_service if ref else "")
 
     def _budget(self, config: Any) -> tuple[Budget, str | None]:
         value, warning = parse_budget(config)

@@ -84,28 +84,31 @@ def parse_budget(config: Any) -> tuple[float, str | None]:
         config.budget_seconds, default, BUDGET_CEILING, env_var="QODER_BUDGET_SECONDS")
 
 
-def load_session_state(auth_dir: str | None = None) -> dict:
+def load_session_state(auth_dir: str | None = None, *, keychain_service: str = "") -> dict:
     """从本地登录态解出令牌并登记脱敏;原始异常收拢为 QoderAuthError。
 
     ``auth_dir``(SPEC-12 P2): 具名账户的显式数据目录,透传给 load_session。
+    ``keychain_service``(mac): 该账户的 Keychain 条目名,透传给 load_session。
     """
     from auto_signin_kit.domains.client_signin.apps.qoder.auth import load_session
 
-    sess = load_session(auth_dir)
+    sess = load_session(auth_dir, keychain_service=keychain_service)
     token = sess.get("token")
     if isinstance(token, str):
         SENSITIVE.add(token)
     return sess
 
 
-def build_api(config: Any, auth_dir: str | None = None) -> tuple[Api, dict | None, str | None]:
+def build_api(config: Any, auth_dir: str | None = None, *,
+              keychain_service: str = "") -> tuple[Api, dict | None, str | None]:
     """组 Api: 令牌(环境变量优先) + 风控头;令牌过期返回 (api, sess, "EXPIRED")。
 
     API 域优先级: QODER_BASE_URL > 登录态 authenticationContext 推导 >
     配置 base_url——令牌只对签发它的端点有效,登录态推导放配置前面。
     ``auth_dir``(SPEC-12 P2): 具名账户显式数据目录,此时环境变量令牌被隔离。
+    ``keychain_service``(mac): 该账户的 Keychain 条目名(两版客户端各一份密钥)。
     """
-    token, sess = resolve_token(auth_dir)
+    token, sess = resolve_token(auth_dir, keychain_service=keychain_service)
     if isinstance(token, str):
         SENSITIVE.add(token)
     from auto_signin_kit.domains.client_signin.apps.qoder.auth import detect_api_base
