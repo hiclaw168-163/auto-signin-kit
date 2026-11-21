@@ -11,7 +11,8 @@
 | 支持的 AI 编程助手 | 能做什么 |
 |---|---|
 | **WorkBuddy / CodeBuddy 系** | 每日签到领积分;成长中心活跃保底(没对话就自动补一条,活跃天数不断);Buddy 旅行礼物、派 Buddy、开盲盒、领任务、连登兑换、断登补签等活动全覆盖 |
-| **Qoder CN** | 活动窗口内自动领取 Credits(幂等,重复跑不多领) |
+| **Qoder(国际版)** | 活动窗口内自动领取 Credits(幂等,重复跑不多领) |
+| **Qoder 国内版** | 同上,走国内版客户端自己的登录态与 API 域——两版客户端是两个应用,各一行、各一条定时任务 |
 | **Trae CN** | 每日签到领 Credits(1024 活动限流期自动多轮重试) |
 | **豆包电脑版 / 豆包工作** | 签到领额度(每日 200、周一翻倍、30 天累计 8800);直接解密客户端本地会话,幂等可重跑(仅 Windows) |
 
@@ -77,6 +78,7 @@ auto-signin-kit workbuddy_cn active             # 活跃保底: 没有对话记�
 auto-signin-kit workbuddy_cn doctor             # 离线检查凭据与解密运行时
 auto-signin-kit qoder auto                      # Qoder 每日 Credits 领取
 auto-signin-kit qoder auto --dry-run            # 只报告可领取项,不真领取
+auto-signin-kit qoder_cn auto                   # Qoder 国内版(独立的第二个域)
 auto-signin-kit doubao_cn auto                  # 豆包客户端签到
 auto-signin-kit client_signin run --app trae_cn # Trae CN 每日签到(声明式应用,走 client_signin 引擎)
 auto-signin-kit client_signin doctor --app trae_cn  # 离线检查登录态可读性与有效期
@@ -123,13 +125,17 @@ auto-signin-kit ui serve                        # Web 管理台: 总览/台账/�
 
 - workbuddy 域: 桌面端登录后自动写出的凭据文件,`WORKBUDDY_AUTH_FILE`
   可覆盖;新版加密凭据(`sym-v1` 信封)自动调客户端运行时在隐藏子进程里解密。
-- qoder 域: 桌面端数据目录(Windows `%APPDATA%\com.qodercn.app*` DPAPI+GCM,
-  macOS `~/Library/Application Support/com.qoder.app*` 与 `com.qodercn.app*`
-  Keychain+CBC —— 两版客户端的 Keychain 条目不同名,默认按数据目录名选密钥,
-  也可用账户配置 `keychain_service` 显式指定条目名;均需客户端已登录;Linux 需
-  设置 `QODER_TOKEN`),`QODER_TOKEN` 可覆盖。API 端点
-  按登录态自动匹配(CN 版→`openapi.qoder.com.cn`,国际版→`openapi.qoder.sh`,
-  两者协议同构),`QODER_BASE_URL` 可覆盖。
+- qoder / qoder_cn 两个域: 国际版与国内版是**两个客户端**,所以是两个对等的域
+  (应用管理各一行、定时任务各一条 `QoderDailyCredits` / `QoderCnDailyCredits`),
+  域内共用一套流程,按各自的客户端身份取目录与密钥——桌面端数据目录
+  (Windows `%APPDATA%\com.qoder.app*` / `com.qodercn.app*` DPAPI+GCM,macOS
+  `~/Library/Application Support/` 下同名目录 Keychain+CBC;两版各一把 Keychain
+  密钥,默认按数据目录名选,也可用账户配置 `keychain_service` 显式指定;均需客户端
+  已登录;没装桌面端的机器设各自的令牌)。环境变量**严格分版**: 国际版 `QODER_*`、
+  国内版 `QODER_CN_*`(`QODER_CN_TOKEN` / `QODER_CN_AUTH_DIR` /
+  `QODER_CN_BASE_URL`),不跨版回落——拿 A 版令牌签 B 版的到比没签到严重。API 端点
+  按登录态自动匹配(国际版→`openapi.qoder.sh`,CN 版→`openapi.qoder.com.cn`,
+  两者协议同构)。
 - trae 域(现为声明式应用 trae_cn,走 `client_signin` 引擎): 桌面端
   storage.json(`%APPDATA%\Trae CN\User\globalStorage`,`SS_AES` 信封解密,
   无需 DPAPI 全平台可用),`TRAE_TOKEN` 可覆盖。
@@ -171,6 +177,7 @@ auto-signin-kit schedule uninstall            # 注销(同样支持 --domain / -
 | `WorkBuddyGrowthPoll` | `workbuddy_cn poll` | 01/09/17/21:05 | 5 min |
 | `WorkBuddyActiveCheck` | `workbuddy_cn active --silent` | 12/20:05 | 5 min |
 | `QoderDailyCredits` | `qoder auto --silent` | 00/10/11/15/19/23:05 | 5 min |
+| `QoderCnDailyCredits` | `qoder_cn auto --silent` | 10/11/15/19/23:05 | 5 min |
 | `DoubaoDailyCheckin` | `doubao_cn auto --silent` | 00/09/13/19/23:05 | 5 min |
 | `ClientSigninTraeCn` | `client_signin run --app trae_cn --silent` | 09/13/15/19/21/23:05 | 5 min |
 
@@ -182,8 +189,9 @@ auto-signin-kit schedule uninstall            # 注销(同样支持 --domain / -
 没对话当天仍算断。它发现当天没有活跃记录时会**自动补一次对话**并复查记分,
 不再只是提醒。
 
-注册前会先探测对应客户端是否在本机就绪(WorkBuddy 查客户端、Qoder 查
-`QODER_TOKEN`/数据目录、Trae 查数据目录): 未就绪的任务**不注册**并如实
+注册前会先探测对应客户端是否在本机就绪(WorkBuddy 查客户端、Qoder 国际版查
+`QODER_TOKEN`/`com.qoder.app*` 目录、国内版查 `QODER_CN_TOKEN`/`com.qodercn.app*`
+目录、Trae 查数据目录): 未就绪的任务**不注册**并如实
 计入失败——启用了也跑不起来的调度没有意义。装好客户端(或设好令牌)后
 重跑 `schedule install` 即可。
 

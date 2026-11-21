@@ -96,4 +96,12 @@
   可显式指定条目名(客户端改名/新渠道包时不用改代码),acct 按 Electron 惯例从
   条目名派生(`X Safe Storage` → `X Key`)。配置项放**账户级**而非域级: 一台机器
   两版客户端各一份密钥,域级只有一个位置放不下。
+- 再进了一步(2026-11-22,本机决定): 两版客户端拆成**两个域** `qoder` /
+  `qoder_cn`(见 `apps/qoder/profile.py` 的两份身份),不再靠同域内的具名账户区分。
+  理由是应用同步按 `ask_apps.app_code == 台账 domain` 出行,一台装了两版的机器在
+  应用管理里就该是两行;目录发现也按 profile 各扫各的,国际版域解不到国内版登录态。
+  `keychain_service` 与 `--account` 都保留: 前者仍是账户级覆盖,后者用于**同一版
+  客户端**的多份登录态。
+- Windows 国际版目录名 `com.qoder.app*` 按 Electron userData 约定推得,**尚未在
+  真机实测**(mac 两版都已实测);若实测另有其名,只需改 `profile.INTL.auth_globs`。
 - 本笔记不记录 token/machineToken 等敏感值;设备标识可通过组件重新生成读取。
