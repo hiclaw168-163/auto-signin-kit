@@ -124,7 +124,8 @@ auto-signin-kit ui serve                        # Web 管理台: 总览/台账/�
 - workbuddy 域: 桌面端登录后自动写出的凭据文件,`WORKBUDDY_AUTH_FILE`
   可覆盖;新版加密凭据(`sym-v1` 信封)自动调客户端运行时在隐藏子进程里解密。
 - qoder 域: 桌面端数据目录(Windows `%APPDATA%\com.qodercn.app*` DPAPI+GCM,
-  macOS `~/Library/Application Support/com.qoder.app*` Keychain+CBC,均需
+  macOS `~/Library/Application Support/com.qoder.app*` 与 `com.qodercn.app*`
+  Keychain+CBC —— 两版客户端的 Keychain 条目不同名,按数据目录名选密钥,均需
   客户端已登录;Linux 需设置 `QODER_TOKEN`),`QODER_TOKEN` 可覆盖。API 端点
   按登录态自动匹配(CN 版→`openapi.qoder.com.cn`,国际版→`openapi.qoder.sh`,
   两者协议同构),`QODER_BASE_URL` 可覆盖。

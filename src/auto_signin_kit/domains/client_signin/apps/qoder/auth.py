@@ -4,8 +4,9 @@
 
 - Windows: 数据目录 ``%APPDATA%\\com.qodercn.app*``;密钥在 ``Local State``
   的 ``os_crypt.encrypted_key``,DPAPI + AES-256-GCM(见 win_dpapi)
-- macOS: 数据目录 ``~/Library/Application Support/com.qoder.app*``;无
-  ``Local State``,密钥在 Keychain 条目(service=Qoder App Safe Storage),
+- macOS: 数据目录 ``~/Library/Application Support/com.qoder.app*``(国际版)与
+  ``com.qodercn.app*``(国内版);无 ``Local State``,密钥在 Keychain 条目
+  (国际版 service=Qoder App Safe Storage,国内版带 "CN"),
   PBKDF2(saltysalt) 派生后 AES-128-CBC(见 mac_keychain)
 
 CN 版与国际版客户端协议同构(2026-11-02 实测 openapi.qoder.sh 同一套
@@ -38,8 +39,11 @@ AUTH_FILE = "auth.v1.dat"
 LOCAL_STATE_FILE = "Local State"
 
 #: mac 客户端 Keychain 条目(Electron safeStorage 按 app.name 生成,实测固定)。
+#: 两版客户端 app.name 不同,国内版条目多一段 "CN"(2026-11-22 双客户端实测)。
 KEYCHAIN_SERVICE = "Qoder App Safe Storage"
 KEYCHAIN_ACCOUNT = "Qoder App Key"
+KEYCHAIN_SERVICE_CN = "Qoder CN App Safe Storage"
+KEYCHAIN_ACCOUNT_CN = "Qoder CN App Key"
 
 #: 活动固定按 UTC+8 刷新,与运行机器的本地时区无关。
 TZ_CN = timezone(timedelta(hours=8))
@@ -138,11 +142,23 @@ def _read_store(root: Path) -> dict:
     return sess
 
 
+def _mac_keychain_entries(data_dir: Path) -> tuple[str, str]:
+    """按数据目录名选 Keychain 条目(bundle id 含 ``qodercn`` = 国内版密钥)。
+
+    版本区口径与 :mod:`client_info._region` 一致;这里不复用它是因为
+    client_info 反向 import 本模块,复用会成环。
+    """
+    if "qodercn" in data_dir.name.lower():
+        return KEYCHAIN_SERVICE_CN, KEYCHAIN_ACCOUNT_CN
+    return KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT
+
+
 def _decrypt_raw(raw: bytes, root: Path) -> bytes:
     """按平台解锁 auth.v1.dat(密文体从 v10 前缀之后)。"""
     if IS_MACOS:
+        service, account = _mac_keychain_entries(root)
         try:
-            password = mac_keychain.read_password(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
+            password = mac_keychain.read_password(service, account)
         except AdapterError as exc:
             raise AuthFormatError("Keychain 密钥读取失败：%s" % exc) from exc
         try:

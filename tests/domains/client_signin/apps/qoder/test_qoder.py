@@ -7,7 +7,7 @@ import pytest
 from typer.testing import CliRunner
 
 from auto_signin_kit.core.httpclient import BUDGET_OUT, NO_NETWORK
-from auto_signin_kit.domains.client_signin.apps.qoder import service
+from auto_signin_kit.domains.client_signin.apps.qoder import auth, service
 from auto_signin_kit.domains.client_signin.apps.qoder.cli import app
 
 runner = CliRunner()
@@ -409,3 +409,23 @@ class TestScheduleSkip:
         cfg = SimpleNamespace(budget_seconds=None, base_url="https://cfg.example")
         assert service.run_action("claim", cfg, silent=True) == 0
         assert [e["result"] for e in emitted] == ["ALREADY"]  # 真跑了,不是静默跳过
+
+
+class TestMacKeychainEntry:
+    """mac 两版客户端的 Electron safeStorage 条目不同名(2026-11-22 同一台
+    机器装了 Qoder 与 Qoder CN 实测): 拿国际版密钥解国内版的 ``auth.v1.dat``
+    报"PKCS7 填充非法",表现成"登录态不可用",重登也修不好。"""
+
+    def test_cn_data_dir_picks_cn_entry(self):
+        assert auth._mac_keychain_entries(Path("com.qodercn.app.stable")) == (
+            auth.KEYCHAIN_SERVICE_CN, auth.KEYCHAIN_ACCOUNT_CN)
+
+    def test_intl_data_dir_picks_intl_entry(self):
+        for name in ("com.qoder.app.stable", "com.qoder.app"):
+            assert auth._mac_keychain_entries(Path(name)) == (
+                auth.KEYCHAIN_SERVICE, auth.KEYCHAIN_ACCOUNT)
+
+    def test_region_match_case_insensitive(self):
+        """判定口径与 :func:`client_info._region` 一致(目录名大小写不敏感)。"""
+        assert auth._mac_keychain_entries(Path("com.QoderCN.App.stable")) == (
+            auth.KEYCHAIN_SERVICE_CN, auth.KEYCHAIN_ACCOUNT_CN)

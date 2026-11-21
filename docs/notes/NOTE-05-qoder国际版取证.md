@@ -86,4 +86,10 @@
 
 - mac 解锁链:Keychain `Qoder App Safe Storage` → PBKDF2 → AES-128-CBC,直接复用
   仓库 `auth.py`;客户端运行中改写 `auth.v1.dat` 有 `_read_store_retry` 兜底。
+- 2026-11-22 同机补测(国际版 + 国内版客户端都装):国内版是同一条解锁链,但
+  Electron `app.name` 不同,Keychain 条目整体带 `CN`(service
+  `Qoder CN App Safe Storage` / acct `Qoder CN App Key`)。写死国际版条目名时,
+  国内版目录能扫到、能读到 `auth.v1.dat`,却报"PKCS7 填充非法(密钥不对或数据
+  损坏)",看起来像登录过期而重登无效 —— 密钥条目名与数据目录名同源,按目录名
+  (`com.qodercn.app*`)选。Windows 不受影响:两版各带自己的 `Local State`。
 - 本笔记不记录 token/machineToken 等敏感值;设备标识可通过组件重新生成读取。
