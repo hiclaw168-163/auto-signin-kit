@@ -76,14 +76,21 @@
   (acct "Doubao Browser",base64 解码后 16B);另有 `Doubao Safe Storage`
   (acct "Doubao")。framework 二进制(147.0.7727.149)含 `saltysalt`/
   `Safe Storage` 字符串,确为 Chromium os_crypt 魔改。
-- **但文件解密未破解,如实报 UNSUPPORTED**: cookie blob 为 `v10` 前缀 +
-  密文,三条 cookie **首块密文完全相同**(存在固定 16B+ 应用层头);黑盒
-  穷尽约 300 组合(AES-128/256-CBC/GCM × PBKDF2 盐/迭代 × 直接哈希)无一命中
-  ——不做假支持,mac 链路只走 CDP。
+- **2026-11-22 已破解,mac 文件库解密可用**(真机 57/57 条 cookie 全解,含
+  `sessionid`/`sid_tt`/`uid_tt`)。真实切片:
+  `v10`(3B) + **16B 会话头** + **16B IV** + AES-128-CBC 密文,即
+  `key = PBKDF2-HMAC-SHA1(Keychain 原始密码, "saltysalt", 1003, 16)`(密码**不解
+  base64**,直接 UTF-8 参与派生)、`iv = blob[19:35]`、`ct = blob[35:]`、PKCS7 填充;
+  明文就是最终值,**没有** Windows 那个 32 字节应用层前缀。
+  上一轮"约 300 组合无一命中"的原因: 按标准 Chromium mac 布局取
+  `iv = blob[3:15]`、`ct = blob[15:]`,剩余 68B 不满足 16 对齐——切片依据就是全表
+  同余式 `len(blob) - 35 ≡ 0 (mod 16)`(83→48、51→16、99→64、1283→1248 全吻合)。
+- **首次取钥需一次 macOS 钥匙串授权**: 弹窗点「始终允许」后 `/usr/bin/security`
+  进入该条目访问控制列表,launchd 无人运行也能取钥,不再依赖 CDP。
 - **CDP 探测防误报**: 9222 端口可能被其他 Chromium 应用占用(实测 Qoder IDE),
   `cdp.probe()` 会校验 `/json/version` 的 `Browser` 字段包含 "doubao"。
 
-### 4.1 macOS CDP 使用指引
+### 4.1 macOS CDP 使用指引(兜底通道: 文件库已可直接解密,一般用不到)
 
 1. **完全退出豆包客户端**(否则调试端口起不来/被正常实例占用);
 2. 带调试端口启动内置 helper:

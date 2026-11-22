@@ -10,6 +10,10 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from auto_signin_kit.core.adapters.mac_keychain import (
+    KeychainError,
+    encrypt_chrome_mac_v10,
+)
 from auto_signin_kit.core.errors import AutoSignInKitError, ConfigError
 from auto_signin_kit.core.httpclient import Budget
 from auto_signin_kit.domains.client_signin.apps.doubao_cn import cdp as cdp_mod
@@ -154,62 +158,118 @@ class TestCookieDecrypt:
         assert report["cdp_available"] is False
 
 
-def _make_mac_user_data(tmp_path):
-    """mac 布局: 目录即 Doubao 本身,Default/Cookies(无 Network/ 子层)。"""
+FAKE_MAC_PW = "fake-keychain-password"
+SID = "9c18d6b0ef1eb14bace5f4d4a058c419"
+UID_TT = "3cbc83281d06e2416707e916919e0d1d"
+
+
+def _make_mac_user_data(tmp_path, rows=None):
+    """mac 布局: 目录即 Doubao 本身,Default/Cookies(无 Network/ 子层)。
+
+    值按实测的魔改形状真加密(v10 + 16 字节会话头 + IV + AES-128-CBC),
+    用例因此跑的是真实解密链路,只把 Keychain 取钥换成假密码。
+    """
+    rows = rows if rows is not None else [
+        (".doubao.com", "sessionid", SID),
+        (".doubao.com", "sid_tt", SID),
+        (".doubao.com", "uid_tt", UID_TT),
+    ]
     root = tmp_path / "Doubao"
     (root / "Default").mkdir(parents=True)
-    (root / "Local State").write_text("{}", encoding="utf-8")
     db = root / "Default" / "Cookies"
     con = sqlite3.connect(str(db))
     con.execute("create table cookies (host_key text, name text, encrypted_value blob)")
-    con.execute("insert into cookies values (?,?,?)",
-                (".doubao.com", "sessionid", b"v10" + b"N" * 12 + b"stale"))
+    for host, name, value in rows:
+        con.execute("insert into cookies values (?,?,?)",
+                    (host, name, encrypt_chrome_mac_v10(value.encode(), FAKE_MAC_PW,
+                                                        preamble=16)))
     con.commit()
     con.close()
     return root
 
 
 class TestMacPlatformBranch:
-    """mac: 文件解密如实报 UNSUPPORTED,链路只走 CDP(见 NOTE-04)。"""
-
-    def test_decrypt_unsupported_mentions_cdp_guidance(self, tmp_path, monkeypatch):
-        self._patch_mac(monkeypatch)
-        root = _make_mac_user_data(tmp_path)
-        with pytest.raises(cookies_mod.DoubaoCookieError) as exc:
-            cookies_mod.load_cookie_header(root)
-        msg = str(exc.value)
-        assert "macOS" in msg and "CDP" in msg
-        assert "remote-debugging-port" in msg  # 指引可执行
+    """mac: Keychain + 魔改 v10 文件解密(2026-11-22 真机 57/57 条 cookie 可解)。"""
 
     @staticmethod
     def _patch_mac(monkeypatch):
         """mac 分支跨平台可跑: 布局常量在 import 时按本机平台定死,
         测试必须连同布局一起 patch(否则 Windows 上跑 mac 用例会找 Windows 路径)。"""
         monkeypatch.setattr(cookies_mod, "IS_WINDOWS", False)
+        monkeypatch.setattr(cookies_mod, "IS_MACOS", True)
         monkeypatch.setattr(cookies_mod, "COOKIES_REL",
                             Path("Default") / "Cookies")
         monkeypatch.setattr(cookies_mod, "_PROFILES_GLOB", "Profile */Cookies")
+        monkeypatch.setattr(cookies_mod, "read_password",
+                            lambda service, account: FAKE_MAC_PW)
         monkeypatch.setattr(cookies_mod, "cookies_via_cdp", lambda port=None: None)
         monkeypatch.setattr(cookies_mod.cdp, "probe", lambda port=None: False)
 
-    def test_cdp_live_cookies_supply_session(self, tmp_path, monkeypatch):
+    @staticmethod
+    def _deny_keychain(monkeypatch):
+        """模拟用户在钥匙串授权框点了拒绝。"""
+        def deny(service, account):
+            raise KeychainError("用户拒绝访问")
+
+        monkeypatch.setattr(cookies_mod, "read_password", deny)
+
+    def test_file_decrypt_builds_cookie_header(self, tmp_path, monkeypatch):
+        self._patch_mac(monkeypatch)
+        header = cookies_mod.load_cookie_header(_make_mac_user_data(tmp_path))
+        assert "sessionid=%s" % SID in header
+        assert "uid_tt=%s" % UID_TT in header
+
+    def test_mac_decrypt_keeps_short_value(self, tmp_path, monkeypatch):
+        """短值原样解出: macOS 明文没有 Windows 那个 32 字节应用层前缀。"""
+        self._patch_mac(monkeypatch)
+        root = _make_mac_user_data(tmp_path, [
+            (".doubao.com", "sessionid", "short"),
+            (".doubao.com", "sid_tt", "s2"),
+            (".doubao.com", "uid_tt", "u2"),
+        ])
+        assert "sessionid=short" in cookies_mod.load_cookie_header(root)
+
+    def test_keychain_denied_still_uses_cdp(self, tmp_path, monkeypatch):
+        self._patch_mac(monkeypatch)
+        self._deny_keychain(monkeypatch)
+        live = {"sessionid": "live-sid", "sid_tt": "live-tt", "uid_tt": "live-uid"}
+        monkeypatch.setattr(cookies_mod, "cookies_via_cdp", lambda port=None: live)
+        header = cookies_mod.load_cookie_header(_make_mac_user_data(tmp_path))
+        assert "sessionid=live-sid" in header
+
+    def test_keychain_denied_without_cdp_reports_keychain(self, tmp_path, monkeypatch):
+        self._patch_mac(monkeypatch)
+        self._deny_keychain(monkeypatch)
+        with pytest.raises(cookies_mod.DoubaoCookieError) as exc:
+            cookies_mod.load_cookie_header(_make_mac_user_data(tmp_path))
+        msg = str(exc.value)
+        assert "两个读取通道均失败" in msg and "拒绝访问" in msg
+        assert "始终允许" in msg  # 给出可执行的补救动作
+
+    def test_linux_does_not_pretend_mac_decrypt(self, tmp_path, monkeypatch):
+        self._patch_mac(monkeypatch)
+        monkeypatch.setattr(cookies_mod, "IS_MACOS", False)
+        with pytest.raises(cookies_mod.DoubaoCookieError) as exc:
+            cookies_mod.load_cookie_header(_make_mac_user_data(tmp_path))
+        assert "Keychain" not in str(exc.value)
+
+    def test_cdp_live_cookies_win_over_stale_file(self, tmp_path, monkeypatch):
         self._patch_mac(monkeypatch)
         live = {"sessionid": "live-sid", "sid_tt": "live-tt", "uid_tt": "live-uid"}
         monkeypatch.setattr(cookies_mod, "cookies_via_cdp", lambda port=None: live)
-        root = _make_mac_user_data(tmp_path)
+        root = _make_mac_user_data(tmp_path, [(".doubao.com", "sessionid", "stale")])
         header = cookies_mod.load_cookie_header(root)
         assert "sessionid=live-sid" in header
-        assert "stale" not in header  # 文件库的旧值不参与
+        assert "stale" not in header  # CDP 实时值覆盖文件库旧会话
 
-    def test_doctor_reports_unsupported_honestly(self, tmp_path, monkeypatch):
+    def test_doctor_reports_mac_decrypt_supported(self, tmp_path, monkeypatch):
         self._patch_mac(monkeypatch)
         root = _make_mac_user_data(tmp_path)
         report = cookies_mod.doctor_report(root)
-        assert report["file_decrypt_supported"] is False
+        assert report["file_decrypt_supported"] is True
         # mac 布局被正确探测(分隔符按本机平台,比较时归一为 /)
         assert [Path(s).as_posix() for s in report["cookie_dbs"]] == ["Default/Cookies"]
-        assert report["session_ok"] is False
-        assert "CDP" in report["session_error"]
+        assert report["session_ok"] is True
 
     def test_default_dir_on_mac_has_no_user_data_layer(self, tmp_path, monkeypatch):
         monkeypatch.setattr(cookies_mod, "IS_WINDOWS", False)

@@ -17,10 +17,15 @@
 - macOS 目录布局与 Windows 不同: 数据目录就是
   ``~/Library/Application Support/Doubao`` 本身(无 "User Data" 层),
   Cookie 库在 ``Default/Cookies`` / ``Profile N/Cookies``(无 ``Network/`` 子层);
-- macOS 的 Keychain 密钥(``Doubao Browser Safe Storage``)可读,但 cookie
-  值的加密是魔改 os_crypt(密文带应用层头,黑盒穷尽约 300 组合无一命中)——
-  文件解密如实报 UNSUPPORTED,mac 链路只走 CDP;
-- 仅 Windows 可文件解密(DPAPI);其他平台不做静默兜底。
+- macOS 的加密是**魔改版 Chromium mac os_crypt**: ``v10`` 前缀后多插 16 字节
+  会话头,IV 明写在头之后的 16 字节里(标准 Electron safeStorage 用固定 16 个
+  空格当 IV、不占位),密文从第 35 字节起;密钥派生与标准一致——Keychain 条目
+  ``Doubao Browser Safe Storage`` 的原始密码经 PBKDF2-HMAC-SHA1(saltysalt, 1003)
+  取 16 字节。2026-11-22 实测本机 57/57 条 cookie 全解出,明文即最终值
+  (没有 Windows 那个 32 字节应用层前缀);
+- macOS 首次读密钥会弹一次系统授权,选「始终允许」后 launchd 无人运行也能取用;
+- 文件解密两平台都支持(Windows DPAPI+GCM / macOS Keychain+CBC);
+  Linux 等其他平台不做静默兜底。
 """
 
 from __future__ import annotations
@@ -36,9 +41,14 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from auto_signin_kit.core.adapters.platform_info import IS_WINDOWS
+from auto_signin_kit.core.adapters.mac_keychain import (
+    KeychainError,
+    decrypt_chrome_mac_v10,
+    read_password,
+)
+from auto_signin_kit.core.adapters.platform_info import IS_MACOS, IS_WINDOWS
 from auto_signin_kit.core.adapters.win_dpapi import DecryptError, decrypt_gcm, unprotect
-from auto_signin_kit.core.errors import AutoSignInKitError
+from auto_signin_kit.core.errors import AdapterError, AutoSignInKitError
 from auto_signin_kit.domains.client_signin.apps.doubao_cn import cdp
 from auto_signin_kit.domains.client_signin.apps.doubao_cn.cdp import cookies_via_cdp
 
@@ -56,13 +66,19 @@ REQUIRED_COOKIES = ("sessionid", "sid_tt", "uid_tt")
 APP_LAYER_VALUE_PREFIX = 32
 #: CDP 调试端口兜底(DOUBAO_CDP_PORT 优先);客户端须带 --remote-debugging-port 启动。
 DEFAULT_CDP_PORT = 9222
-#: 非 Windows 平台的如实结论 + CDP 指引(不做假支持)。
-MAC_DECRYPT_UNSUPPORTED = (
-    "macOS 豆包客户端的 Cookie 加密为魔改 Chromium os_crypt(密文带应用层头,"
-    "黑盒穷尽失败),暂不支持文件库解密;可走 CDP 兜底: 完全退出豆包后执行 "
-    'DOUBAO_CDP_PORT=9223 "/Applications/Doubao.app/Contents/Helpers/'
-    'Doubao Browser.app/Contents/MacOS/Doubao Browser" --remote-debugging-port=9223'
-)
+#: macOS 文件解密的取钥参数(2026-11-22 实测 57/57 条 cookie 可解)。
+MAC_KEYCHAIN_SERVICE = "Doubao Browser Safe Storage"
+MAC_KEYCHAIN_ACCOUNT = "Doubao Browser"
+#: 魔改 v10 在 ``v10`` 前缀后插入的会话头长度;IV 紧随其后占一个分组。
+MAC_V10_PREAMBLE = 16
+
+
+def file_decrypt_supported() -> bool:
+    """本机是否支持 Cookie 文件库解密(Windows DPAPI / macOS Keychain)。
+
+    平台常量在函数内读取,测试可 monkeypatch;Linux 返回 False,只走 CDP。
+    """
+    return bool(IS_WINDOWS or IS_MACOS)
 
 
 class DoubaoCookieError(AutoSignInKitError):
@@ -90,7 +106,7 @@ def _copy_locked_file(src: Path, dst: Path) -> None:
 
     Windows 用 CreateFileW 带 FILE_SHARE_READ|WRITE|DELETE 打开;打不开
     (锁更严/权限不足)抛 ``DoubaoCookieError``,由上层如实报告——不静默跳过。
-    POSIX 没有强制文件锁,普通读即可;真机非 Windows 会在 DPAPI 解密处显式报错。
+    POSIX 没有强制文件锁,普通读即可(macOS 的登录态实测运行中也在盘上)。
     """
     if not IS_WINDOWS:
         dst.parent.mkdir(parents=True, exist_ok=True)
@@ -159,18 +175,44 @@ def _aes_key(local_state_path: Path) -> bytes:
             "DPAPI 解密密钥失败(须以登录豆包的同一 Windows 用户运行): %s" % exc) from exc
 
 
-def _decrypt_cookie_value(aes_key: bytes, encrypted: bytes) -> str | None:
-    """解单个 cookie 值;非 v10/解密失败返回 None(跳过,不中断整批)。"""
+def _mac_password() -> str:
+    """从 Keychain 取豆包浏览器内核的 os_crypt 密码(原始字符串,不 base64 解码)。"""
+    try:
+        return read_password(MAC_KEYCHAIN_SERVICE, MAC_KEYCHAIN_ACCOUNT)
+    except KeychainError as exc:
+        raise DoubaoCookieError(
+            "Keychain 取不到豆包密钥(%s): 首次运行需在 macOS 授权框选「始终允许」,"
+            "或在钥匙串访问里把 /usr/bin/security 加入 %s 的访问控制列表"
+            % (exc, MAC_KEYCHAIN_SERVICE)) from exc
+
+
+def _file_secret(user_data_dir: Path) -> bytes | str:
+    """文件解密用的平台密钥料: Windows 是 AES-256 key,macOS 是 Keychain 密码。"""
+    if IS_WINDOWS:
+        return _aes_key(user_data_dir / LOCAL_STATE_REL)
+    return _mac_password()
+
+
+def _decrypt_cookie_value(secret: bytes | str, encrypted: bytes) -> str | None:
+    """解单个 cookie 值;非 v10/解不开返回 None(跳过这条,不中断整批)。
+
+    两条链路的明文形状不同: Windows 解出后带 32 字节应用层前缀要剥,
+    macOS 的明文就是最终值(见模块 docstring)。
+    """
     if not encrypted.startswith(b"v10"):
         return None
-    nonce, blob = encrypted[3:15], encrypted[15:]
     try:
-        plain = decrypt_gcm(aes_key, nonce, blob)
-    except DecryptError:
+        if IS_WINDOWS:
+            plain = decrypt_gcm(secret, encrypted[3:15], encrypted[15:])  # type: ignore[arg-type]
+            if len(plain) <= APP_LAYER_VALUE_PREFIX:
+                return None
+            plain = plain[APP_LAYER_VALUE_PREFIX:]
+        else:
+            plain = decrypt_chrome_mac_v10(  # type: ignore[arg-type]
+                encrypted, secret, preamble=MAC_V10_PREAMBLE)
+    except AdapterError:
         return None
-    if len(plain) <= APP_LAYER_VALUE_PREFIX:
-        return None
-    value = plain[APP_LAYER_VALUE_PREFIX:].decode("utf-8", "replace")
+    value = plain.decode("utf-8", "replace")
     return value if value and value.isprintable() else None
 
 
@@ -182,7 +224,7 @@ def _candidate_dbs(user_data_dir: Path) -> list[Path]:
     return [p for p in candidates if p.exists()]
 
 
-def _read_db(db_path: Path, aes_key: bytes) -> dict[str, str]:
+def _read_db(db_path: Path, secret: bytes | str) -> dict[str, str]:
     """读单库并解密;库被锁/不存在抛 ``DoubaoCookieError``。"""
     dst = Path(tempfile.gettempdir()) / "auto-signin-kit-doubao-cookies.db"
     try:
@@ -207,7 +249,7 @@ def _read_db(db_path: Path, aes_key: bytes) -> dict[str, str]:
     # 先收全量解密结果,再按"域级('.'开头)cookie 优先"选同名者
     decrypted: list[tuple[str, str, str]] = []
     for host, name, encrypted in rows:
-        value = _decrypt_cookie_value(aes_key, bytes(encrypted))
+        value = _decrypt_cookie_value(secret, bytes(encrypted))
         if value:
             decrypted.append((host, name, value))
     pairs: dict[str, str] = {}
@@ -246,17 +288,21 @@ def load_cookie_header(user_data_dir: Path | None = None,
             "Cookie 库不存在(豆包客户端未安装或未登录过?): %s" % root)
     merged: dict[str, str] = {}
     errors: list[str] = []
-    if IS_WINDOWS:
-        # 文件解密只有 Windows 支持(DPAPI);其他平台不假装能解,只走 CDP。
-        key = _aes_key(root / LOCAL_STATE_REL)
-        for db_path in candidates:
-            try:
-                pairs = _read_db(db_path, key)
-            except DoubaoCookieError as exc:
-                errors.append("%s: %s" % (db_path.parent.parent.name, exc))
-                continue
-            for name, value in pairs.items():
-                merged.setdefault(name, value)
+    if file_decrypt_supported():
+        # Windows 取 Local State 的 DPAPI 密钥,macOS 取 Keychain 密码。取钥失败
+        # 记进 errors 而不是直接抛: CDP 通道可能仍可用(如钥匙串未授权)。
+        try:
+            secret = _file_secret(root)
+            for db_path in candidates:
+                try:
+                    pairs = _read_db(db_path, secret)
+                except DoubaoCookieError as exc:
+                    errors.append("%s: %s" % (db_path.parent.parent.name, exc))
+                    continue
+                for name, value in pairs.items():
+                    merged.setdefault(name, value)
+        except DoubaoCookieError as exc:
+            errors.append(str(exc))
     # 总是尝试 CDP: 文件库可能持有"格式有效但已被服务端判过期"的旧会话
     # (实测: 更新客户端重登后 Default 仍是旧 sessionid,服务端回"登录已过期"),
     # CDP 可达时实时值一定是最权威的;客户端未带调试端口时 1 秒即返回 None。
@@ -273,21 +319,25 @@ def load_cookie_header(user_data_dir: Path | None = None,
             "CDP 已连通(端口 %s)但未取到完整登录态(缺 %s): 调试端口上没有打开的"
             " doubao 页面(请在豆包客户端内保持在已登录界面),或 CDP 会话查询失败"
             % (port, missing_str))
-    if not IS_WINDOWS:
-        raise DoubaoCookieError(
-            "%s (CDP 端口 %s 不可达,缺 %s)"
-            % (MAC_DECRYPT_UNSUPPORTED, port, missing_str))
     if errors:
         # 双通道均失败: 把两边的真实错误原样抛出,不做兜底包装。
         raise DoubaoCookieError(
-            "登录态两个读取通道均失败——①文件库: %s;②CDP: 调试端口 %s 不可达"
-            "(豆包未带 --remote-debugging-port 启动)。客户端运行期间登录态只在内存:"
-            "用桌面快捷方式 Doubao-signin.lnk 重启豆包(自带调试端口),或托盘右键"
-            "完全退出豆包让 Cookie 落盘后重试" % ("; ".join(errors), port))
+            "登录态两个读取通道均失败——①文件库: %s;②CDP: 调试端口 %s 不可达%s"
+            % ("; ".join(errors), port, _channel_hint()))
     # 文件解密成功但缺字段: 磁盘上的登录态确实不完整(过期/未登录)。
     raise DoubaoCookieError(
         "登录态不完整: 缺 %s(文件库解密成功但没有这些字段,磁盘登录态已过期:"
         "重新登录豆包客户端后重试)" % missing_str)
+
+
+def _channel_hint() -> str:
+    """双通道均失败时的补救指引,按平台分派(不写不存在的能力)。"""
+    if IS_WINDOWS:
+        return ("(豆包未带 --remote-debugging-port 启动)。客户端运行期间登录态只在"
+                "内存: 用桌面快捷方式 Doubao-signin.lnk 重启豆包(自带调试端口),"
+                "或托盘右键完全退出豆包让 Cookie 落盘后重试")
+    return ("(豆包未带 --remote-debugging-port 启动)。macOS 文件库一般可直接解密,"
+            "解不开通常是钥匙串未授权或客户端从未登录过")
 
 
 def cdp_available(cdp_port: int | None = None) -> bool:
@@ -317,7 +367,7 @@ def doctor_report(user_data_dir: Path | None = None,
     dbs = _candidate_dbs(root)
     checks: dict[str, Any] = {
         "user_data_dir": str(root),
-        "file_decrypt_supported": IS_WINDOWS,
+        "file_decrypt_supported": file_decrypt_supported(),
         "local_state_exists": (root / LOCAL_STATE_REL).exists(),
         "cookie_dbs": [str(p.relative_to(root)) for p in dbs],
         "cookie_db_locked": [str(p.relative_to(root)) for p in dbs if _db_locked(p)],

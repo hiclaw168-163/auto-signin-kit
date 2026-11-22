@@ -13,7 +13,7 @@
 | **WorkBuddy / CodeBuddy 系** | 每日签到领积分;成长中心活跃保底(没对话就自动补一条,活跃天数不断);Buddy 旅行礼物、派 Buddy、开盲盒、领任务、连登兑换、断登补签等活动全覆盖 |
 | **Qoder CN** | 活动窗口内自动领取 Credits(幂等,重复跑不多领) |
 | **Trae CN** | 每日签到领 Credits(1024 活动限流期自动多轮重试) |
-| **豆包电脑版 / 豆包工作** | 签到领额度(每日 200、周一翻倍、30 天累计 8800);直接解密客户端本地会话,幂等可重跑(仅 Windows) |
+| **豆包电脑版 / 豆包工作** | 签到领额度(每日 200、周一翻倍、30 天累计 8800);直接解密客户端本地会话,幂等可重跑(Windows / macOS) |
 
 - **一次配置,每天自动跑** — 内置 `schedule` 域把签到命令注册成系统级定时任务
   (Windows 任务计划程序 / macOS launchd / Linux crontab),`schedule install` 之后无需再管
@@ -307,7 +307,7 @@ src/auto_signin_kit/
     ├── workbuddy/               # 签到 + 成长中心(旅行/任务/补登/兑换/盲盒)
     ├── qoder/                   # 每日 Credits(活动查询/领取/设备风控头)
     ├── trae/                    # 每日签到(status/claim,SS_AES 凭据解锁)
-    ├── doubao/                  # 豆包签到领额度(Cookie 解密 + CDP 兜底,仅 Windows)
+    ├── doubao/                  # 豆包签到领额度(Win DPAPI+GCM / mac Keychain+CBC,CDP 兜底)
     └── schedule/                # 定时调度: 注册/注销/查看每日自动任务
 
 src/auto_signin_kit/core/store.py  # SQLite 签到台账: 每日状态视图/运行明细/冗余清理
