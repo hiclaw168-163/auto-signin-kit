@@ -7,7 +7,8 @@
 - macOS: ``/Applications/Doubao.app``(或 ``~/Applications``)的
   ``Contents/Info.plist`` 里 ``CFBundleShortVersionString``;
 - Windows: 卸载注册表 ``DisplayVersion``(由安装器维护,已封装在
-  ``core.adapters.client_discovery``);
+  ``core.adapters.client_discovery``);DisplayName 是中文「豆包」(注册表 key
+  名才是 ``Doubao``),匹配式必须同时认两者,只按 ``Doubao`` 会漏掉本机安装项;
 - 都读不到就**显式报错**,不静默沿用旧值——旧值正是故障本身。
 
 配置 ``client_version`` 可手动覆盖(客户端不在标准路径、或想压测某个版本时)。
@@ -25,6 +26,9 @@ from auto_signin_kit.core.errors import ConfigError
 
 #: macOS 应用包名(独立安装器落盘为 Doubao.app)。
 MAC_BUNDLE = "Doubao.app"
+#: 卸载注册表 DisplayName 匹配式: 本机实测是中文「豆包」(注册表 key 名才是
+#: Doubao),同时认两者,只按 Doubao 会漏掉本机安装项(2026-11-22)。
+DISPLAY_NAME_RE = r"豆包|Doubao"
 #: 主.次[.修订];服务端只认这个形状,别把 5.74.15 这类运行时版本传进来。
 _VERSION_RE = re.compile(r"^(\d{1,2})\.(\d{1,2})(?:\.(\d{1,2}))?$")
 
@@ -46,7 +50,7 @@ def installed_version() -> str | None:
     """本机安装的豆包客户端版本;读不到如实返回 None(不猜)。"""
     if IS_MACOS:
         return _mac_version()
-    return client_discovery.registry_display_version(r"^Doubao")
+    return client_discovery.registry_display_version(DISPLAY_NAME_RE)
 
 
 def version_to_code(version: str) -> int | None:

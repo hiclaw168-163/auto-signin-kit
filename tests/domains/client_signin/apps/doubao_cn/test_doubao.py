@@ -426,6 +426,22 @@ class TestClientVersion:
         with pytest.raises(ConfigError, match="client_version"):
             cv_mod.resolve(None)
 
+    def test_installed_version_matches_chinese_display_name(self, monkeypatch):
+        """本机卸载条目 DisplayName 是中文「豆包」(注册表 key 名才是 Doubao)。
+
+        只按 ``Doubao`` 匹配会漏掉本机安装项 → version_code 读不到
+        (2026-11-22 实测);匹配式须同时认两者。
+        """
+        from auto_signin_kit.core.adapters import client_discovery
+
+        entry = {"DisplayName": "豆包", "DisplayVersion": "2.37.12"}
+        monkeypatch.setattr(cv_mod, "IS_MACOS", False)
+        monkeypatch.setattr(client_discovery, "IS_WINDOWS", True)
+        monkeypatch.setattr(
+            "auto_signin_kit.core.adapters.win_registry.uninstall_entries",
+            lambda: [lambda field: entry.get(field)])
+        assert cv_mod.installed_version() == "2.37.12"
+
 
 def _config(tmp_path, **over):
     """测试配置: 默认钉死 ``checkin_channel="http"``。

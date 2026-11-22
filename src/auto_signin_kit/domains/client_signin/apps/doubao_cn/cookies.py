@@ -282,7 +282,8 @@ def load_cookie_header(user_data_dir: Path | None = None,
         raise DoubaoCookieError(
             "登录态两个读取通道均失败——①文件库: %s;②CDP: 调试端口 %s 不可达"
             "(豆包未带 --remote-debugging-port 启动)。客户端运行期间登录态只在内存:"
-            "用桌面快捷方式 Doubao-signin.lnk 重启豆包(自带调试端口),或托盘右键"
+            "运行 scripts\\doubao-signin-mode.bat 把豆包重启为签到模式(自带调试端口;"
+            "首次加 -InstallShortcut 可在桌面建 Doubao-signin.lnk),或托盘右键"
             "完全退出豆包让 Cookie 落盘后重试" % ("; ".join(errors), port))
     # 文件解密成功但缺字段: 磁盘上的登录态确实不完整(过期/未登录)。
     raise DoubaoCookieError(
