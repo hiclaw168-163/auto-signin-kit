@@ -53,7 +53,7 @@ class _ENTRY(ctypes.Structure):
     _fields_ = [
         ("dwSize", wt.DWORD), ("cntUsage", wt.DWORD),
         ("th32ProcessID", wt.DWORD), ("th32DefaultHeapID", ctypes.c_size_t),
-        ("th32ModuleID", ctypes.c_size_t), ("th32Threads", wt.DWORD),
+        ("th32ModuleID", wt.DWORD), ("th32Threads", wt.DWORD),
         ("th32ParentProcessID", wt.DWORD), ("pcPriClassBase", ctypes.c_long),
         ("dwFlags", wt.DWORD), ("szExeFile", ctypes.c_char * 260),
     ]
