@@ -10,29 +10,34 @@ from auto_signin_kit.domains.client_signin.apps.qoder.auth import (
     QoderAuthError,
     token_expired,
 )
+from auto_signin_kit.domains.client_signin.apps.qoder.profile import INTL, QoderProfile
 
 
-def run_doctor(auth_dir: str | None = None) -> tuple[dict, int]:
+def run_doctor(auth_dir: str | None = None, *, keychain_service: str = "",
+               profile: QoderProfile = INTL) -> tuple[dict, int]:
     """产出 ``doctor`` 结果;退出码 0/1/2 由 result 决定。
 
     ``auth_dir``(SPEC-12 P2): 具名账户的显式数据目录;给出时环境变量令牌
     不参与(体检的就是这个账户的登录态)。
+    ``keychain_service``(mac): 该账户的 Keychain 条目名,透传给登录态解析。
+    ``profile``: 客户端身份(体检哪个客户端的登录态与令牌变量)。
     """
     out: dict = {
         "result": "OK",
         "needs_attention": False,
         "token_source": "env",
         "online_checked": False,
-        "report": "使用环境变量 QODER_TOKEN（无法离线校验有效期）",
+        "report": "使用环境变量 %s（无法离线校验有效期）" % profile.env("TOKEN"),
     }
     import os
 
-    if auth_dir is None and os.environ.get("QODER_TOKEN"):
+    if auth_dir is None and os.environ.get(profile.env("TOKEN")):
         return out, 0
 
     out["token_source"] = "desktop"
     try:
-        sess = load_session_state(auth_dir)
+        sess = load_session_state(auth_dir, keychain_service=keychain_service,
+                                  profile=profile)
     except NoAuthError as exc:
         out.update({
             "result": "NO_AUTH", "needs_attention": True, "report": str(exc),

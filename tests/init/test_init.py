@@ -47,7 +47,9 @@ class TestRunInit:
         )
         assert "qoder" in result["disabled"]
         assert "qoder" not in result["enabled"]
-        assert not any(t["name"].startswith("Qoder") for t in result["installed"])
+        # 两版客户端是两个域: 关掉国际版只停它自己的任务,国内版另有一问
+        assert not any(t["name"] == "QoderDailyCredits" for t in result["installed"])
+        assert "qoder_cn" in result["enabled"]
 
     def test_unready_client_becomes_todo_not_failure(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Any

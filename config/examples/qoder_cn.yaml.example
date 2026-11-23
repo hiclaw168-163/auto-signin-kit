@@ -1,0 +1,14 @@
+# 复制为 config/domains/qoder_cn.local.yaml(不入库)后按需改
+base_url: https://openapi.qoder.com.cn
+log_empty: false
+budget_seconds: 240
+
+# 同版多账户(SPEC-12,可选): 一个客户端登了两个 Qoder 账号时用。
+# 两版客户端不是多账户——国内版是 qoder_cn 域,国际版是 qoder 域,各配各的。
+# 环境变量按身份分前缀: 本域认 QODER_CN_TOKEN / QODER_CN_AUTH_DIR /
+# QODER_CN_BASE_URL / QODER_CN_BUDGET_SECONDS(国际版是 QODER_*)。
+# accounts:
+#   - name: backup
+#     auth_dir: "D:/clients/qoder-cn-backup"
+#     # macOS 上 Keychain 条目名默认按数据目录名推导;客户端改名/换渠道包时显式指定:
+#     keychain_service: "Qoder CN App Safe Storage"

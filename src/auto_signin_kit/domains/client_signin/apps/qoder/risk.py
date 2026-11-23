@@ -26,6 +26,7 @@ from auto_signin_kit.core.adapters.platform_info import (
     machine_arch,
 )
 from auto_signin_kit.core.adapters.win_process import running_process_paths
+from auto_signin_kit.domains.client_signin.apps.qoder.profile import INTL, QoderProfile
 
 #: 组件相对各自安装根的位置(Windows 安装目录 / macOS .app 包内)。
 UMID_REL_PATH_WINDOWS = ("resources", "umid", "runtime-info.exe")
@@ -34,7 +35,8 @@ UMID_REL_PATH_MAC = ("Contents", "Resources", "umid", "runtime-info")
 #: "Qoder CN"/"Qoder" 的卸载登记名(仅用于扫 InstallLocation,只读)。
 _QODER_NAME_RE = r"Qoder(?:\s+CN)?(?:\s+\d+(?:\.\d+)*)?"
 
-_cache: dict[str, Any] = {"at": 0.0, "root": None, "headers": {}}
+#: 缓存键含客户端身份: 两版域同机跑时不能共用一份机器标识。
+_cache: dict[str, Any] = {"at": 0.0, "key": (None, INTL.app_code), "headers": {}}
 
 
 def _umid_roots() -> list[Path]:
@@ -72,12 +74,12 @@ def _umid_candidates() -> list[Path]:
     return [root.joinpath(*rel) for root in uniq]
 
 
-def _machine_id(auth_dir: str | None) -> str:
-    """auth.machine-id 优先用解出登录态的那份数据目录。"""
+def _machine_id(auth_dir: str | None, profile: QoderProfile = INTL) -> str:
+    """auth.machine-id 优先用解出登录态的那份数据目录,兜底只扫本身份的目录。"""
     candidates: list[Path] = []
     if auth_dir:
         candidates.append(Path(auth_dir))
-    candidates += [d for d in find_auth_dirs_safe() if d not in candidates]
+    candidates += [d for d in find_auth_dirs_safe(profile) if d not in candidates]
     for root in candidates:
         try:
             value = (root / "auth.machine-id").read_text(encoding="utf-8").strip()
@@ -88,12 +90,12 @@ def _machine_id(auth_dir: str | None) -> str:
     return ""
 
 
-def find_auth_dirs_safe() -> list[Path]:
+def find_auth_dirs_safe(profile: QoderProfile = INTL) -> list[Path]:
     """复用 auth.py 的目录发现,但不让它抛异常(纯辅助路径来源)。"""
     from auto_signin_kit.domains.client_signin.apps.qoder.auth import NoAuthError, find_auth_dirs
 
     try:
-        return find_auth_dirs()
+        return find_auth_dirs(profile)
     except NoAuthError:
         return []
 
@@ -128,10 +130,12 @@ def _platform_headers() -> dict[str, str]:
     return {}
 
 
-def risk_headers(auth_dir: str | None = None) -> dict[str, str]:
-    """组装设备风控头;结果按 (目录, 30 分钟) 缓存。"""
+def risk_headers(auth_dir: str | None = None,
+                 profile: QoderProfile = INTL) -> dict[str, str]:
+    """组装设备风控头;结果按 (身份, 目录, 30 分钟) 缓存。"""
     now = time.time()
-    if _cache["root"] == auth_dir and now - float(_cache["at"]) < 1800:
+    key = (auth_dir, profile.app_code)
+    if _cache["key"] == key and now - float(_cache["at"]) < 1800:
         return dict(_cache["headers"])
 
     headers = _platform_headers()
@@ -157,11 +161,11 @@ def risk_headers(auth_dir: str | None = None) -> dict[str, str]:
             if value:
                 headers[dst] = str(value)
 
-    mid = _machine_id(auth_dir)
+    mid = _machine_id(auth_dir, profile)
     if mid:
         headers["Cosy-MachineId"] = mid
 
-    _cache.update({"at": now, "root": auth_dir, "headers": dict(headers)})
+    _cache.update({"at": now, "key": key, "headers": dict(headers)})
     return headers
 
 

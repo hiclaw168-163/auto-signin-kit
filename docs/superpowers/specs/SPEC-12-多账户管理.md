@@ -15,6 +15,10 @@
 > cdp_port,语义由各域解释),kit 钩子 build/doctor 增加 `account` 形参;
 > 具名账户只认显式路径并**隔离全局环境变量令牌**(QODER_TOKEN/TRAE_TOKEN/
 > WORKBUDDY_AUTH_FILE 是 default 户的,混用会拿 A 户令牌签 B 户的到)。
+> 2026-11-22 边界修订: Qoder 国际版与国内版**不用账户**区分,拆成两个域
+> `qoder` / `qoder_cn`(见 `apps/qoder/profile.py`)——两版客户端在应用管理里是
+> 两行、各自一条定时任务,账户只用于**同一版客户端**的多份登录态(如 work 与
+> personal 都登在国际版上)。
 > P3 实现: /api/accounts(登记 × 逐账户统计合并)、/api/accounts/enabled
 > (只改台账登记态,调度启停真相在 YAML 配置,面板如实提示)、
 > /api/run 带 account(不同账户可并发,同账户同动作互斥)、前端"账户管理"页。

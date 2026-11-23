@@ -2,11 +2,14 @@
 
 凭据文件 ``auth.v1.dat`` 两平台同名但解锁链不同(2026-11-02 mac 实测):
 
-- Windows: 数据目录 ``%APPDATA%\\com.qodercn.app*``;密钥在 ``Local State``
+- Windows: 数据目录 ``%APPDATA%\\<profile.auth_globs>``;密钥在 ``Local State``
   的 ``os_crypt.encrypted_key``,DPAPI + AES-256-GCM(见 win_dpapi)
-- macOS: 数据目录 ``~/Library/Application Support/com.qoder.app*``;无
-  ``Local State``,密钥在 Keychain 条目(service=Qoder App Safe Storage),
+- macOS: 数据目录 ``~/Library/Application Support/<profile.auth_globs>``;无
+  ``Local State``,密钥在 Keychain 条目(条目名跟着目录名认出是哪版客户端),
   PBKDF2(saltysalt) 派生后 AES-128-CBC(见 mac_keychain)
+
+国际版与国内版是**两个客户端**(见 :mod:`profile` 的两个身份),本模块的目录发现
+与环境变量一律按 profile 取值——国际版域不会解到国内版的登录态。
 
 CN 版与国际版客户端协议同构(2026-11-02 实测 openapi.qoder.sh 同一套
 campaigns/claim 接口),只差 API 域;见 ``detect_api_base``。
@@ -31,15 +34,14 @@ from auto_signin_kit.core.adapters.platform_info import IS_MACOS
 from auto_signin_kit.core.adapters.win_dpapi import DecryptError, decrypt_gcm, unprotect
 from auto_signin_kit.core.errors import AdapterError
 from auto_signin_kit.core.kit.tokens import token_expired as _core_token_expired
+from auto_signin_kit.domains.client_signin.apps.qoder.profile import (
+    INTL,
+    QoderProfile,
+    profile_of_dir,
+)
 
-AUTH_DIR_GLOB = "com.qodercn.app*"
-AUTH_DIR_GLOB_MAC = "com.qoder.app*"
 AUTH_FILE = "auth.v1.dat"
 LOCAL_STATE_FILE = "Local State"
-
-#: mac 客户端 Keychain 条目(Electron safeStorage 按 app.name 生成,实测固定)。
-KEYCHAIN_SERVICE = "Qoder App Safe Storage"
-KEYCHAIN_ACCOUNT = "Qoder App Key"
 
 #: 活动固定按 UTC+8 刷新,与运行机器的本地时区无关。
 TZ_CN = timezone(timedelta(hours=8))
@@ -76,17 +78,16 @@ def _default_roots() -> list[Path]:
     return [appdata]
 
 
-def find_auth_dirs() -> list[Path]:
-    """扫描 Qoder 数据目录(QODER_AUTH_DIR 覆盖;多目录按最近修改排序)。
+def find_auth_dirs(profile: QoderProfile) -> list[Path]:
+    """扫描该身份的数据目录(``<前缀>_AUTH_DIR`` 覆盖;多目录按最近修改排序)。
 
-    Windows: ``%APPDATA%\\com.qodercn.app*``(CN 版);macOS: 国际版实测为
-    ``~/Library/Application Support/com.qoder.app*``,CN mac 版按 bundle id
-    命名惯例两模式都扫。
+    模式取自 :attr:`QoderProfile.auth_globs`: 两版客户端各扫各的目录,
+    国际版域扫不到国内版,反之也一样——落错客户端比没签到严重。
     """
-    override = os.environ.get("QODER_AUTH_DIR")
+    override = os.environ.get(profile.env("AUTH_DIR"))
     if override:
         return [Path(override).expanduser()]
-    patterns = [AUTH_DIR_GLOB, AUTH_DIR_GLOB_MAC] if IS_MACOS else [AUTH_DIR_GLOB]
+    patterns = list(profile.auth_globs)
     try:
         hits: list[Path] = []
         for root in _default_roots():
@@ -99,16 +100,16 @@ def find_auth_dirs() -> list[Path]:
         return []
 
 
-def is_installed() -> bool:
-    """客户端是否就绪: ``QODER_TOKEN`` 可直连,或数据目录存在(已装且登录过)。"""
-    if os.environ.get("QODER_TOKEN"):
+def is_installed(profile: QoderProfile) -> bool:
+    """客户端是否就绪: ``<前缀>_TOKEN`` 可直连,或数据目录存在(已装且登录过)。"""
+    if os.environ.get(profile.env("TOKEN")):
         return True
-    return any(root.is_dir() for root in find_auth_dirs())
+    return any(root.is_dir() for root in find_auth_dirs(profile))
 
 
-def client_info() -> dict:
+def client_info(profile: QoderProfile) -> dict:
     """客户端档案(账户表登记用): 数据目录。不可得返回空 dict,如实上报。"""
-    for root in find_auth_dirs():
+    for root in find_auth_dirs(profile):
         if root.is_dir():
             return {"data_dir": str(root)}
     return {}
@@ -119,13 +120,13 @@ def token_expired(sess: dict) -> bool:
     return _core_token_expired(sess, "expiresAt")
 
 
-def _read_store(root: Path) -> dict:
+def _read_store(root: Path, *, keychain_service: str = "") -> dict:
     raw = (root / AUTH_FILE).read_bytes()
     if raw[:3] != b"v10":
         raise AuthFormatError("%s 格式未知（%r）" % (AUTH_FILE, raw[:3]))
     if len(raw) < 3 + 12 + 16 + 2:
         raise AuthFormatError("%s 过短，可能正被客户端改写" % AUTH_FILE)
-    plain = _decrypt_raw(raw, root)
+    plain = _decrypt_raw(raw, root, keychain_service=keychain_service)
     try:
         sess = json.loads(plain.decode("utf-8"))
     except (UnicodeDecodeError, ValueError) as exc:
@@ -138,11 +139,29 @@ def _read_store(root: Path) -> dict:
     return sess
 
 
-def _decrypt_raw(raw: bytes, root: Path) -> bytes:
+def _keychain_account(service: str) -> str:
+    """Electron safeStorage 实测: 配对的 acct 把 " Safe Storage" 换成 " Key"。
+
+    不是该后缀的自定义条目名按 Chromium 惯例走空 acct(与
+    :mod:`core.declarative.chromium_cookies._mac_key` 同一口径)。
+    """
+    suffix = " Safe Storage"
+    return service[: -len(suffix)] + " Key" if service.endswith(suffix) else ""
+
+
+def _mac_keychain_pair(data_dir: Path, keychain_service: str = "") -> tuple[str, str]:
+    """``(service, acct)``: 账户配置的条目名优先,缺省按目录名认出哪版客户端。"""
+    service = ((keychain_service or "").strip()
+               or profile_of_dir(data_dir).mac_keychain_service)
+    return service, _keychain_account(service)
+
+
+def _decrypt_raw(raw: bytes, root: Path, *, keychain_service: str = "") -> bytes:
     """按平台解锁 auth.v1.dat(密文体从 v10 前缀之后)。"""
     if IS_MACOS:
+        service, account = _mac_keychain_pair(root, keychain_service)
         try:
-            password = mac_keychain.read_password(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
+            password = mac_keychain.read_password(service, account)
         except AdapterError as exc:
             raise AuthFormatError("Keychain 密钥读取失败：%s" % exc) from exc
         try:
@@ -160,12 +179,12 @@ def _decrypt_raw(raw: bytes, root: Path) -> bytes:
     return decrypt_gcm(key, raw[3:15], raw[15:])
 
 
-def _read_store_retry(root: Path, attempts: int = 3) -> dict:
+def _read_store_retry(root: Path, attempts: int = 3, *, keychain_service: str = "") -> dict:
     """客户端可能正在重写凭据,读到半截就短暂重试。"""
     last: Exception | None = None
     for index in range(attempts):
         try:
-            return _read_store(root)
+            return _read_store(root, keychain_service=keychain_service)
         except (ValueError, OSError, AuthFormatError, DecryptError) as exc:
             last = exc
             if index + 1 < attempts:
@@ -177,12 +196,14 @@ def _read_store_retry(root: Path, attempts: int = 3) -> dict:
     raise AuthFormatError("%s 读取失败（%s: %s）" % (AUTH_FILE, type(last).__name__, last))
 
 
-def load_session(auth_dir: str | None = None) -> dict:
+def load_session(auth_dir: str | None = None, *, keychain_service: str = "",
+                 profile: QoderProfile = INTL) -> dict:
     """读出可用登录态(Windows/macOS 双平台);失败给带 looked_in 的错误。
 
     ``auth_dir``(SPEC-12 P2): 具名账户的显式数据目录——只看这一个目录,
     不做全局扫描兜底(落错账户比没签到严重);目录不存在显式报错。
-    缺省(None)走 ``find_auth_dirs()`` 全链路,行为不变。
+    缺省(None)按 ``profile.auth_globs`` 扫描,不会扫到另一版客户端。
+    ``keychain_service``(mac): 该账户的 Keychain 条目名,缺省按数据目录名推导。
     """
     if auth_dir:
         root = Path(auth_dir).expanduser()
@@ -190,12 +211,12 @@ def load_session(auth_dir: str | None = None) -> dict:
             raise NoAuthError("账户数据目录不存在：%s" % root, [str(root)])
         dirs = [root]
     else:
-        dirs = find_auth_dirs()
+        dirs = find_auth_dirs(profile)
     looked_in = [str(d) for d in dirs]
     if not dirs:
-        where = ("~/Library/Application Support/" + AUTH_DIR_GLOB_MAC if IS_MACOS
-                 else "%APPDATA%\\..." + AUTH_DIR_GLOB)
-        raise NoAuthError("没找到 %s，请先安装并登录 Qoder 桌面端" % where, looked_in)
+        raise NoAuthError(
+            "没找到 %s 的数据目录（%s），请先安装并登录桌面端"
+            % (profile.display, ", ".join(profile.auth_globs)), looked_in)
     errors: list[str] = []
     saw_auth_file = False
     for root in dirs:
@@ -204,7 +225,7 @@ def load_session(auth_dir: str | None = None) -> dict:
             continue
         saw_auth_file = True
         try:
-            sess = _read_store_retry(root)
+            sess = _read_store_retry(root, keychain_service=keychain_service)
         except AuthFormatError as exc:
             errors.append("%s: %s" % (root.name, exc))
             continue
@@ -249,16 +270,19 @@ def detect_api_base(sess: dict | None) -> str | None:
     return None
 
 
-def resolve_token(auth_dir: str | None = None) -> tuple[str, dict | None]:
+def resolve_token(auth_dir: str | None = None, *, keychain_service: str = "",
+                  profile: QoderProfile = INTL) -> tuple[str, dict | None]:
     """令牌来源: 环境变量优先;否则解本地登录态。
 
-    ``auth_dir``(SPEC-12 P2): 具名账户显式数据目录——此时**跳过**全局
-    ``QODER_TOKEN`` 环境变量(那是 default 户的令牌,混用会拿 A 户令牌
-    签 B 户的到),只信该目录里的登录态。
+    ``auth_dir``(SPEC-12 P2): 具名账户显式数据目录——此时**跳过**环境变量
+    令牌(那是另一户的,混用会拿 A 户令牌签 B 户的到),只信该目录里的登录态。
+    ``keychain_service``(mac): 透传给 load_session 的 Keychain 条目名。
+    ``profile``: 用哪版客户端的令牌变量(``QODER_TOKEN`` / ``QODER_CN_TOKEN``)
+    与目录模式。
     """
     if auth_dir is None:
-        token = (os.environ.get("QODER_TOKEN") or "").strip()
+        token = (os.environ.get(profile.env("TOKEN")) or "").strip()
         if token:
             return token, None
-    sess = load_session(auth_dir)
+    sess = load_session(auth_dir, keychain_service=keychain_service, profile=profile)
     return sess["token"], sess

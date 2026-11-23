@@ -12,12 +12,13 @@ import json
 from typing import Any
 
 from auto_signin_kit.core.adapters.client_discovery import registry_display_version
+from auto_signin_kit.domains.client_signin.apps.doubao_cn.client_version import (
+    DISPLAY_NAME_RE,
+)
 from auto_signin_kit.domains.client_signin.apps.doubao_cn.cookies import (
     LOCAL_STATE_REL,
     default_user_data_dir,
 )
-
-_DISPLAY_NAME_RE = r"豆包|Doubao"
 
 
 def client_info() -> dict[str, Any] | None:
@@ -32,7 +33,7 @@ def client_info() -> dict[str, Any] | None:
     except (OSError, ValueError):
         pass  # Local State 缺失/损坏: 版本仍如实上报
     return {
-        "version": registry_display_version(_DISPLAY_NAME_RE),
+        "version": registry_display_version(DISPLAY_NAME_RE),
         "engine": engine,
         "data_dir": str(root),
     }

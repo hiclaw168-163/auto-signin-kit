@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 from typing import Any
 
 from auto_signin_kit.core.httpclient import Budget, RetryPolicy, call
 from auto_signin_kit.core.kit.budget import parse_budget as core_parse_budget
-from auto_signin_kit.core.logging import result_log_path
 from auto_signin_kit.domains.client_signin.apps.qoder.auth import resolve_token, token_expired
+from auto_signin_kit.domains.client_signin.apps.qoder.profile import INTL, QoderProfile
 
 BASE_HEADERS = {
     "Accept": "application/json",
@@ -72,52 +71,54 @@ class Api:
         )
 
 
-def log_path() -> Path:
-    """silent 模式日志路径;QODER_SIGNIN_LOG 覆盖,默认平台日志目录的 qoder.log。"""
-    return result_log_path("qoder", env_var="QODER_SIGNIN_LOG")
-
-
-def parse_budget(config: Any) -> tuple[float, str | None]:
-    """预算: QODER_BUDGET_SECONDS 优先;非法回落、越界夹到 240(PT5M 任务上限)。"""
+def parse_budget(config: Any, profile: QoderProfile = INTL) -> tuple[float, str | None]:
+    """预算: ``<前缀>_BUDGET_SECONDS`` 优先;非法回落、越界夹到 240(PT5M 任务上限)。"""
     default = config.budget_seconds or BUDGET_CEILING
     return core_parse_budget(
-        config.budget_seconds, default, BUDGET_CEILING, env_var="QODER_BUDGET_SECONDS")
+        config.budget_seconds, default, BUDGET_CEILING,
+        env_var=profile.env("BUDGET_SECONDS"))
 
 
-def load_session_state(auth_dir: str | None = None) -> dict:
+def load_session_state(auth_dir: str | None = None, *, keychain_service: str = "",
+                       profile: QoderProfile = INTL) -> dict:
     """从本地登录态解出令牌并登记脱敏;原始异常收拢为 QoderAuthError。
 
     ``auth_dir``(SPEC-12 P2): 具名账户的显式数据目录,透传给 load_session。
+    ``keychain_service``(mac): 该账户的 Keychain 条目名,透传给 load_session。
+    ``profile``: 客户端身份(国际版 / 国内版),决定扫哪版数据目录。
     """
     from auto_signin_kit.domains.client_signin.apps.qoder.auth import load_session
 
-    sess = load_session(auth_dir)
+    sess = load_session(auth_dir, keychain_service=keychain_service, profile=profile)
     token = sess.get("token")
     if isinstance(token, str):
         SENSITIVE.add(token)
     return sess
 
 
-def build_api(config: Any, auth_dir: str | None = None) -> tuple[Api, dict | None, str | None]:
+def build_api(config: Any, auth_dir: str | None = None, *, keychain_service: str = "",
+              profile: QoderProfile = INTL) -> tuple[Api, dict | None, str | None]:
     """组 Api: 令牌(环境变量优先) + 风控头;令牌过期返回 (api, sess, "EXPIRED")。
 
-    API 域优先级: QODER_BASE_URL > 登录态 authenticationContext 推导 >
+    API 域优先级: ``<前缀>_BASE_URL`` > 登录态 authenticationContext 推导 >
     配置 base_url——令牌只对签发它的端点有效,登录态推导放配置前面。
     ``auth_dir``(SPEC-12 P2): 具名账户显式数据目录,此时环境变量令牌被隔离。
+    ``keychain_service``(mac): 该账户的 Keychain 条目名(两版客户端各一份密钥)。
+    ``profile``: 客户端身份——决定令牌变量前缀、目录模式与风控头缓存键。
     """
-    token, sess = resolve_token(auth_dir)
+    token, sess = resolve_token(auth_dir, keychain_service=keychain_service, profile=profile)
     if isinstance(token, str):
         SENSITIVE.add(token)
     from auto_signin_kit.domains.client_signin.apps.qoder.auth import detect_api_base
 
-    base_url = (os.environ.get("QODER_BASE_URL") or detect_api_base(sess)
+    base_url = (os.environ.get(profile.env("BASE_URL")) or detect_api_base(sess)
                 or config.base_url)
     if sess is not None and token_expired(sess):
         return Api(token, base_url), sess, "EXPIRED"
     from auto_signin_kit.domains.client_signin.apps.qoder.risk import risk_headers
 
     # 兼容 Windows 与 macOS: 活动接口要求机器身份,两平台都按安装目录取组件。
-    risk = risk_headers(sess.get("_auth_dir")) if sess else {}
+    risk = risk_headers(sess.get("_auth_dir"), profile) if sess else {}
     api = Api(token, base_url, risk)
     if sess is not None and sess.get("expiresAt"):
         api.token_expires_at = sess.get("expiresAt")

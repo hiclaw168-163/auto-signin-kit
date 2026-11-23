@@ -1,0 +1,5 @@
+# qoder_cn 域(国内版)配置;对应 schema.py 的 QoderDomainConfig(extra=forbid)
+# 与国际版 qoder.yaml 是两个对等应用(本机两个客户端),协议同构、只差端点与凭据目录。
+base_url: https://openapi.qoder.com.cn
+log_empty: false
+budget_seconds: 240

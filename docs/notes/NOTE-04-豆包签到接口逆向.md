@@ -208,6 +208,11 @@ api 层,不能靠事后猜。
 
 UA 同步补了官方标识 `SamanthaDoubao/<version>`。
 
+**Windows 注册表 DisplayName 实测为中文「豆包」**(注册表 key 名才是
+`Doubao`),所以匹配式须同时认两者(`client_version.DISPLAY_NAME_RE =
+r"豆包|Doubao"`);只按 `Doubao` 会漏掉本机安装项,version_code 读不到
+即显式报错(2026-11-22 实测修复)。
+
 **但本机(2026-11-08)实测: 派生成 23508 后仍然 `710010702`。**当天的现场
 实验链否掉了"缺参数"这条假设:
 
@@ -225,3 +230,23 @@ UA 同步补了官方标识 `SamanthaDoubao/<version>`。
 结论: 参数缺失/版本号都不是本次失败的原因;`710010702` 是签到接口的兜底
 错误码,平台侧对"该账号"的签到动作判异常(活动落地页也为空)。需要区分
 "账号层面"还是"自动化可检测"时,让用户在客户端里**手工点**一次即可判定。
+
+## 5. Windows 使用指引(2026-11-22)
+
+Windows 豆包与 macOS 同构: 客户端运行期间登录态只在内存,且默认不带调试
+端口;此时 Cookie 库被独占锁定(WinError 32)、CDP 不可达,两个读取通道都
+拿不到会话。与 macOS 的差异是 cookie 落在
+`%LOCALAPPDATA%\Doubao\User Data\Default\Network\Cookies`,Python 侧能解密,
+但**文件被锁时同样读不到**。
+
+**签到模式启动器**: `scripts\doubao-signin-mode.bat`(双击或命令行),行为
+对齐 macOS 的 `doubao-signin-mode.command`:
+
+- 已带调试端口运行 → 提示不动它;
+- 普通模式运行 → 完全退出(优雅关闭,超时 `taskkill`)后带端口重启;
+- 未运行 → 直接带端口拉起。
+
+端口默认 9223,须与 `config\domains\doubao_cn.yaml` 的 `cdp_port` 一致,可用
+环境变量 `DOUBAO_CDP_PORT` 覆盖;加 `-InstallShortcut` 在桌面生成
+`Doubao-signin.lnk`(双击即启动签到模式)。
+

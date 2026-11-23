@@ -32,6 +32,10 @@ class AccountRef(BaseModel):
     user_data_dir: str | None = None
     #: doubao: 该账户客户端的 CDP 调试端口(多开时各一个 --remote-debugging-port)。
     cdp_port: int | None = Field(default=None, ge=1, le=65535)
+    #: macOS: 该客户端的 Keychain 条目名(``<App> Safe Storage``,qoder 域与声明式
+    #: Cookie 应用用)。放账户级而非域级: 同一台机器可同时装国际版与国内版,各一份
+    #: 密钥,域级只有一个位置放不下。留空 = 由数据目录名推导。
+    keychain_service: str = ""
 
 
 class DomainConfig(BaseModel):
