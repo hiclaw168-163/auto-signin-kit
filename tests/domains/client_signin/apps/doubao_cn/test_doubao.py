@@ -5,6 +5,8 @@ from __future__ import annotations
 import base64
 import json
 import sqlite3
+import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -323,6 +325,60 @@ class TestUiAction:
         assert uiaction_mod._pick_target(
             [{"type": "page", "url": "https://qoder.example/ide",
               "webSocketDebuggerUrl": "ws://foreign"}]) is None
+
+    def test_opens_activity_page_when_client_has_none(self, monkeypatch):
+        # 新版客户端已无常驻活动页入口: 找不到活动页要自己开,不能直接判失败
+        monkeypatch.setattr(uiaction_mod.cdp, "probe", lambda port=None: True)
+        monkeypatch.setattr(uiaction_mod, "_targets", lambda port: [
+            {"type": "page", "url": "doubao://doubao-chat/chat",
+             "webSocketDebuggerUrl": "ws://chat"}])
+        opened = []
+
+        def fake_open(port, wait=10.0):
+            opened.append(port)
+            return
+
+        monkeypatch.setattr(uiaction_mod, "open_activity_page", fake_open)
+        out = uiaction_mod.signin_via_ui(9223)
+        assert opened == [9223]
+        assert out["clicked"] is False and out["opened"] is True
+        assert "活动页" in out["reason"]
+
+    def test_open_activity_page_creates_target_via_cdp(self, monkeypatch):
+        # 自助开页必须走浏览器级 Target.createTarget,并等目标出现在列表里
+        sent = []
+        targets = [{"type": "page", "url": "doubao://doubao-chat/chat",
+                    "webSocketDebuggerUrl": "ws://chat"}]
+
+        class FakeWs:
+            def send(self, data):
+                sent.append(json.loads(data))
+                targets.append({"type": "page",
+                                "url": "https://www.doubao.com/pc/agent-explore",
+                                "webSocketDebuggerUrl": "ws://panel"})
+
+            def recv(self):
+                return json.dumps({"id": 1, "result": {"targetId": "t1"}})
+
+            def settimeout(self, timeout):
+                pass
+
+            def close(self):
+                pass
+
+        fake_ws_mod = types.SimpleNamespace(
+            create_connection=lambda *a, **k: FakeWs(),
+            WebSocketTimeoutException=type("WSTimeout", (Exception,), {}),
+            WebSocketException=type("WSError", (Exception,), {}),
+        )
+        monkeypatch.setitem(sys.modules, "websocket", fake_ws_mod)
+        monkeypatch.setattr(uiaction_mod, "_browser_ws", lambda port: "ws://browser")
+        monkeypatch.setattr(uiaction_mod, "_targets", lambda port: list(targets))
+
+        target = uiaction_mod.open_activity_page(9223)
+        assert target["webSocketDebuggerUrl"] == "ws://panel"
+        assert sent[0]["method"] == "Target.createTarget"
+        assert sent[0]["params"]["url"] == uiaction_mod._ACTIVITY_URL
 
 
 class TestDoubaoApi:
@@ -662,10 +718,32 @@ class TestCheckinChannel:
 
     def test_ui_click_not_confirmed_is_attention(self, monkeypatch, no_cookies, emitted):
         self._click(monkeypatch)
+        monkeypatch.setattr(service, "_RECHECK_DELAYS", ())  # 退避重试在下面单测,这里不等
         monkeypatch.setattr(_API_CALL, _router([self.DETAIL_UNSIGNED]))
         assert service.run_action("claim", _config(no_cookies, checkin_channel="ui")) == 1
         assert emitted[0]["result"] == "ERROR"
         assert "仍未标记已签" in emitted[0]["report"]
+
+    def test_ui_click_rechecks_with_backoff_until_signed(self, monkeypatch, no_cookies,
+                                                         emitted):
+        # 点击送达≠状态即时翻转: 前两次复查仍未签,第三次才翻转也要判成功
+        self._click(monkeypatch)
+        monkeypatch.setattr(service, "_RECHECK_DELAYS", (0.0, 0.0))
+        seen = {"detail": 0}
+
+        def fake_call(url, **kwargs):
+            if "/v3/detail" in url:
+                seen["detail"] += 1
+                # 1=点前状态, 2/3=两次复查仍未翻转, 4=第三次复查翻转
+                return (self.DETAIL_UNSIGNED if seen["detail"] < 4
+                        else self.DETAIL_SIGNED)[1]
+            return 200, {"code": 0, "data": {}}, None
+
+        monkeypatch.setattr(_API_CALL, fake_call)
+        assert service.run_action("claim", _config(no_cookies, checkin_channel="ui")) == 0
+        assert seen["detail"] == 5  # 1 前置 + 3 复查 + 1 奖励清扫
+        assert emitted[0]["result"] == "CLAIMED"
+        assert emitted[0]["channel"] == "ui-click"
 
     def test_ui_channel_unavailable_reports_reason(self, monkeypatch, no_cookies, emitted):
         self._click(monkeypatch, clicked=False)

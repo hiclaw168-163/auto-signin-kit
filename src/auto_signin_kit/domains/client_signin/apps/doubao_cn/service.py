@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +33,23 @@ def _user_data_dir(config: DoubaoDomainConfig) -> Path | None:
 
 #: 服务端"还没达标"的领奖回执话术(不是故障,归"暂不可领")。
 _NOT_ELIGIBLE_HINTS = ("不符合领取条件", "暂不符合", "条件未满足", "尚未完成")
+
+#: 界面点击后的复查退避(秒)。2026-11-27 对齐 ai-butler 真机取证: 点击送达
+#: ≠ 状态即时翻转,点完立刻查会误判失败;任一次查到已签即算成功。
+_RECHECK_DELAYS = (3.0, 5.0)
+
+
+def _confirm_ui_checkin(api: DoubaoApi, config: DoubaoDomainConfig) -> dict[str, Any] | None:
+    """点击后复查 ``daily_checkin``,按 :data:`_RECHECK_DELAYS` 退避重试。"""
+    state = _daily_checkin(api, config)
+    if (state or {}).get("checked_in_today"):
+        return state
+    for delay in _RECHECK_DELAYS:
+        time.sleep(delay)
+        state = _daily_checkin(api, config)
+        if (state or {}).get("checked_in_today"):
+            return state
+    return state
 
 
 def _sweep_rewards(api: DoubaoApi, config: DoubaoDomainConfig) -> dict[str, Any]:
@@ -147,7 +165,7 @@ def _checkin_via_ui(api: DoubaoApi,
             "ERROR",
             "界面通道不可用: %s;若客户端无法启动可设 checkin_channel: http" % ui.get("reason"),
             needs_attention=True, domain="doubao_cn", channel="ui"), 1
-    state = _daily_checkin(api, config)
+    state = _confirm_ui_checkin(api, config)
     if not (state or {}).get("checked_in_today"):
         return make_result(
             "ERROR",
