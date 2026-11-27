@@ -28,3 +28,6 @@ class DoubaoDomainConfig(BudgetedConfig):
     #: 界面通道由客户端 JS 发请求(带 a_bogus 签名与设备参数);裸接口缺这层,
     #: 反复请求会让该会话后续(含客户端手工点)全部失败,故仅在客户端不可用时才用。
     checkin_channel: str = "auto"
+    #: 客户端版本覆盖(如 ``2.35.8``): 留空 = 从本机安装的客户端运行时读取。
+    #: 读不到会显式报错,不会静默沿用历史 version_code(见 NOTE-04 §4.5)。
+    client_version: str | None = None

@@ -21,8 +21,10 @@
 ## 2. 接口契约(2026-11-02 实测)
 
 - 公共查询参数**缺一不可**(缺了报 invalid param/system error):
-  `version_code=20800&language=zh&device_platform=web&doubao_device_platform=web
+  `version_code=<客户端版本编码>&language=zh&device_platform=web&doubao_device_platform=web
   &aid=497858&real_aid=497858&pkg_type=release_version`
+  ;`version_code` 必须随本机客户端版本变化(2026-11-08 起由 `client_version`
+  运行时派生,见 §4.5)。
 - 签到(幂等):
   `POST /alice/ug/campaign/landing/checkin/` body `{"scene": "pc_incentive_task_mvp_v3"}`
   → `{"code":0,"data":{"checked_in":true,"checkin_date":"2026-11-02",
@@ -164,3 +166,62 @@ api 层,不能靠事后猜。
 **方法论**: "接口报错"要先分清是**请求不合法**、**会话被降权**还是**服务端故障**;
 三者现象都是 `710010702`。本案的判别器是用户提供的"重装就好"这条对照——
 它是唯一能把"我们的请求害了会话"与"平台挂了"分开的证据。
+
+### 4.4 2026-11-07 复盘复发: auto 的裸接口兜底把修复又搞坏了
+
+现象: §4.3 修复落地当晚起,台账连续两天全是 `710010702`。现场实验链:
+客户端没在跑(9223 无监听) → 带调试端口拉起后 `channel=ui` 报"页面上找不到
+签到按钮" → CDP 手动开活动页后 `channel=ui-click` 点击送达 → **toast
+「签到失败，请稍后重试」**(客户端自己的 JS 也被拒)——会话再次受限。
+
+根因(三个叠加,全已修复):
+
+1. **调度时客户端没带调试端口跑**,`auto` 按当时的定义"客户端不可达才退回
+   裸接口"——当天 5 次裸请求把会话搞受限。修复: `auto` 在客户端不可达时
+   **跳过本次(PENDING,不降噪)**,绝不再发裸请求;只有显式
+   `checkin_channel: http` 才走(service._resolve_channel/_skip_result);
+2. **活动页没人开**: 客户端刚启动只有 `doubao://` 内部页,界面通道抓不到
+   按钮。修复: `_open_activity_page` 走浏览器级 `Target.createTarget`
+   自动打开 `agent-explore`(`/json/new` 建的 about:blank 会被客户端吞掉,
+   实测不可行);
+3. **`_pick_target` 用 `"doubao" in url` 匹配**,`doubao://` 内部页同样命中,
+   误抓内部页找按钮。修复: 改按域 `"doubao.com"` 匹配。
+
+**结论重申**: 界面通道的生效前提是"调度时刻客户端带 `--remote-debugging-port`
+在跑"——这需要用户把豆包常驻为签到模式(macOS 指引 §4.1;调度时间点见
+`schedule status`)。会话一旦受限,唯一恢复手段仍是重装客户端(新 session)。
+
+## 4.5 version_code 运行时派生(2026-11-08)
+
+公开复盘(SignDock v0.1.3)记录了同一个 `710010702`:
+**`version_code` 写死 20800**,客户端升到 2.32.6 后服务端按版本校验即报系统
+错误;修法是把安装包的版本编码成 `主*10000+次*100+修订`(2.32.6→23206)。
+
+本仓库此前的 `api.COMMON_QUERY` 同样写死 `version_code=20800`,已改为
+`client_version.resolve()` 运行时派生:
+
+| 来源 | 读取方式 |
+|---|---|
+| macOS | `/Applications/Doubao.app`(或 `~/Applications`)`Contents/Info.plist` 的 `CFBundleShortVersionString` |
+| Windows | 卸载注册表 `DisplayVersion`(`core.adapters.client_discovery`) |
+| 都读不到 | **显式报错**,提示在配置里设 `client_version`(绝不静默沿用旧值) |
+
+UA 同步补了官方标识 `SamanthaDoubao/<version>`。
+
+**但本机(2026-11-08)实测: 派生成 23508 后仍然 `710010702`。**当天的现场
+实验链否掉了"缺参数"这条假设:
+
+1. 用 CDP 注入 fetch/XHR 钩子,抓到**客户端自己**的签到请求:
+   `version_code=20800`(页面自己也没跟随版本)+ `web_id`/`tea_uuid`/`pc_version`
+   /`doubao_pc_version`/`samantha_web`/`runtime` 等设备参数齐全,
+   body 与我们的完全相同 → **它的响应也是 `710010702`**;
+2. 同一会话下 `v3/detail`、`landing/get` 都 `code=0`(会话有效);
+   `detail` 回 `daily_checkin.checked_in_today=false`、
+   `last_checkin_date=2026-11-04`、`landing` 的 `main_page_info.buttons=[]`;
+3. 台账最后成功也是 2026-11-04 21:07,此后全失败;
+4. 卸载→清残留→重装(DMG 正式复制到 `/Applications`,无隔离属性)→ 重新登录,
+   **新 session 依然失败**。
+
+结论: 参数缺失/版本号都不是本次失败的原因;`710010702` 是签到接口的兜底
+错误码,平台侧对"该账号"的签到动作判异常(活动落地页也为空)。需要区分
+"账号层面"还是"自动化可检测"时,让用户在客户端里**手工点**一次即可判定。
