@@ -81,7 +81,10 @@ class TestRecordAndQuery:
         assert "result" not in resp and "report" not in resp  # 信封字段不混入
 
     def test_result_filter_normalizes_and_matches(self):
-        store.record_payload(json.dumps(_record(result="success"), ensure_ascii=False))
+        # 用当天时间: daily_status 按 days=30 取窗口,固定旧日期会随时间滑出窗口
+        # (2026-11-27 实测: 硬编码 10-22 已超 30 天,用例误报失败)
+        store.record_payload(json.dumps(_record(result="success", ts=_today_ts("09:05:03")),
+                                        ensure_ascii=False))
         # 查询侧同样归一化: 用方言查和标准词查,结果一致
         assert len(store.events(result="success")) == 1
         assert len(store.events(result="OK")) == 1
