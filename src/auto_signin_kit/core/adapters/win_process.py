@@ -53,7 +53,9 @@ class _ENTRY(ctypes.Structure):
     _fields_ = [
         ("dwSize", wt.DWORD), ("cntUsage", wt.DWORD),
         ("th32ProcessID", wt.DWORD), ("th32DefaultHeapID", ctypes.c_size_t),
-        ("th32ModuleID", ctypes.c_size_t), ("th32Threads", wt.DWORD),
+        # th32ModuleID 是 DWORD(4 字节),不是指针宽度: 写成 c_size_t 会让
+        # szExeFile 偏移 +4,进程名全被截掉前 4 个字符(2026-11-27 实机踩到)
+        ("th32ModuleID", wt.DWORD), ("th32Threads", wt.DWORD),
         ("th32ParentProcessID", wt.DWORD), ("pcPriClassBase", ctypes.c_long),
         ("dwFlags", wt.DWORD), ("szExeFile", ctypes.c_char * 260),
     ]
