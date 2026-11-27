@@ -426,6 +426,46 @@ class TestClientVersion:
         with pytest.raises(ConfigError, match="client_version"):
             cv_mod.resolve(None)
 
+    def test_installed_version_falls_back_to_install_manifest(self, monkeypatch, tmp_path):
+        # 绿色/自定义目录安装没有卸载注册表项(2026-11-27 实机: D:\software\ai-tools\Doubao),
+        # 此时读 exe 同目录 manifest.json 的产品版本
+        monkeypatch.setattr(cv_mod, "IS_MACOS", False)
+        monkeypatch.setattr(cv_mod.client_discovery, "registry_display_version",
+                            lambda pattern: None)
+        monkeypatch.setattr(cv_mod.client_discovery, "default_roots", lambda *a, **k: [])
+        exe = tmp_path / "app" / "Doubao.exe"
+        exe.parent.mkdir(parents=True)
+        exe.write_bytes(b"")
+        (exe.parent / "manifest.json").write_text(
+            json.dumps({"productName": "Doubao", "version": "2.37.18"}), encoding="utf-8")
+        monkeypatch.setattr(cv_mod, "running_process_paths", lambda names: [exe])
+        assert cv_mod.installed_version() == "2.37.18"
+
+    def test_manifest_of_other_product_is_ignored(self, monkeypatch, tmp_path):
+        # exe 的 FileVersion 是 Chromium 运行时版本(147.x),绝不能拿来冒充产品版本;
+        # manifest 的 productName 不是 Doubao 也不能认
+        monkeypatch.setattr(cv_mod, "IS_MACOS", False)
+        monkeypatch.setattr(cv_mod.client_discovery, "registry_display_version",
+                            lambda pattern: None)
+        monkeypatch.setattr(cv_mod.client_discovery, "default_roots", lambda *a, **k: [])
+        exe = tmp_path / "Doubao.exe"
+        exe.write_bytes(b"")
+        (tmp_path / "manifest.json").write_text(
+            json.dumps({"productName": "Cici", "version": "2.37.18"}), encoding="utf-8")
+        monkeypatch.setattr(cv_mod, "running_process_paths", lambda names: [exe])
+        assert cv_mod.installed_version() is None
+
+    def test_registry_version_wins_over_manifest(self, monkeypatch):
+        monkeypatch.setattr(cv_mod, "IS_MACOS", False)
+        monkeypatch.setattr(cv_mod.client_discovery, "registry_display_version",
+                            lambda pattern: "2.35.8")
+
+        def no_process(names):
+            raise AssertionError("注册表已有版本,不应再枚举进程")
+
+        monkeypatch.setattr(cv_mod, "running_process_paths", no_process)
+        assert cv_mod.installed_version() == "2.35.8"
+
 
 def _config(tmp_path, **over):
     """测试配置: 默认钉死 ``checkin_channel="http"``。

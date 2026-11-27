@@ -42,7 +42,8 @@ _NOT_ELIGIBLE_HINTS = ("不符合领取条件", "暂不符合", "条件未满足
 
 #: 界面点击后的复查退避(秒)。2026-11-27 对齐 ai-butler 真机取证: 点击送达
 #: ≠ 状态即时翻转,点完立刻查会误判失败;任一次查到已签即算成功。
-_RECHECK_DELAYS = (3.0, 5.0)
+#: 同日本机实测点击后 8 秒内仍未翻转、稍后才已签,故第三档给到 8s。
+_RECHECK_DELAYS = (3.0, 5.0, 8.0)
 
 
 def _confirm_ui_checkin(api: DoubaoApi, config: DoubaoDomainConfig) -> dict[str, Any] | None:

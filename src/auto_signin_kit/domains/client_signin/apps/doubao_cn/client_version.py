@@ -6,8 +6,10 @@
 
 - macOS: ``/Applications/Doubao.app``(或 ``~/Applications``)的
   ``Contents/Info.plist`` 里 ``CFBundleShortVersionString``;
-- Windows: 卸载注册表 ``DisplayVersion``(由安装器维护,已封装在
-  ``core.adapters.client_discovery``);
+- Windows: 先读卸载注册表 ``DisplayVersion``(由安装器维护,已封装在
+  ``core.adapters.client_discovery``);绿色版/自定义目录安装没有卸载项时,
+  回退读 exe 同目录 ``manifest.json`` 的 ``version``(产品版本)。
+  **不能**用 exe 的 FileVersion——那是 Chromium 运行时版本(如 147.0.7727.149);
 - 都读不到就**显式报错**,不静默沿用旧值——旧值正是故障本身。
 
 配置 ``client_version`` 可手动覆盖(客户端不在标准路径、或想压测某个版本时)。
@@ -15,12 +17,14 @@
 
 from __future__ import annotations
 
+import json
 import plistlib
 import re
 from pathlib import Path
 
 from auto_signin_kit.core.adapters import client_discovery
 from auto_signin_kit.core.adapters.platform_info import IS_MACOS
+from auto_signin_kit.core.adapters.win_process import running_process_paths
 from auto_signin_kit.core.errors import ConfigError
 
 #: macOS 应用包名(独立安装器落盘为 Doubao.app)。
@@ -42,11 +46,38 @@ def _mac_version() -> str | None:
     return None
 
 
+def _manifest_version(exe: Path) -> str | None:
+    """读 exe 同目录 ``manifest.json`` 的产品版本;不是豆包的一律不认。"""
+    try:
+        data = json.loads((exe.parent / "manifest.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or data.get("productName") != "Doubao":
+        return None
+    version = data.get("version")
+    return version.strip() if isinstance(version, str) and version.strip() else None
+
+
+def _windows_version() -> str | None:
+    version = client_discovery.registry_display_version(r"^Doubao")
+    if version:
+        return version
+    # 绿色版/自定义目录安装没有卸载注册表项(2026-11-27 实机: D:\software\ai-tools\Doubao),
+    # 回退到安装目录的 manifest.json;客户端在跑时按进程路径反查安装根
+    candidates = client_discovery.default_roots("Doubao", "Doubao.exe", MAC_BUNDLE)
+    candidates += running_process_paths(["Doubao.exe"])
+    for exe in candidates:
+        version = _manifest_version(exe)
+        if version:
+            return version
+    return None
+
+
 def installed_version() -> str | None:
     """本机安装的豆包客户端版本;读不到如实返回 None(不猜)。"""
     if IS_MACOS:
         return _mac_version()
-    return client_discovery.registry_display_version(r"^Doubao")
+    return _windows_version()
 
 
 def version_to_code(version: str) -> int | None:
