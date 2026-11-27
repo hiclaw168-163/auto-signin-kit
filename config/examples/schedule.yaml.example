@@ -19,9 +19,8 @@ tasks:
   QoderDailyCredits:
     times: ["10:05", "11:05", "15:05", "19:05", "23:05"]
     limit_minutes: 5
-  TraeDailyCheckin:
-    times: ["09:05", "13:05", "15:05", "19:05", "21:05", "23:05"]
-    limit_minutes: 5
+  # Trae 已迁为声明式应用(client_signin 引擎),触发时间以
+  # config/apps/trae_cn.yaml 的 schedule.times 为准,这里不再有 TraeDailyCheckin。
   DoubaoDailyCheckin:
     times: ["00:05", "09:05", "13:05", "19:05", "23:05"]
     limit_minutes: 5
